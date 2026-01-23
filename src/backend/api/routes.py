@@ -1,30 +1,86 @@
 """API routes for GolfClip."""
 
+import asyncio
 import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from backend.api.schemas import (
     ClipBoundary,
     DetectedShot,
     ExportClipsRequest,
+    ExportJobResponse,
+    ExportJobStatus,
     HoleInfo,
+    JobError,
     ProcessingStatus,
     ProcessVideoRequest,
     ProcessVideoResponse,
+    ProgressEvent,
     VideoInfo,
 )
 from backend.core.config import settings
 from backend.core.video import extract_clip, get_video_info
 from backend.detection.pipeline import ShotDetectionPipeline
+from backend.models.job import (
+    create_job,
+    get_job,
+    get_all_jobs,
+    update_job,
+    delete_job,
+    create_shots,
+    get_shots_for_job,
+    update_shot,
+)
 
 router = APIRouter()
 
-# In-memory job storage (replace with proper storage for production)
-jobs: dict[str, dict] = {}
+# In-memory job cache for active jobs (synced with database)
+# This provides fast access during processing while database provides persistence
+_job_cache: dict[str, dict] = {}
+
+# Event queues for SSE streaming per job
+_progress_queues: dict[str, asyncio.Queue] = {}
+
+# In-memory storage for export jobs (transient, no persistence needed)
+_export_jobs: dict[str, dict] = {}
+
+
+def _get_cached_job(job_id: str) -> Optional[dict]:
+    """Get a job from the in-memory cache."""
+    return _job_cache.get(job_id)
+
+
+def _cache_job(job_id: str, job: dict) -> None:
+    """Add or update a job in the in-memory cache."""
+    _job_cache[job_id] = job
+
+
+def _remove_from_cache(job_id: str) -> None:
+    """Remove a job from the in-memory cache."""
+    _job_cache.pop(job_id, None)
+
+
+async def _emit_progress(job_id: str, step: str, progress: float, details: Optional[str] = None):
+    """Emit a progress event to the SSE queue for a job."""
+    if job_id in _progress_queues:
+        event = ProgressEvent(
+            job_id=job_id,
+            step=step,
+            progress=progress,
+            details=details,
+            timestamp=datetime.utcnow().isoformat(),
+        )
+        try:
+            _progress_queues[job_id].put_nowait(event)
+        except asyncio.QueueFull:
+            # Queue is full, skip this event (client is slow)
+            logger.warning(f"Progress queue full for job {job_id}, skipping event")
 
 
 @router.post("/process", response_model=ProcessVideoResponse)
@@ -39,20 +95,26 @@ async def process_video(request: ProcessVideoRequest, background_tasks: Backgrou
     try:
         info = get_video_info(video_path)
     except Exception as e:
+        logger.exception(f"Failed to read video metadata: {video_path}")
         raise HTTPException(status_code=400, detail=f"Could not read video: {e}")
 
-    # Create job
+    # Create job in database
     job_id = str(uuid.uuid4())
-    jobs[job_id] = {
-        "video_path": str(video_path),
-        "output_dir": request.output_dir or str(video_path.parent / "golfclip_output"),
-        "status": "pending",
-        "progress": 0,
-        "current_step": "Initializing",
-        "shots": [],
-        "video_info": info,
-        "auto_approve": request.auto_approve_high_confidence,
-    }
+    output_dir = request.output_dir or str(video_path.parent / "golfclip_output")
+
+    job = await create_job(
+        job_id=job_id,
+        video_path=str(video_path),
+        output_dir=output_dir,
+        auto_approve=request.auto_approve_high_confidence,
+        video_info=info,
+    )
+
+    # Cache for fast access during processing
+    _cache_job(job_id, job)
+
+    # Create SSE queue for this job
+    _progress_queues[job_id] = asyncio.Queue(maxsize=100)
 
     # Start processing in background
     background_tasks.add_task(run_detection_pipeline, job_id)
@@ -71,25 +133,86 @@ async def process_video(request: ProcessVideoRequest, background_tasks: Backgrou
 
 async def run_detection_pipeline(job_id: str):
     """Run the shot detection pipeline in the background."""
-    job = jobs.get(job_id)
+    # Get from cache or database
+    job = _get_cached_job(job_id)
     if not job:
-        return
+        job = await get_job(job_id)
+        if not job:
+            logger.error(f"Job {job_id} not found when starting pipeline")
+            return
+        _cache_job(job_id, job)
 
     try:
+        # Update status to processing
         job["status"] = "processing"
+        job["started_at"] = datetime.utcnow().isoformat()
         job["current_step"] = "Loading video"
+
+        await update_job(
+            job_id,
+            status="processing",
+            started_at=job["started_at"],
+            current_step="Loading video",
+        )
+
+        await _emit_progress(job_id, "Loading video", 0)
+
+        # Check for cancellation
+        if job.get("cancelled"):
+            job["status"] = "cancelled"
+            job["completed_at"] = datetime.utcnow().isoformat()
+            await update_job(job_id, status="cancelled", completed_at=job["completed_at"])
+            await _emit_progress(job_id, "Cancelled", 0)
+            return
 
         pipeline = ShotDetectionPipeline(Path(job["video_path"]))
 
-        # Update progress callback
-        def on_progress(step: str, progress: float):
+        # Progress callback that updates job and emits SSE events
+        async def on_progress(step: str, progress: float):
+            if job.get("cancelled"):
+                raise asyncio.CancelledError("Job cancelled by user")
+
+            job["current_step"] = step
+            job["progress"] = progress
+            await _emit_progress(job_id, step, progress)
+
+        # Wrapper to handle async progress callback in sync context
+        def sync_progress_callback(step: str, progress: float):
             job["current_step"] = step
             job["progress"] = progress
 
-        shots = await pipeline.detect_shots(progress_callback=on_progress)
+            # Update database periodically (every 5% progress)
+            # to avoid too many DB writes during processing
+            if int(progress) % 5 == 0:
+                asyncio.create_task(
+                    update_job(job_id, current_step=step, progress=progress)
+                )
 
-        job["shots"] = [shot.model_dump() for shot in shots]
+            # Schedule the async emit in the event loop
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(_emit_progress(job_id, step, progress))
+            except RuntimeError:
+                pass  # No event loop, skip SSE
+
+        shots = await pipeline.detect_shots(progress_callback=sync_progress_callback)
+
+        # Check for cancellation again after processing
+        if job.get("cancelled"):
+            job["status"] = "cancelled"
+            job["completed_at"] = datetime.utcnow().isoformat()
+            await update_job(job_id, status="cancelled", completed_at=job["completed_at"])
+            await _emit_progress(job_id, "Cancelled", 0)
+            return
+
+        # Store shots in database
+        shot_dicts = [shot.model_dump() for shot in shots]
+        await create_shots(job_id, shot_dicts)
+
+        job["shots"] = shot_dicts
         job["progress"] = 100
+        job["completed_at"] = datetime.utcnow().isoformat()
 
         # Check how many need review
         needs_review = sum(1 for s in shots if s.confidence < settings.confidence_threshold)
@@ -99,22 +222,146 @@ async def run_detection_pipeline(job_id: str):
         if needs_review > 0:
             job["status"] = "review"
             job["current_step"] = f"{needs_review} shots need review"
+            await update_job(
+                job_id,
+                status="review",
+                progress=100,
+                current_step=job["current_step"],
+                completed_at=job["completed_at"],
+                total_shots_detected=len(shots),
+                shots_needing_review=needs_review,
+            )
+            await _emit_progress(job_id, f"{needs_review} shots need review", 100)
         else:
             job["status"] = "complete"
             job["current_step"] = "Detection complete"
+            await update_job(
+                job_id,
+                status="complete",
+                progress=100,
+                current_step="Detection complete",
+                completed_at=job["completed_at"],
+                total_shots_detected=len(shots),
+                shots_needing_review=0,
+            )
+            await _emit_progress(job_id, "Detection complete", 100)
+
+    except asyncio.CancelledError:
+        logger.info(f"Job {job_id} was cancelled")
+        job["status"] = "cancelled"
+        job["completed_at"] = datetime.utcnow().isoformat()
+        await update_job(job_id, status="cancelled", completed_at=job["completed_at"])
+        await _emit_progress(job_id, "Cancelled", job.get("progress", 0))
 
     except Exception as e:
         logger.exception(f"Error processing job {job_id}")
         job["status"] = "error"
-        job["error_message"] = str(e)
+        job["completed_at"] = datetime.utcnow().isoformat()
+        job["error"] = JobError(
+            code="PROCESSING_ERROR",
+            message=str(e),
+            details={"exception_type": type(e).__name__},
+        ).model_dump()
+        await update_job(
+            job_id,
+            status="error",
+            completed_at=job["completed_at"],
+            error=job["error"],
+        )
+        await _emit_progress(job_id, "Error", job.get("progress", 0), details=str(e))
+
+    finally:
+        # Clean up SSE queue after a delay (allow clients to receive final events)
+        async def cleanup_queue():
+            await asyncio.sleep(30)
+            if job_id in _progress_queues:
+                del _progress_queues[job_id]
+            # Keep completed jobs in cache for a while, but could remove them
+            # to save memory if needed
+
+        try:
+            asyncio.create_task(cleanup_queue())
+        except RuntimeError:
+            pass
+
+
+@router.get("/progress/{job_id}")
+async def stream_progress(job_id: str):
+    """Stream progress events via Server-Sent Events (SSE)."""
+    # Check cache first, then database
+    job = _get_cached_job(job_id)
+    if not job:
+        job = await get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        _cache_job(job_id, job)
+
+    # Create queue if it doesn't exist (for late joiners)
+    if job_id not in _progress_queues:
+        _progress_queues[job_id] = asyncio.Queue(maxsize=100)
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        """Generate SSE events from the progress queue."""
+        queue = _progress_queues.get(job_id)
+        if not queue:
+            return
+
+        # Send initial state
+        initial_event = ProgressEvent(
+            job_id=job_id,
+            step=job.get("current_step", "Unknown"),
+            progress=job.get("progress", 0),
+            timestamp=datetime.utcnow().isoformat(),
+        )
+        yield f"data: {initial_event.model_dump_json()}\n\n"
+
+        # Check if job is already complete
+        if job.get("status") in ("complete", "error", "cancelled"):
+            yield f"event: complete\ndata: {initial_event.model_dump_json()}\n\n"
+            return
+
+        # Stream updates
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                yield f"data: {event.model_dump_json()}\n\n"
+
+                # Check if job is complete (from cache or database)
+                current_job = _get_cached_job(job_id) or await get_job(job_id)
+                if current_job and current_job.get("status") in ("complete", "error", "cancelled"):
+                    yield f"event: complete\ndata: {event.model_dump_json()}\n\n"
+                    break
+
+            except asyncio.TimeoutError:
+                # Send keepalive
+                yield ": keepalive\n\n"
+
+                # Check if job still exists and is active
+                current_job = _get_cached_job(job_id) or await get_job(job_id)
+                if not current_job or current_job.get("status") in ("complete", "error", "cancelled"):
+                    break
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable buffering in nginx
+        },
+    )
 
 
 @router.get("/status/{job_id}", response_model=ProcessingStatus)
 async def get_status(job_id: str):
     """Get the current status of a processing job."""
-    job = jobs.get(job_id)
+    # Check cache first, then database
+    job = _get_cached_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        job = await get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        _cache_job(job_id, job)
 
     return ProcessingStatus(
         video_path=job["video_path"],
@@ -123,72 +370,246 @@ async def get_status(job_id: str):
         current_step=job["current_step"],
         total_shots_detected=job.get("total_shots_detected", 0),
         shots_needing_review=job.get("shots_needing_review", 0),
-        error_message=job.get("error_message"),
+        error_message=job["error"]["message"] if job.get("error") else None,
     )
+
+
+@router.post("/cancel/{job_id}")
+async def cancel_job(job_id: str):
+    """Cancel a running processing job."""
+    # Check cache first, then database
+    job = _get_cached_job(job_id)
+    if not job:
+        job = await get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        _cache_job(job_id, job)
+
+    if job["status"] not in ("pending", "processing"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel job in '{job['status']}' status"
+        )
+
+    job["cancelled"] = True
+    job["status"] = "cancelling"
+
+    await update_job(job_id, cancelled=True, status="cancelling")
+
+    logger.info(f"Cancellation requested for job {job_id}")
+
+    return {"status": "cancelling", "message": "Cancellation requested"}
 
 
 @router.get("/shots/{job_id}", response_model=list[DetectedShot])
 async def get_detected_shots(job_id: str):
     """Get all detected shots for a job."""
-    job = jobs.get(job_id)
+    # Check cache first
+    job = _get_cached_job(job_id)
+    if job and job.get("shots"):
+        return [DetectedShot(**shot) for shot in job["shots"]]
+
+    # Fallback to database
+    job = await get_job(job_id, include_shots=True)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    _cache_job(job_id, job)
     return [DetectedShot(**shot) for shot in job.get("shots", [])]
 
 
 @router.post("/shots/{job_id}/update")
 async def update_shot_boundaries(job_id: str, boundaries: list[ClipBoundary]):
     """Update clip boundaries after user review."""
-    job = jobs.get(job_id)
+    # Check cache first, then database
+    job = _get_cached_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        job = await get_job(job_id, include_shots=True)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        _cache_job(job_id, job)
 
     # Update shot boundaries
+    updated_count = 0
     for boundary in boundaries:
-        for shot in job["shots"]:
+        # Update in cache
+        for shot in job.get("shots", []):
             if shot["id"] == boundary.shot_id:
                 shot["clip_start"] = boundary.start_time
                 shot["clip_end"] = boundary.end_time
                 if boundary.approved:
                     shot["confidence"] = 1.0  # User-approved = 100% confidence
 
+                # Update in database
+                await update_shot(
+                    job_id,
+                    boundary.shot_id,
+                    clip_start=boundary.start_time,
+                    clip_end=boundary.end_time,
+                    confidence=1.0 if boundary.approved else shot["confidence"],
+                )
+                updated_count += 1
+
+    # Recalculate shots needing review
+    shots = await get_shots_for_job(job_id)
+    needs_review = sum(
+        1 for s in shots
+        if s["confidence"] < settings.confidence_threshold
+    )
+    job["shots"] = shots
+    job["shots_needing_review"] = needs_review
+
     # Check if all shots are now approved
-    all_approved = all(s["confidence"] >= settings.confidence_threshold for s in job["shots"])
-    if all_approved:
+    all_approved = needs_review == 0
+    if all_approved and job["status"] == "review":
         job["status"] = "complete"
-        job["shots_needing_review"] = 0
+        await update_job(job_id, status="complete", shots_needing_review=0)
+    else:
+        await update_job(job_id, shots_needing_review=needs_review)
 
-    return {"status": "updated", "all_approved": all_approved}
+    return {
+        "status": "updated",
+        "updated_count": updated_count,
+        "all_approved": all_approved,
+        "shots_needing_review": needs_review,
+    }
 
 
-@router.post("/export")
+@router.post("/export", response_model=ExportJobResponse)
 async def export_clips(request: ExportClipsRequest, background_tasks: BackgroundTasks):
-    """Export confirmed clips to the output directory."""
-    job = jobs.get(request.job_id)
+    """Export confirmed clips to the output directory.
+
+    Returns immediately with an export_job_id. Use GET /api/export/{export_job_id}/status
+    to poll for progress.
+    """
+    # Check cache first, then database
+    job = _get_cached_job(request.job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        job = await get_job(request.job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
 
-    output_dir = Path(request.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Filter to approved clips only
+    approved_clips = [clip for clip in request.clips if clip.approved]
 
-    video_path = Path(job["video_path"])
-    exported = []
+    # Create export job
+    export_job_id = str(uuid.uuid4())
+    export_job = {
+        "export_job_id": export_job_id,
+        "job_id": request.job_id,
+        "status": "pending",
+        "total_clips": len(approved_clips),
+        "exported_count": 0,
+        "current_clip": None,
+        "progress": 0,
+        "output_dir": request.output_dir,
+        "video_path": job["video_path"],
+        "clips": [clip.model_dump() for clip in approved_clips],
+        "filename_pattern": request.filename_pattern,
+        "exported": [],
+        "errors": [],
+        "has_errors": False,
+    }
+    _export_jobs[export_job_id] = export_job
 
-    for clip in request.clips:
-        if not clip.approved:
-            continue
+    # Start export in background
+    background_tasks.add_task(run_export_job, export_job_id)
 
-        filename = request.filename_pattern.format(shot_id=clip.shot_id) + ".mp4"
-        output_path = output_dir / filename
+    return ExportJobResponse(
+        export_job_id=export_job_id,
+        status="pending",
+        total_clips=len(approved_clips),
+    )
+
+
+async def run_export_job(export_job_id: str):
+    """Run the clip export in the background."""
+    export_job = _export_jobs.get(export_job_id)
+    if not export_job:
+        logger.error(f"Export job {export_job_id} not found")
+        return
+
+    try:
+        export_job["status"] = "exporting"
+
+        output_dir = Path(export_job["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        video_path = Path(export_job["video_path"])
+        clips = export_job["clips"]
+        total_clips = len(clips)
+
+        for i, clip in enumerate(clips):
+            export_job["current_clip"] = clip["shot_id"]
+            export_job["progress"] = (i / max(total_clips, 1)) * 100
+
+            filename = export_job["filename_pattern"].format(shot_id=clip["shot_id"]) + ".mp4"
+            output_path = output_dir / filename
+
+            try:
+                # Run extract_clip in thread pool to not block event loop
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    extract_clip,
+                    video_path,
+                    output_path,
+                    clip["start_time"],
+                    clip["end_time"],
+                )
+                export_job["exported"].append(str(output_path))
+                export_job["exported_count"] = len(export_job["exported"])
+                logger.info(f"Exported clip {clip['shot_id']} to {output_path}")
+
+            except Exception as e:
+                error_msg = f"Failed to export clip {clip['shot_id']}: {e}"
+                logger.error(error_msg)
+                export_job["errors"].append({"shot_id": clip["shot_id"], "error": str(e)})
+                export_job["has_errors"] = True
+
+        # Mark complete
+        export_job["status"] = "complete"
+        export_job["progress"] = 100
+        export_job["current_clip"] = None
+
+    except Exception as e:
+        logger.exception(f"Error in export job {export_job_id}")
+        export_job["status"] = "error"
+        export_job["errors"].append({"shot_id": None, "error": str(e)})
+        export_job["has_errors"] = True
+
+    finally:
+        # Clean up export job after 5 minutes
+        async def cleanup_export_job():
+            await asyncio.sleep(300)
+            if export_job_id in _export_jobs:
+                del _export_jobs[export_job_id]
 
         try:
-            extract_clip(video_path, output_path, clip.start_time, clip.end_time)
-            exported.append(str(output_path))
-        except Exception as e:
-            logger.error(f"Failed to export clip {clip.shot_id}: {e}")
+            asyncio.create_task(cleanup_export_job())
+        except RuntimeError:
+            pass
 
-    return {"exported": exported, "count": len(exported)}
+
+@router.get("/export/{export_job_id}/status", response_model=ExportJobStatus)
+async def get_export_status(export_job_id: str):
+    """Get the status of an export job."""
+    export_job = _export_jobs.get(export_job_id)
+    if not export_job:
+        raise HTTPException(status_code=404, detail="Export job not found")
+
+    return ExportJobStatus(
+        export_job_id=export_job["export_job_id"],
+        status=export_job["status"],
+        total_clips=export_job["total_clips"],
+        exported_count=export_job["exported_count"],
+        current_clip=export_job["current_clip"],
+        progress=export_job["progress"],
+        output_dir=export_job["output_dir"],
+        exported=export_job["exported"],
+        errors=export_job["errors"],
+        has_errors=export_job["has_errors"],
+    )
 
 
 @router.get("/video-info")
@@ -202,4 +623,140 @@ async def get_video_info_endpoint(path: str):
         info = get_video_info(video_path)
         return VideoInfo(path=str(video_path), **info)
     except Exception as e:
+        logger.exception(f"Failed to get video info: {video_path}")
         raise HTTPException(status_code=400, detail=f"Could not read video: {e}")
+
+
+@router.get("/jobs")
+async def list_jobs(limit: int = 50, status: Optional[str] = None):
+    """List all processing jobs with optional status filter."""
+    # Get from database (source of truth for listing)
+    jobs = await get_all_jobs(limit=limit, status=status, include_shots=False)
+
+    job_list = [
+        {
+            "job_id": job["id"],
+            "video_path": job["video_path"],
+            "status": job["status"],
+            "progress": job["progress"],
+            "current_step": job["current_step"],
+            "total_shots_detected": job.get("total_shots_detected", 0),
+            "created_at": job.get("created_at"),
+            "completed_at": job.get("completed_at"),
+        }
+        for job in jobs
+    ]
+
+    return {"jobs": job_list, "count": len(job_list)}
+
+
+@router.delete("/jobs/{job_id}")
+async def delete_job_endpoint(job_id: str):
+    """Delete a job from the database."""
+    # Check if job exists and can be deleted
+    job = _get_cached_job(job_id)
+    if not job:
+        job = await get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+    if job["status"] in ("pending", "processing"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete a running job. Cancel it first."
+        )
+
+    # Delete from database
+    await delete_job(job_id)
+
+    # Remove from cache
+    _remove_from_cache(job_id)
+
+    # Clean up SSE queue if exists
+    if job_id in _progress_queues:
+        del _progress_queues[job_id]
+
+    return {"status": "deleted", "job_id": job_id}
+
+
+async def load_jobs_on_startup() -> None:
+    """Load existing jobs into cache on startup.
+
+    Called by the application lifespan manager after database initialization.
+    """
+    from backend.models.job import load_jobs_into_memory
+
+    jobs = await load_jobs_into_memory()
+
+    # Only cache active/recent jobs to save memory
+    for job_id, job in jobs.items():
+        # Cache active jobs and recently completed ones
+        if job["status"] in ("pending", "processing", "review"):
+            _cache_job(job_id, job)
+
+    logger.info(f"Loaded {len(jobs)} jobs from database, cached {len(_job_cache)} active jobs")
+
+
+# =============================================================================
+# Database Management Endpoints
+# =============================================================================
+
+
+@router.get("/db/stats")
+async def get_database_stats():
+    """Get database statistics and health information."""
+    from backend.core.database import get_database_stats
+
+    return await get_database_stats()
+
+
+@router.post("/db/purge")
+async def purge_old_jobs(days: int = 30):
+    """Purge old completed/cancelled/errored jobs from the database.
+
+    Args:
+        days: Number of days to keep. Jobs older than this will be deleted.
+              Defaults to 30 days.
+
+    Returns:
+        Number of jobs deleted and remaining counts.
+    """
+    from backend.core.database import purge_old_jobs as db_purge_old_jobs, get_database_stats
+
+    if days < 1:
+        raise HTTPException(status_code=400, detail="days must be at least 1")
+
+    deleted_count = await db_purge_old_jobs(days=days)
+
+    # Also remove deleted jobs from cache
+    for job_id in list(_job_cache.keys()):
+        job = await get_job(job_id)
+        if not job:
+            _remove_from_cache(job_id)
+
+    stats = await get_database_stats()
+
+    return {
+        "deleted_count": deleted_count,
+        "remaining_jobs": stats["total_jobs"],
+        "remaining_shots": stats["total_shots"],
+        "jobs_by_status": stats.get("jobs_by_status", {}),
+    }
+
+
+@router.get("/db/export")
+async def export_all_jobs():
+    """Export all jobs and shots as JSON for backup purposes.
+
+    Returns:
+        JSON array of all jobs with their shots included.
+    """
+    from backend.core.database import export_jobs_to_json
+
+    jobs = await export_jobs_to_json()
+
+    return {
+        "exported_at": datetime.utcnow().isoformat(),
+        "job_count": len(jobs),
+        "jobs": jobs,
+    }

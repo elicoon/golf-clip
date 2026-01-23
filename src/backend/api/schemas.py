@@ -1,7 +1,6 @@
 """Pydantic schemas for API request/response models."""
 
-from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -50,16 +49,39 @@ class ClipBoundary(BaseModel):
     approved: bool = False
 
 
+class JobError(BaseModel):
+    """Structured error information for failed jobs."""
+
+    code: str = Field(..., description="Error code for programmatic handling")
+    message: str = Field(..., description="Human-readable error message")
+    details: Optional[dict[str, Any]] = Field(
+        default=None, description="Additional error context"
+    )
+
+
 class ProcessingStatus(BaseModel):
     """Current status of video processing."""
 
     video_path: str
-    status: str = Field(..., description="pending, processing, review, complete, error")
+    status: str = Field(
+        ...,
+        description="Job status: pending, processing, review, complete, error, cancelled, cancelling"
+    )
     progress: float = Field(0, ge=0, le=100, description="Processing progress percentage")
     current_step: str = ""
     total_shots_detected: int = 0
     shots_needing_review: int = 0
     error_message: Optional[str] = None
+
+
+class ProgressEvent(BaseModel):
+    """Real-time progress event for SSE streaming."""
+
+    job_id: str
+    step: str = Field(..., description="Current processing step name")
+    progress: float = Field(..., ge=0, le=100, description="Progress percentage")
+    details: Optional[str] = Field(None, description="Additional details or error message")
+    timestamp: str = Field(..., description="ISO 8601 timestamp of this event")
 
 
 class ProcessVideoRequest(BaseModel):
@@ -87,6 +109,17 @@ class ExportClipsRequest(BaseModel):
     filename_pattern: str = "shot_{shot_id}"
 
 
+class ExportClipsResponse(BaseModel):
+    """Response after exporting clips."""
+
+    exported: list[str] = Field(..., description="List of exported file paths")
+    count: int = Field(..., description="Number of clips exported")
+    errors: list[dict[str, Any]] = Field(
+        default_factory=list, description="Export errors if any"
+    )
+    has_errors: bool = Field(False, description="Whether any exports failed")
+
+
 class HoleInfo(BaseModel):
     """Information about the golf hole for overlay."""
 
@@ -94,3 +127,49 @@ class HoleInfo(BaseModel):
     yardage: int = Field(..., ge=0)
     par: Optional[int] = Field(None, ge=3, le=5)
     shot_number: int = Field(1, ge=1)
+
+
+class JobSummary(BaseModel):
+    """Summary of a job for listing."""
+
+    job_id: str
+    video_path: str
+    status: str
+    progress: float
+    current_step: str
+    total_shots_detected: int = 0
+    created_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class JobListResponse(BaseModel):
+    """Response for job listing endpoint."""
+
+    jobs: list[JobSummary]
+    count: int
+
+
+class ExportJobStatus(BaseModel):
+    """Status of an export job."""
+
+    export_job_id: str
+    status: str = Field(
+        ...,
+        description="Export status: pending, exporting, complete, error"
+    )
+    total_clips: int = Field(0, description="Total number of clips to export")
+    exported_count: int = Field(0, description="Number of clips exported so far")
+    current_clip: Optional[int] = Field(None, description="Shot ID of clip currently being exported")
+    progress: float = Field(0, ge=0, le=100, description="Export progress percentage")
+    output_dir: str = Field("", description="Output directory for exported clips")
+    exported: list[str] = Field(default_factory=list, description="List of exported file paths")
+    errors: list[dict[str, Any]] = Field(default_factory=list, description="Export errors if any")
+    has_errors: bool = Field(False, description="Whether any exports failed")
+
+
+class ExportJobResponse(BaseModel):
+    """Response after initiating clip export."""
+
+    export_job_id: str
+    status: str = Field("pending", description="Initial export status")
+    total_clips: int = Field(..., description="Number of clips to export")

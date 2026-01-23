@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     # FFmpeg
     ffmpeg_threads: int = 0  # 0 = auto-detect
+    ffmpeg_timeout: int = 600  # Timeout in seconds for ffmpeg operations (0 = no timeout)
 
     class Config:
         env_prefix = "GOLFCLIP_"

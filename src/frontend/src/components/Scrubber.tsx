@@ -5,25 +5,32 @@ interface ScrubberProps {
   startTime: number
   endTime: number
   onTimeUpdate: (start: number, end: number) => void
+  disabled?: boolean
 }
+
+type DragTarget = 'start' | 'end' | 'playhead' | null
 
 export function Scrubber({
   videoRef,
   startTime,
   endTime,
   onTimeUpdate,
+  disabled = false,
 }: ScrubberProps) {
   const scrubberRef = useRef<HTMLDivElement>(null)
-  const [isDragging, setIsDragging] = useState<'start' | 'end' | 'playhead' | null>(null)
+  const [isDragging, setIsDragging] = useState<DragTarget>(null)
   const [currentTime, setCurrentTime] = useState(startTime)
   const [duration, setDuration] = useState(0)
+  const [hoverPosition, setHoverPosition] = useState<number | null>(null)
+  const [hoverTime, setHoverTime] = useState<number | null>(null)
 
   // Window around the clip to show (extra context before and after)
   const windowPadding = 5 // seconds
   const windowStart = Math.max(0, startTime - windowPadding)
-  const windowEnd = Math.min(duration, endTime + windowPadding)
+  const windowEnd = Math.min(duration || endTime + windowPadding, endTime + windowPadding)
   const windowDuration = windowEnd - windowStart
 
+  // Track video metadata and time updates
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
@@ -64,47 +71,65 @@ export function Scrubber({
     [windowStart, windowDuration]
   )
 
+  const getPositionFromEvent = useCallback(
+    (clientX: number): number => {
+      if (!scrubberRef.current) return 0
+      const rect = scrubberRef.current.getBoundingClientRect()
+      const position = ((clientX - rect.left) / rect.width) * 100
+      return Math.max(0, Math.min(100, position))
+    },
+    []
+  )
+
   const handleMouseDown = (
     e: React.MouseEvent,
-    type: 'start' | 'end' | 'playhead'
+    type: DragTarget
   ) => {
+    if (disabled) return
     e.preventDefault()
+    e.stopPropagation()
     setIsDragging(type)
   }
 
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
-      if (!isDragging || !scrubberRef.current) return
+      if (!isDragging || !scrubberRef.current || disabled) return
 
-      const rect = scrubberRef.current.getBoundingClientRect()
-      const position = ((e.clientX - rect.left) / rect.width) * 100
-      const clampedPosition = Math.max(0, Math.min(100, position))
-      const time = positionToTime(clampedPosition)
+      const position = getPositionFromEvent(e.clientX)
+      const time = positionToTime(position)
 
       if (isDragging === 'start') {
-        const newStart = Math.min(time, endTime - 0.5)
-        onTimeUpdate(Math.max(0, newStart), endTime)
+        // Ensure minimum 0.5s clip duration and clamp to bounds
+        const newStart = Math.max(0, Math.min(time, endTime - 0.5))
+        onTimeUpdate(newStart, endTime)
       } else if (isDragging === 'end') {
-        const newEnd = Math.max(time, startTime + 0.5)
-        onTimeUpdate(startTime, Math.min(duration, newEnd))
+        // Ensure minimum 0.5s clip duration and clamp to bounds
+        const newEnd = Math.min(duration, Math.max(time, startTime + 0.5))
+        onTimeUpdate(startTime, newEnd)
       } else if (isDragging === 'playhead') {
         if (videoRef.current) {
-          videoRef.current.currentTime = time
+          const clampedTime = Math.max(windowStart, Math.min(windowEnd, time))
+          videoRef.current.currentTime = clampedTime
         }
       }
     },
-    [isDragging, positionToTime, startTime, endTime, duration, onTimeUpdate, videoRef]
+    [isDragging, getPositionFromEvent, positionToTime, startTime, endTime, duration, onTimeUpdate, videoRef, windowStart, windowEnd, disabled]
   )
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(null)
   }, [])
 
+  // Global mouse event listeners for drag operations
   useEffect(() => {
     if (isDragging) {
+      document.body.style.cursor = 'ew-resize'
+      document.body.style.userSelect = 'none'
       window.addEventListener('mousemove', handleMouseMove)
       window.addEventListener('mouseup', handleMouseUp)
       return () => {
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
         window.removeEventListener('mousemove', handleMouseMove)
         window.removeEventListener('mouseup', handleMouseUp)
       }
@@ -112,10 +137,9 @@ export function Scrubber({
   }, [isDragging, handleMouseMove, handleMouseUp])
 
   const handleTrackClick = (e: React.MouseEvent) => {
-    if (!scrubberRef.current || isDragging) return
+    if (!scrubberRef.current || isDragging || disabled) return
 
-    const rect = scrubberRef.current.getBoundingClientRect()
-    const position = ((e.clientX - rect.left) / rect.width) * 100
+    const position = getPositionFromEvent(e.clientX)
     const time = positionToTime(position)
 
     if (videoRef.current) {
@@ -123,52 +147,126 @@ export function Scrubber({
     }
   }
 
+  const handleMouseEnter = () => {
+    if (disabled) return
+    // Show hover state
+  }
+
+  const handleMouseLeave = () => {
+    setHoverPosition(null)
+    setHoverTime(null)
+  }
+
+  const handleTrackMouseMove = (e: React.MouseEvent) => {
+    if (isDragging || disabled) return
+    const position = getPositionFromEvent(e.clientX)
+    const time = positionToTime(position)
+    setHoverPosition(position)
+    setHoverTime(time)
+  }
+
+  const startPos = timeToPosition(startTime)
+  const endPos = timeToPosition(endTime)
+  const playheadPos = timeToPosition(currentTime)
+
   return (
-    <div className="scrubber-container">
-      <div className="scrubber" ref={scrubberRef} onClick={handleTrackClick}>
+    <div className={`scrubber-container ${disabled ? 'scrubber-disabled' : ''}`}>
+      <div
+        className={`scrubber ${isDragging ? 'scrubber-dragging' : ''}`}
+        ref={scrubberRef}
+        onClick={handleTrackClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onMouseMove={handleTrackMouseMove}
+      >
         {/* Background track */}
         <div className="scrubber-track" />
 
+        {/* Out-of-bounds regions (dimmed) */}
+        <div
+          className="scrubber-region-outside"
+          style={{ left: 0, width: `${startPos}%` }}
+        />
+        <div
+          className="scrubber-region-outside"
+          style={{ left: `${endPos}%`, width: `${100 - endPos}%` }}
+        />
+
         {/* Selected region */}
         <div
-          className="scrubber-selection"
+          className={`scrubber-selection ${isDragging ? 'scrubber-selection-active' : ''}`}
           style={{
-            left: `${timeToPosition(startTime)}%`,
-            width: `${timeToPosition(endTime) - timeToPosition(startTime)}%`,
+            left: `${startPos}%`,
+            width: `${endPos - startPos}%`,
           }}
         />
 
+        {/* Hover preview indicator */}
+        {hoverPosition !== null && hoverTime !== null && !isDragging && (
+          <div
+            className="scrubber-hover-preview"
+            style={{ left: `${hoverPosition}%` }}
+          >
+            <div className="scrubber-hover-thumbnail">
+              {/* Placeholder for future thumbnail preview */}
+              <div className="scrubber-hover-thumbnail-placeholder" />
+            </div>
+            <div className="scrubber-hover-time">{formatTime(hoverTime)}</div>
+          </div>
+        )}
+
         {/* Start handle */}
         <div
-          className="scrubber-handle scrubber-handle-start"
-          style={{ left: `${timeToPosition(startTime)}%` }}
+          className={`scrubber-handle scrubber-handle-start ${isDragging === 'start' ? 'scrubber-handle-active' : ''}`}
+          style={{ left: `${startPos}%` }}
           onMouseDown={(e) => handleMouseDown(e, 'start')}
+          title="Drag to adjust clip start"
         >
-          <div className="handle-grip" />
+          <div className="handle-grip">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
         </div>
 
         {/* End handle */}
         <div
-          className="scrubber-handle scrubber-handle-end"
-          style={{ left: `${timeToPosition(endTime)}%` }}
+          className={`scrubber-handle scrubber-handle-end ${isDragging === 'end' ? 'scrubber-handle-active' : ''}`}
+          style={{ left: `${endPos}%` }}
           onMouseDown={(e) => handleMouseDown(e, 'end')}
+          title="Drag to adjust clip end"
         >
-          <div className="handle-grip" />
+          <div className="handle-grip">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
         </div>
 
         {/* Playhead */}
         <div
-          className="scrubber-playhead"
-          style={{ left: `${timeToPosition(currentTime)}%` }}
+          className={`scrubber-playhead ${isDragging === 'playhead' ? 'scrubber-playhead-active' : ''}`}
+          style={{ left: `${playheadPos}%` }}
           onMouseDown={(e) => handleMouseDown(e, 'playhead')}
+          title="Current playback position"
         />
       </div>
 
       {/* Time labels */}
       <div className="scrubber-labels">
-        <span>{formatTime(windowStart)}</span>
-        <span>{formatTime(currentTime)}</span>
-        <span>{formatTime(windowEnd)}</span>
+        <span className="scrubber-label-start">{formatTime(windowStart)}</span>
+        <span className="scrubber-label-current">
+          <span className="scrubber-label-icon">▶</span>
+          {formatTime(currentTime)}
+        </span>
+        <span className="scrubber-label-end">{formatTime(windowEnd)}</span>
+      </div>
+
+      {/* Clip duration indicator */}
+      <div className="scrubber-clip-info">
+        <span className="scrubber-clip-duration">
+          Clip: {formatTime(startTime)} - {formatTime(endTime)} ({formatDuration(endTime - startTime)})
+        </span>
       </div>
     </div>
   )
@@ -179,4 +277,13 @@ function formatTime(seconds: number): string {
   const secs = Math.floor(seconds % 60)
   const ms = Math.floor((seconds % 1) * 100)
   return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`
+  }
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.round(seconds % 60)
+  return `${mins}m ${secs}s`
 }
