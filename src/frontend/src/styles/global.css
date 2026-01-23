@@ -1142,6 +1142,179 @@ kbd {
 }
 
 /* ============================================
+   Export Complete / Feedback
+   ============================================ */
+
+.export-complete {
+  text-align: center;
+  padding: var(--spacing-xl);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 600px;
+  width: 100%;
+}
+
+.export-complete h2 {
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.export-message {
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-xl);
+}
+
+.feedback-section {
+  width: 100%;
+  text-align: left;
+  padding: var(--spacing-lg);
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--border-radius);
+}
+
+.feedback-section h3 {
+  font-size: 1rem;
+  margin-bottom: var(--spacing-xs);
+}
+
+.feedback-description {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-lg);
+}
+
+.clips-feedback-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.clip-feedback-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--border-radius-sm);
+}
+
+.clip-info {
+  flex: 1;
+  min-width: 120px;
+}
+
+.clip-name {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.clip-time {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  margin-left: var(--spacing-sm);
+}
+
+.feedback-buttons {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.btn-feedback {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.75rem;
+  border-radius: var(--border-radius-sm);
+  background-color: var(--color-bg-elevated);
+  border: 1px solid transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-width: auto;
+  min-height: auto;
+}
+
+.btn-feedback:hover {
+  border-color: var(--color-text-muted);
+}
+
+.btn-feedback.btn-good.active {
+  background-color: var(--color-primary-dim);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn-feedback.btn-bad.active {
+  background-color: var(--color-danger-dim);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.btn-notes {
+  padding: var(--spacing-xs);
+  font-size: 0.875rem;
+  background-color: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  min-width: auto;
+  min-height: auto;
+}
+
+.btn-notes:hover {
+  color: var(--color-text);
+}
+
+.notes-input {
+  width: 100%;
+  margin-top: var(--spacing-sm);
+}
+
+.notes-input input {
+  width: 100%;
+  padding: var(--spacing-sm);
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-bg-elevated);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+
+.notes-input input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.notes-input input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.feedback-error {
+  color: var(--color-danger);
+  font-size: 0.875rem;
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm);
+  background-color: var(--color-danger-dim);
+  border-radius: var(--border-radius-sm);
+}
+
+.feedback-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: center;
+}
+
+.feedback-summary {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: var(--spacing-lg);
+}
+
+/* ============================================
    App Error / Overlay States
    ============================================ */
 

@@ -1,5 +1,6 @@
 """Pydantic schemas for API request/response models."""
 
+from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -173,3 +174,60 @@ class ExportJobResponse(BaseModel):
     export_job_id: str
     status: str = Field("pending", description="Initial export status")
     total_clips: int = Field(..., description="Number of clips to export")
+
+
+# ============================================================================
+# Shot Feedback Schemas
+# ============================================================================
+
+
+class FeedbackType(str, Enum):
+    """Type of feedback on a detected shot."""
+
+    TRUE_POSITIVE = "true_positive"
+    FALSE_POSITIVE = "false_positive"
+
+
+class ShotFeedbackItem(BaseModel):
+    """Feedback for a single shot."""
+
+    shot_id: int
+    feedback_type: FeedbackType
+    notes: Optional[str] = Field(None, max_length=500, description="Optional user notes")
+
+
+class ShotFeedbackRequest(BaseModel):
+    """Request to submit feedback for multiple shots."""
+
+    feedback: list[ShotFeedbackItem]
+
+
+class ShotFeedbackResponse(BaseModel):
+    """Response for a single feedback record."""
+
+    id: int
+    job_id: str
+    shot_id: int
+    feedback_type: str
+    notes: Optional[str]
+    confidence_snapshot: Optional[float]
+    audio_confidence_snapshot: Optional[float]
+    visual_confidence_snapshot: Optional[float]
+    created_at: str
+
+
+class FeedbackStats(BaseModel):
+    """Aggregate statistics on collected feedback."""
+
+    total_feedback: int
+    true_positives: int
+    false_positives: int
+    precision: float = Field(..., description="TP / (TP + FP), 0 if no data")
+
+
+class FeedbackExportResponse(BaseModel):
+    """Response for exporting all feedback data."""
+
+    exported_at: str
+    total_records: int
+    records: list[dict[str, Any]]

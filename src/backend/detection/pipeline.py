@@ -23,6 +23,59 @@ class PipelineError(Exception):
         self.details = details or {}
 
 
+def deduplicate_strikes(
+    strikes: list[dict],
+    min_interval: float = 15.0,
+) -> list[dict]:
+    """Remove duplicate detections by keeping only the strongest strike in each time window.
+
+    When multiple strikes are detected within min_interval seconds of each other,
+    this likely represents a single golf shot with echoes, practice swings, or
+    other related sounds. We keep only the strike with highest confidence.
+
+    Args:
+        strikes: List of strike dictionaries with 'timestamp' and 'confidence' keys
+        min_interval: Minimum seconds between distinct shots (default 15s)
+
+    Returns:
+        Filtered list of strikes with duplicates removed
+    """
+    if not strikes:
+        return []
+
+    # Sort by timestamp
+    sorted_strikes = sorted(strikes, key=lambda s: s["timestamp"])
+
+    deduplicated = []
+    current_group = [sorted_strikes[0]]
+
+    for strike in sorted_strikes[1:]:
+        # Check if this strike is within the interval of the current group
+        group_start = current_group[0]["timestamp"]
+
+        if strike["timestamp"] - group_start <= min_interval:
+            # Same group - add to current group
+            current_group.append(strike)
+        else:
+            # New group - finalize current group and start new one
+            # Keep the strike with highest confidence from current group
+            best_strike = max(current_group, key=lambda s: s["confidence"])
+            deduplicated.append(best_strike)
+            current_group = [strike]
+
+    # Don't forget the last group
+    if current_group:
+        best_strike = max(current_group, key=lambda s: s["confidence"])
+        deduplicated.append(best_strike)
+
+    logger.info(
+        f"Deduplication: {len(strikes)} strikes -> {len(deduplicated)} "
+        f"(removed {len(strikes) - len(deduplicated)} duplicates within {min_interval}s windows)"
+    )
+
+    return deduplicated
+
+
 class ShotDetectionPipeline:
     """Combines audio and visual analysis to detect golf shots."""
 
@@ -104,6 +157,9 @@ class ShotDetectionPipeline:
 
             audio_strikes = self.audio_detector.detect_strikes(progress_callback=audio_progress)
             logger.info(f"Audio analysis found {len(audio_strikes)} potential strikes")
+
+            # Deduplicate nearby strikes (keeps strongest in each 25s window)
+            audio_strikes = deduplicate_strikes(audio_strikes, min_interval=25.0)
 
             report_progress("Analyzing audio for strikes", 40)
 

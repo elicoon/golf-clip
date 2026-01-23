@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { VideoDropzone } from './components/VideoDropzone'
 import { ProcessingView } from './components/ProcessingView'
 import { ClipReview } from './components/ClipReview'
+import { ExportComplete } from './components/ExportComplete'
 import { useAppStore } from './stores/appStore'
 
 type AppView = 'home' | 'processing' | 'review' | 'complete'
@@ -16,6 +17,7 @@ function App() {
   const [view, setView] = useState<AppView>('home')
   const [error, setError] = useState<ApiError | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [exportedClips, setExportedClips] = useState<string[]>([])
 
   const handleVideoSelected = useCallback(async (filePath: string) => {
     setError(null)
@@ -51,7 +53,8 @@ function App() {
     setView(needsReview ? 'review' : 'complete')
   }, [])
 
-  const handleReviewComplete = useCallback(() => {
+  const handleReviewComplete = useCallback((clips: string[]) => {
+    setExportedClips(clips)
     setView('complete')
   }, [])
 
@@ -59,6 +62,7 @@ function App() {
     setCurrentJob(null)
     setShots([])
     setError(null)
+    setExportedClips([])
     setView('home')
   }, [setCurrentJob, setShots])
 
@@ -111,15 +115,12 @@ function App() {
           />
         )}
 
-        {view === 'complete' && (
-          <div className="complete-view">
-            <div className="complete-icon">✓</div>
-            <h2>Processing Complete!</h2>
-            <p>Your clips have been exported successfully.</p>
-            <button onClick={handleReset} className="btn-primary btn-large">
-              Process Another Video
-            </button>
-          </div>
+        {view === 'complete' && currentJob && (
+          <ExportComplete
+            jobId={currentJob.job_id}
+            exportedClips={exportedClips}
+            onReset={handleReset}
+          />
         )}
       </main>
     </div>

@@ -381,3 +381,184 @@ async def load_jobs_into_memory() -> dict[str, dict[str, Any]]:
     """
     jobs = await get_all_jobs(limit=1000, include_shots=True)
     return {job["id"]: job for job in jobs}
+
+
+# ============================================================================
+# Shot Feedback Functions
+# ============================================================================
+
+
+def feedback_row_to_dict(row: aiosqlite.Row) -> dict[str, Any]:
+    """Convert a database row to a feedback dictionary."""
+    return {
+        "id": row["id"],
+        "job_id": row["job_id"],
+        "shot_id": row["shot_id"],
+        "feedback_type": row["feedback_type"],
+        "notes": row["notes"],
+        "confidence_snapshot": row["confidence_snapshot"],
+        "audio_confidence_snapshot": row["audio_confidence_snapshot"],
+        "visual_confidence_snapshot": row["visual_confidence_snapshot"],
+        "detection_features": deserialize_json(row["detection_features_json"]),
+        "created_at": row["created_at"],
+    }
+
+
+async def create_feedback(
+    job_id: str,
+    shot_id: int,
+    feedback_type: str,
+    notes: Optional[str] = None,
+    confidence_snapshot: Optional[float] = None,
+    audio_confidence_snapshot: Optional[float] = None,
+    visual_confidence_snapshot: Optional[float] = None,
+    detection_features: Optional[dict] = None,
+) -> dict[str, Any]:
+    """Create a feedback record for a shot.
+
+    Args:
+        job_id: The job ID the shot belongs to.
+        shot_id: The shot number being rated.
+        feedback_type: Either 'true_positive' or 'false_positive'.
+        notes: Optional user notes about the feedback.
+        confidence_snapshot: The shot's confidence at feedback time.
+        audio_confidence_snapshot: Audio confidence at feedback time.
+        visual_confidence_snapshot: Visual confidence at feedback time.
+        detection_features: Full detection feature dict for ML training.
+
+    Returns:
+        The created feedback record as a dictionary.
+    """
+    db = await get_db()
+    created_at = datetime.utcnow().isoformat()
+
+    cursor = await db.execute(
+        """
+        INSERT INTO shot_feedback (
+            job_id, shot_id, feedback_type, notes,
+            confidence_snapshot, audio_confidence_snapshot,
+            visual_confidence_snapshot, detection_features_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            job_id,
+            shot_id,
+            feedback_type,
+            notes,
+            confidence_snapshot,
+            audio_confidence_snapshot,
+            visual_confidence_snapshot,
+            serialize_json(detection_features),
+            created_at,
+        ),
+    )
+    await db.commit()
+
+    feedback_id = cursor.lastrowid
+    logger.debug(f"Created feedback {feedback_id} for job {job_id}, shot {shot_id}: {feedback_type}")
+
+    return {
+        "id": feedback_id,
+        "job_id": job_id,
+        "shot_id": shot_id,
+        "feedback_type": feedback_type,
+        "notes": notes,
+        "confidence_snapshot": confidence_snapshot,
+        "audio_confidence_snapshot": audio_confidence_snapshot,
+        "visual_confidence_snapshot": visual_confidence_snapshot,
+        "detection_features": detection_features,
+        "created_at": created_at,
+    }
+
+
+async def get_feedback_for_job(job_id: str) -> list[dict[str, Any]]:
+    """Get all feedback records for a job.
+
+    Args:
+        job_id: The job ID to get feedback for.
+
+    Returns:
+        List of feedback records as dictionaries.
+    """
+    db = await get_db()
+
+    async with db.execute(
+        "SELECT * FROM shot_feedback WHERE job_id = ? ORDER BY shot_id",
+        (job_id,),
+    ) as cursor:
+        rows = await cursor.fetchall()
+
+    return [feedback_row_to_dict(row) for row in rows]
+
+
+async def get_all_feedback(
+    limit: int = 1000,
+    offset: int = 0,
+    feedback_type: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """Get all feedback records with optional filtering.
+
+    Args:
+        limit: Maximum records to return.
+        offset: Number of records to skip (for pagination).
+        feedback_type: Filter by feedback type if provided.
+
+    Returns:
+        List of feedback records as dictionaries.
+    """
+    db = await get_db()
+
+    if feedback_type:
+        query = """
+            SELECT * FROM shot_feedback
+            WHERE feedback_type = ?
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        params = (feedback_type, limit, offset)
+    else:
+        query = """
+            SELECT * FROM shot_feedback
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        params = (limit, offset)
+
+    async with db.execute(query, params) as cursor:
+        rows = await cursor.fetchall()
+
+    return [feedback_row_to_dict(row) for row in rows]
+
+
+async def get_feedback_stats() -> dict[str, Any]:
+    """Get aggregate statistics on collected feedback.
+
+    Returns:
+        Dictionary with total counts and precision metric.
+    """
+    db = await get_db()
+
+    async with db.execute(
+        """
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN feedback_type = 'true_positive' THEN 1 ELSE 0 END) as tp,
+            SUM(CASE WHEN feedback_type = 'false_positive' THEN 1 ELSE 0 END) as fp
+        FROM shot_feedback
+        """
+    ) as cursor:
+        row = await cursor.fetchone()
+
+    total = row["total"] or 0
+    tp = row["tp"] or 0
+    fp = row["fp"] or 0
+
+    # Precision = TP / (TP + FP), handle division by zero
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+
+    return {
+        "total_feedback": total,
+        "true_positives": tp,
+        "false_positives": fp,
+        "precision": round(precision, 4),
+    }

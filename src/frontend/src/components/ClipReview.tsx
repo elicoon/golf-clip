@@ -5,7 +5,7 @@ import { Scrubber } from './Scrubber'
 interface ClipReviewProps {
   jobId: string
   videoPath: string
-  onComplete: () => void
+  onComplete: (exportedClips: string[]) => void
 }
 
 type LoadingState = 'idle' | 'loading' | 'error'
@@ -289,9 +289,10 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   }
 
   const handleExportComplete = () => {
+    const exported = exportProgress?.exported || []
     setShowExportModal(false)
     setExportProgress(null)
-    onComplete()
+    onComplete(exported)
   }
 
   const togglePlayPause = useCallback(() => {

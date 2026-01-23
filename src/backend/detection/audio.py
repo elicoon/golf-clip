@@ -21,7 +21,7 @@ class DetectionConfig:
     frequency_high: int = 8000
 
     # Timing constraints
-    min_strike_interval: float = 3.0  # Minimum seconds between strikes
+    min_strike_interval: float = 25.0  # Minimum seconds between strikes (golf shots are typically 30-60s apart on a range)
 
     # Sensitivity parameters (0-1 scale, higher = more sensitive)
     sensitivity: float = 0.5
@@ -61,6 +61,8 @@ class StrikeDetection:
     spectral_flatness: float
     onset_strength: float
     frequency_centroid: float
+    decay_ratio: float = 0.5  # How quickly sound decays (higher = faster = more impulsive)
+    zero_crossing_rate: float = 0.25  # ZCR around the peak
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API responses."""
@@ -71,6 +73,8 @@ class StrikeDetection:
             "spectral_flatness": self.spectral_flatness,
             "onset_strength": self.onset_strength,
             "frequency_centroid": self.frequency_centroid,
+            "decay_ratio": self.decay_ratio,
+            "zero_crossing_rate": self.zero_crossing_rate,
         }
 
 
@@ -234,6 +238,69 @@ class AudioStrikeDetector:
 
         return peaks, properties
 
+    def _compute_zero_crossing_rate(self, start_sample: int, end_sample: int) -> float:
+        """Compute zero-crossing rate for a segment of audio.
+
+        Args:
+            start_sample: Start sample index
+            end_sample: End sample index
+
+        Returns:
+            Zero-crossing rate (0-1 normalized)
+        """
+        if self.y is None or start_sample >= end_sample:
+            return 0.5
+
+        start_sample = max(0, start_sample)
+        end_sample = min(len(self.y), end_sample)
+        segment = self.y[start_sample:end_sample]
+
+        if len(segment) < 2:
+            return 0.5
+
+        # Count zero crossings
+        zero_crossings = np.sum(np.abs(np.diff(np.sign(segment))) > 0)
+        zcr = zero_crossings / (len(segment) - 1)
+
+        return float(zcr)
+
+    def _compute_decay_ratio(self, peak_idx: int, onset_env: np.ndarray) -> float:
+        """Compute decay ratio after a peak.
+
+        Golf ball strikes have fast decay (sharp transient).
+        Practice swings have slower, more sustained decay.
+
+        Args:
+            peak_idx: Index of the peak in onset envelope
+            onset_env: Full onset envelope
+
+        Returns:
+            Decay ratio (higher = faster decay = more like a strike)
+        """
+        peak_height = onset_env[peak_idx]
+
+        # Look at 10 frames after the peak (~100ms at typical hop length)
+        decay_window = 10
+        end_idx = min(len(onset_env), peak_idx + decay_window)
+
+        if end_idx <= peak_idx + 1:
+            return 0.5
+
+        post_peak = onset_env[peak_idx + 1 : end_idx]
+
+        if len(post_peak) == 0:
+            return 0.5
+
+        # Calculate how much the signal decays
+        min_after = np.min(post_peak)
+        mean_after = np.mean(post_peak)
+
+        # Decay ratio: how much it dropped relative to peak
+        # Higher ratio = faster decay = more impulsive (like a strike)
+        decay_from_peak = (peak_height - mean_after) / (peak_height + 1e-6)
+
+        return float(np.clip(decay_from_peak, 0, 1))
+
     def _calculate_confidence(
         self,
         peak_idx: int,
@@ -248,8 +315,11 @@ class AudioStrikeDetector:
         Confidence is based on multiple features:
         1. Peak height relative to local context (transient strength)
         2. Spectral flatness (should be moderate for strikes)
-        3. Spectral centroid (should be in expected range)
-        4. Peak sharpness (rise time)
+        3. Spectral centroid (should be in expected range for ball impact)
+        4. Peak prominence (sharpness)
+        5. Rise time (sharper attack = better)
+        6. Decay ratio (fast decay = impulsive strike vs sustained swing)
+        7. Zero-crossing rate (impulsive sounds have characteristic ZCR)
 
         Args:
             peak_idx: Index of the peak in onset envelope
@@ -277,18 +347,24 @@ class AudioStrikeDetector:
             flatness = spectral_flatness[peak_idx]
         else:
             flatness = spectral_flatness[-1]
-        # Optimal flatness around 0.2-0.4
+        # Optimal flatness around 0.2-0.4 for ball strikes
         flatness_score = 1.0 - abs(flatness - 0.3) * 2
         flatness_score = max(0, min(1, flatness_score))
 
-        # Feature 3: Spectral centroid
+        # Feature 3: Spectral centroid - TIGHTENED for ball impact
         if peak_idx < len(spectral_centroid):
             centroid = spectral_centroid[peak_idx]
         else:
             centroid = spectral_centroid[-1]
-        # Expected centroid for golf strikes: 2000-5000 Hz
-        target_centroid = self.config.target_centroid_hz
-        centroid_score = 1.0 - abs(centroid - target_centroid) / 5000
+        # Golf ball strikes typically have centroid in 2500-4500 Hz range
+        # Tighter targeting than before (was 5000 Hz tolerance)
+        target_centroid = self.config.target_centroid_hz  # 3500 Hz
+        centroid_deviation = abs(centroid - target_centroid)
+        # Score drops off faster outside the optimal range
+        if centroid_deviation < 1000:
+            centroid_score = 1.0 - (centroid_deviation / 1000) * 0.3
+        else:
+            centroid_score = 0.7 - (centroid_deviation - 1000) / 3000
         centroid_score = max(0, min(1, centroid_score))
 
         # Feature 4: Peak prominence (sharpness)
@@ -302,6 +378,7 @@ class AudioStrikeDetector:
             prominence_score = 0.5
 
         # Feature 5: Rise time (sharper = better)
+        # Ball strikes have very fast attack (<10ms)
         if peak_idx > 5:
             pre_peak = onset_env[peak_idx - 5 : peak_idx]
             rise = peak_height - np.min(pre_peak)
@@ -309,13 +386,38 @@ class AudioStrikeDetector:
         else:
             rise_score = 0.5
 
-        # Weighted combination
+        # Feature 6: Decay ratio (NEW)
+        # Ball strikes decay quickly, practice swings sustain longer
+        decay_ratio = self._compute_decay_ratio(peak_idx, onset_env)
+        # Score higher for faster decay (more impulsive)
+        decay_score = decay_ratio  # Already 0-1
+
+        # Feature 7: Zero-crossing rate (NEW)
+        # Convert peak_idx to sample index for ZCR calculation
+        peak_sample = peak_idx * self._hop_length
+        zcr_window_samples = int(0.05 * self.sr)  # 50ms window around peak
+        zcr = self._compute_zero_crossing_rate(
+            peak_sample - zcr_window_samples // 2,
+            peak_sample + zcr_window_samples // 2
+        )
+        # Ball strikes typically have ZCR in 0.1-0.4 range
+        # Practice swings (whooshing air) often have higher ZCR
+        if 0.1 <= zcr <= 0.4:
+            zcr_score = 1.0
+        elif zcr < 0.1:
+            zcr_score = zcr / 0.1  # Penalize very low ZCR
+        else:
+            zcr_score = max(0, 1.0 - (zcr - 0.4) * 2)  # Penalize high ZCR (swooshing)
+
+        # Weighted combination - rebalanced with new features
         confidence = (
-            height_score * 0.30
-            + flatness_score * 0.15
-            + centroid_score * 0.15
-            + prominence_score * 0.25
-            + rise_score * 0.15
+            height_score * 0.20       # Reduced from 0.30
+            + flatness_score * 0.10   # Reduced from 0.15
+            + centroid_score * 0.15   # Same
+            + prominence_score * 0.15 # Reduced from 0.25
+            + rise_score * 0.10       # Reduced from 0.15
+            + decay_score * 0.20      # NEW - important discriminator
+            + zcr_score * 0.10        # NEW - helps filter swoosh sounds
         )
 
         features = {
@@ -323,6 +425,8 @@ class AudioStrikeDetector:
             "spectral_flatness": float(flatness),
             "onset_strength": float(height_ratio),
             "frequency_centroid": float(centroid),
+            "decay_ratio": float(decay_ratio),
+            "zero_crossing_rate": float(zcr),
         }
 
         return float(confidence), features

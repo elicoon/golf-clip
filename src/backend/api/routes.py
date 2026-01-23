@@ -16,25 +16,33 @@ from backend.api.schemas import (
     ExportClipsRequest,
     ExportJobResponse,
     ExportJobStatus,
+    FeedbackExportResponse,
+    FeedbackStats,
     HoleInfo,
     JobError,
     ProcessingStatus,
     ProcessVideoRequest,
     ProcessVideoResponse,
     ProgressEvent,
+    ShotFeedbackRequest,
+    ShotFeedbackResponse,
     VideoInfo,
 )
 from backend.core.config import settings
 from backend.core.video import extract_clip, get_video_info
 from backend.detection.pipeline import ShotDetectionPipeline
 from backend.models.job import (
+    create_feedback,
     create_job,
-    get_job,
-    get_all_jobs,
-    update_job,
-    delete_job,
     create_shots,
+    delete_job,
+    get_all_feedback,
+    get_all_jobs,
+    get_feedback_for_job,
+    get_feedback_stats,
+    get_job,
     get_shots_for_job,
+    update_job,
     update_shot,
 )
 
@@ -760,3 +768,132 @@ async def export_all_jobs():
         "job_count": len(jobs),
         "jobs": jobs,
     }
+
+
+# =============================================================================
+# Shot Feedback Endpoints
+# NOTE: Specific paths (/feedback/export, /feedback/stats) MUST come before
+# parameterized paths (/feedback/{job_id}) for correct route matching.
+# =============================================================================
+
+
+@router.get("/feedback/export", response_model=FeedbackExportResponse)
+async def export_feedback(limit: int = 10000, offset: int = 0, feedback_type: Optional[str] = None):
+    """Export all feedback data for analysis and model training.
+
+    Args:
+        limit: Maximum records to return (default 10000).
+        offset: Number of records to skip for pagination.
+        feedback_type: Filter by 'true_positive' or 'false_positive'.
+
+    Returns:
+        All feedback records with full detection feature snapshots.
+    """
+    if feedback_type and feedback_type not in ("true_positive", "false_positive"):
+        raise HTTPException(
+            status_code=400,
+            detail="feedback_type must be 'true_positive' or 'false_positive'"
+        )
+
+    records = await get_all_feedback(limit=limit, offset=offset, feedback_type=feedback_type)
+
+    return FeedbackExportResponse(
+        exported_at=datetime.utcnow().isoformat(),
+        total_records=len(records),
+        records=records,
+    )
+
+
+@router.get("/feedback/stats", response_model=FeedbackStats)
+async def get_feedback_statistics():
+    """Get aggregate statistics on collected feedback.
+
+    Returns precision metric (TP / (TP + FP)) and counts.
+    """
+    stats = await get_feedback_stats()
+
+    return FeedbackStats(
+        total_feedback=stats["total_feedback"],
+        true_positives=stats["true_positives"],
+        false_positives=stats["false_positives"],
+        precision=stats["precision"],
+    )
+
+
+@router.post("/feedback/{job_id}", response_model=list[ShotFeedbackResponse])
+async def submit_feedback(job_id: str, request: ShotFeedbackRequest):
+    """Submit feedback on detected shots (true positive or false positive).
+
+    This data is used to improve detection algorithms over time.
+    """
+    # Get job with shots to snapshot detection features
+    job = _get_cached_job(job_id)
+    if not job:
+        job = await get_job(job_id, include_shots=True)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        _cache_job(job_id, job)
+
+    # Build shot lookup for snapshotting
+    shots_by_id = {shot["id"]: shot for shot in job.get("shots", [])}
+
+    created_feedback = []
+    for item in request.feedback:
+        shot = shots_by_id.get(item.shot_id)
+        if not shot:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Shot {item.shot_id} not found in job {job_id}"
+            )
+
+        # Snapshot detection features at feedback time
+        feedback_record = await create_feedback(
+            job_id=job_id,
+            shot_id=item.shot_id,
+            feedback_type=item.feedback_type.value,
+            notes=item.notes,
+            confidence_snapshot=shot.get("confidence"),
+            audio_confidence_snapshot=shot.get("audio_confidence"),
+            visual_confidence_snapshot=shot.get("visual_confidence"),
+            detection_features=shot.get("confidence_reasons"),
+        )
+
+        created_feedback.append(ShotFeedbackResponse(
+            id=feedback_record["id"],
+            job_id=feedback_record["job_id"],
+            shot_id=feedback_record["shot_id"],
+            feedback_type=feedback_record["feedback_type"],
+            notes=feedback_record["notes"],
+            confidence_snapshot=feedback_record["confidence_snapshot"],
+            audio_confidence_snapshot=feedback_record["audio_confidence_snapshot"],
+            visual_confidence_snapshot=feedback_record["visual_confidence_snapshot"],
+            created_at=feedback_record["created_at"],
+        ))
+
+    return created_feedback
+
+
+@router.get("/feedback/{job_id}", response_model=list[ShotFeedbackResponse])
+async def get_job_feedback(job_id: str):
+    """Get all feedback records for a specific job."""
+    # Verify job exists
+    job = _get_cached_job(job_id) or await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    feedback_records = await get_feedback_for_job(job_id)
+
+    return [
+        ShotFeedbackResponse(
+            id=record["id"],
+            job_id=record["job_id"],
+            shot_id=record["shot_id"],
+            feedback_type=record["feedback_type"],
+            notes=record["notes"],
+            confidence_snapshot=record["confidence_snapshot"],
+            audio_confidence_snapshot=record["audio_confidence_snapshot"],
+            visual_confidence_snapshot=record["visual_confidence_snapshot"],
+            created_at=record["created_at"],
+        )
+        for record in feedback_records
+    ]

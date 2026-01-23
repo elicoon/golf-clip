@@ -13,7 +13,7 @@ from loguru import logger
 DB_PATH = Path.home() / ".golfclip" / "golfclip.db"
 
 # Current schema version - increment when making schema changes
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Global connection pool (single connection for SQLite)
 _db_connection: Optional[aiosqlite.Connection] = None
@@ -67,6 +67,8 @@ async def _apply_migrations(current_version: int) -> None:
     """Apply database migrations incrementally."""
     if current_version < 1:
         await _migrate_v1()
+    if current_version < 2:
+        await _migrate_v2()
 
 
 async def _migrate_v1() -> None:
@@ -122,6 +124,39 @@ async def _migrate_v1() -> None:
     )
 
     logger.info("Migration v1 applied successfully")
+
+
+async def _migrate_v2() -> None:
+    """Add shot_feedback table for collecting user feedback on detection quality."""
+    logger.info("Applying migration v2: Shot feedback table")
+
+    await _db_connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS shot_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            shot_id INTEGER NOT NULL,
+            feedback_type TEXT NOT NULL,
+            notes TEXT,
+            confidence_snapshot REAL,
+            audio_confidence_snapshot REAL,
+            visual_confidence_snapshot REAL,
+            detection_features_json TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_feedback_type ON shot_feedback(feedback_type);
+        CREATE INDEX IF NOT EXISTS idx_feedback_job ON shot_feedback(job_id);
+        """
+    )
+
+    await _db_connection.execute(
+        "INSERT OR IGNORE INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
+        (2, datetime.utcnow().isoformat(), "Shot feedback table for TP/FP labeling"),
+    )
+
+    logger.info("Migration v2 applied successfully")
 
 
 async def close_db() -> None:
