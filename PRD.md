@@ -161,7 +161,33 @@ When auto-tracking fails:
 
 ---
 
-### Phase 4: Future Enhancements
+### Phase 4: GPS & Course Maps Integration
+
+#### 4.1 Google Maps 3D Hole Flyover
+Generate cinematic 3D flyover videos of each hole before the shot clips:
+- **Course Detection:** Use GPS coordinates from video metadata or user selection
+- **Google Maps/Earth Integration:** Pull 3D terrain and satellite imagery for the course
+- **Flyover Animation:** Automatically generate a 5-10 second aerial flyover from tee to green
+- **Styling:** Match the broadcast-style flyovers seen on PGA Tour coverage
+- **Transition:** Smooth transition from flyover into the first shot clip
+
+#### 4.2 GPS Shot Map Overlay
+Display an overhead map showing where each shot landed:
+- **Shot Plotting:** Mark each shot location on a 2D course map
+- **Distance Indicators:** Show distance from tee and distance to pin
+- **Shot Path Lines:** Draw lines connecting shot locations
+- **Mini-map Overlay:** Small corner overlay showing current position on hole
+- **End-of-hole Summary:** Full-screen shot map showing the complete hole playthrough
+
+#### 4.3 Data Sources
+- **GPS from Video:** Extract location metadata from iPhone recordings
+- **Manual Course Selection:** User selects course from database
+- **Golf GPS App Integration:** Import shot data from Arccos, Grint, 18Birdies, etc.
+- **Manual Shot Marking:** User can manually place shots on map if GPS unavailable
+
+---
+
+### Phase 5: Additional Future Enhancements
 
 - **In-app recording:** iPhone companion app for direct capture
 - **Cloud processing:** For users without powerful Macs

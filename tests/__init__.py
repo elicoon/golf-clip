@@ -1,0 +1,1 @@
+"""GolfClip tests."""
