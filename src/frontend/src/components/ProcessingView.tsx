@@ -171,6 +171,21 @@ export function ProcessingView({ jobId, onComplete, onCancel }: ProcessingViewPr
           shots_needing_review: prev?.shots_needing_review || 0,
           error_message: null,
         }))
+
+        // Check if this is a completion message (progress 100% with completion step)
+        // This provides a fallback if the 'complete' SSE event doesn't fire
+        if (data.progress >= 100 && (
+          data.step.toLowerCase().includes('complete') ||
+          data.step.toLowerCase().includes('need review')
+        )) {
+          // Delay slightly to allow the 'complete' event to arrive first
+          setTimeout(() => {
+            if (!isCompletedRef.current) {
+              const needsReview = data.step.toLowerCase().includes('need review')
+              handleComplete(needsReview)
+            }
+          }, 500)
+        }
       } catch {
         // Ignore parse errors (keepalive comments)
       }

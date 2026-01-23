@@ -51,9 +51,14 @@ golf-clip/
 ## Development Commands
 
 ```bash
-# Run backend server
-cd golf-clip/src/backend
-uvicorn main:app --reload
+# Run backend server (from src directory)
+cd golf-clip/src
+uvicorn backend.main:app --host 127.0.0.1 --port 8420 --reload
+
+# Run frontend (from frontend directory)
+cd golf-clip/src/frontend
+npm install
+npm run dev
 
 # Run tests
 cd golf-clip/src/backend
@@ -65,6 +70,14 @@ pytest tests/test_integration.py -v
 # Skip slow tests
 pytest tests/ -v -m "not slow"
 ```
+
+## Running in Browser (Dev Mode)
+
+When running the frontend in a browser (not Tauri), file system access is restricted:
+
+1. **File Upload**: Videos are uploaded to the backend via `POST /api/upload`, which saves them to a temp directory and returns the server path
+2. **Video Playback**: The `GET /api/video` endpoint streams video files to the browser with Range request support for seeking
+3. **File Selection**: Click "Select File" to upload, or use the hidden "Enter path manually (dev mode)" option for local paths
 
 ## Setup (macOS)
 
@@ -121,6 +134,7 @@ class JobCacheProxy:
 ## API Endpoints
 
 ### Processing & Export
+- `POST /api/upload` - Upload video file (returns server path for processing)
 - `POST /api/process` - Start video processing/detection job
 - `GET /api/status/{job_id}` - Get job status
 - `GET /api/progress/{job_id}` - SSE progress stream
@@ -131,6 +145,7 @@ class JobCacheProxy:
 - `GET /api/jobs` - List all jobs
 - `DELETE /api/jobs/{job_id}` - Delete a job
 - `GET /api/video-info?path=...` - Get video metadata
+- `GET /api/video?path=...` - Stream video file (supports Range requests for seeking)
 
 ### Feedback Collection (for ML improvement)
 - `POST /api/feedback/{job_id}` - Submit TP/FP feedback on detected shots

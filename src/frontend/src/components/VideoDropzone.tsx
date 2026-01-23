@@ -12,6 +12,9 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null)
+  const [manualPath, setManualPath] = useState('')
+  const [showManualInput, setShowManualInput] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
 
@@ -35,7 +38,7 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
     return null
   }
 
-  const handleFile = useCallback((file: File) => {
+  const handleFile = useCallback(async (file: File) => {
     const validationError = validateFile(file)
     if (validationError) {
       setError(validationError)
@@ -44,10 +47,48 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
 
     setError(null)
 
-    // In Tauri, we can get the file path directly
-    // For web/development, use the file name
-    const filePath = (file as any).path || file.name
-    onVideoSelected(filePath)
+    // Check if running in Tauri (has native file path access)
+    const nativePath = (file as any).path
+    if (nativePath) {
+      // Tauri mode: use native path directly
+      onVideoSelected(nativePath)
+      return
+    }
+
+    // Browser mode: upload file to server
+    setIsLoading(true)
+    setUploadProgress('Preparing upload...')
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1)
+      setUploadProgress(`Uploading ${file.name} (${fileSizeMB} MB)...`)
+
+      const response = await fetch('http://127.0.0.1:8420/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || `Upload failed: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setUploadProgress(null)
+
+      // Use the server path for processing
+      onVideoSelected(data.path)
+
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Upload failed'
+      setError(message)
+      setUploadProgress(null)
+    } finally {
+      setIsLoading(false)
+    }
   }, [onVideoSelected])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -148,6 +189,13 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
     }
   }
 
+  const handleManualPathSubmit = () => {
+    if (manualPath.trim()) {
+      setError(null)
+      onVideoSelected(manualPath.trim())
+    }
+  }
+
   return (
     <div
       className={`dropzone ${isDragging ? 'dropzone-active' : ''} ${error ? 'dropzone-has-error' : ''}`}
@@ -174,13 +222,39 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
           {isLoading ? (
             <>
               <span className="spinner" />
-              Loading...
+              {uploadProgress || 'Loading...'}
             </>
           ) : (
             'Select File'
           )}
         </button>
         <p className="dropzone-hint">Supports MP4, MOV, M4V (up to {MAX_FILE_SIZE_GB}GB)</p>
+
+        {/* Dev mode: manual path input */}
+        <div className="manual-path-section">
+          <button
+            onClick={() => setShowManualInput(!showManualInput)}
+            className="btn-link"
+            type="button"
+          >
+            {showManualInput ? 'Hide' : 'Enter path manually'} (dev mode)
+          </button>
+          {showManualInput && (
+            <div className="manual-path-input">
+              <input
+                type="text"
+                value={manualPath}
+                onChange={(e) => setManualPath(e.target.value)}
+                placeholder="/path/to/your/video.mp4"
+                onKeyDown={(e) => e.key === 'Enter' && handleManualPathSubmit()}
+              />
+              <button onClick={handleManualPathSubmit} className="btn-secondary">
+                Load
+              </button>
+            </div>
+          )}
+        </div>
+
         {error && (
           <div className="dropzone-error" role="alert">
             <span className="error-icon">⚠</span>

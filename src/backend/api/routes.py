@@ -6,8 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from fastapi.responses import StreamingResponse
+import shutil
+import tempfile
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Request
+from fastapi.responses import StreamingResponse, FileResponse
 from loguru import logger
 
 from backend.api.schemas import (
@@ -89,6 +92,56 @@ async def _emit_progress(job_id: str, step: str, progress: float, details: Optio
         except asyncio.QueueFull:
             # Queue is full, skip this event (client is slow)
             logger.warning(f"Progress queue full for job {job_id}, skipping event")
+
+
+# Directory for uploaded videos
+_UPLOAD_DIR = Path(tempfile.gettempdir()) / "golfclip_uploads"
+
+
+@router.post("/upload")
+async def upload_video(file: UploadFile = File(...)):
+    """Upload a video file for processing.
+
+    Returns the server path where the file was saved, which can then be
+    passed to /process endpoint.
+    """
+    # Validate file type
+    allowed_extensions = {".mp4", ".mov", ".m4v"}
+    file_ext = Path(file.filename or "").suffix.lower()
+
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+        )
+
+    # Create upload directory if needed
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Generate unique filename to avoid collisions
+    unique_id = str(uuid.uuid4())[:8]
+    safe_filename = f"{unique_id}_{file.filename}"
+    file_path = _UPLOAD_DIR / safe_filename
+
+    try:
+        # Stream file to disk to handle large files
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        logger.info(f"Uploaded video saved to {file_path}")
+
+        return {
+            "path": str(file_path),
+            "filename": file.filename,
+            "size": file_path.stat().st_size,
+        }
+
+    except Exception as e:
+        # Clean up on error
+        if file_path.exists():
+            file_path.unlink()
+        logger.exception(f"Failed to save uploaded file: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
 
 
 @router.post("/process", response_model=ProcessVideoResponse)
@@ -633,6 +686,77 @@ async def get_video_info_endpoint(path: str):
     except Exception as e:
         logger.exception(f"Failed to get video info: {video_path}")
         raise HTTPException(status_code=400, detail=f"Could not read video: {e}")
+
+
+@router.get("/video")
+async def stream_video(path: str, request: Request):
+    """Stream a video file for playback in the browser.
+
+    Supports HTTP Range requests for seeking.
+    """
+    video_path = Path(path)
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found")
+
+    file_size = video_path.stat().st_size
+
+    # Determine content type based on extension
+    ext = video_path.suffix.lower()
+    content_types = {
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".m4v": "video/x-m4v",
+    }
+    content_type = content_types.get(ext, "video/mp4")
+
+    # Handle range requests for video seeking
+    range_header = request.headers.get("range")
+
+    if range_header:
+        # Parse range header (e.g., "bytes=0-1024")
+        try:
+            range_match = range_header.replace("bytes=", "").split("-")
+            start = int(range_match[0]) if range_match[0] else 0
+            end = int(range_match[1]) if range_match[1] else file_size - 1
+        except (ValueError, IndexError):
+            start = 0
+            end = file_size - 1
+
+        # Clamp values
+        start = max(0, start)
+        end = min(end, file_size - 1)
+        content_length = end - start + 1
+
+        def iterfile():
+            with open(video_path, "rb") as f:
+                f.seek(start)
+                remaining = content_length
+                chunk_size = 64 * 1024  # 64KB chunks
+                while remaining > 0:
+                    read_size = min(chunk_size, remaining)
+                    data = f.read(read_size)
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+
+        return StreamingResponse(
+            iterfile(),
+            status_code=206,
+            media_type=content_type,
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(content_length),
+            },
+        )
+    else:
+        # Full file response
+        return FileResponse(
+            video_path,
+            media_type=content_type,
+            headers={"Accept-Ranges": "bytes"},
+        )
 
 
 @router.get("/jobs")

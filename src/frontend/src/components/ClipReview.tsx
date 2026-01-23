@@ -466,7 +466,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         )}
         <video
           ref={videoRef}
-          src={`file://${videoPath}`}
+          src={`http://127.0.0.1:8420/api/video?path=${encodeURIComponent(videoPath)}`}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onLoadedData={handleVideoLoad}
