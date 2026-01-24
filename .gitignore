@@ -74,3 +74,6 @@ dist/
 *.temp
 temp/
 tmp/
+
+# Git worktrees
+.worktrees/
