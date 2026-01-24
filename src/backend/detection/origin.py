@@ -60,7 +60,7 @@ class BallOriginDetector:
         self,
         video_path: Path,
         strike_time: float,
-        look_before: float = 1.5,
+        look_before: float = 2.5,
     ) -> Optional[OriginDetection]:
         """Detect ball origin position at address (before swing).
 
@@ -68,7 +68,7 @@ class BallOriginDetector:
             video_path: Path to video file
             strike_time: Timestamp of ball strike (from audio detection)
             look_before: How many seconds before strike to look for ball.
-                        Default 1.5s to catch address position before backswing.
+                        Default 2.5s to reliably catch address position before backswing starts.
 
         Returns:
             OriginDetection with position and confidence, or None if not found
@@ -318,10 +318,28 @@ class BallOriginDetector:
             if not (gy1 <= grip_y <= gy2):
                 continue
 
-            # Constraint 2: Clubhead end terminates within ~100px of y-max (feet level)
+            # Constraint 2: Clubhead end terminates near y-max (feet level)
             # gy2 is y-max of golfer bbox (feet)
-            if abs(clubhead_y - gy2) > 100:
+            # The clubhead should be AT or slightly ABOVE feet level, not below
+            # The ball sits at ground level, which is approximately where the feet are
+            # Allow up to 50px above (club can be slightly off ground at address)
+            # Allow only 10px below (small tolerance for bbox inaccuracy)
+            if clubhead_y < gy2 - 50:  # Too high above feet
                 continue
+            if clubhead_y > gy2 + 10:  # Too far below feet - truncate the line
+                # Calculate where the line intersects gy2 (feet level)
+                target_y = gy2
+                # Using line equation: y - grip_y = slope * (x - grip_x)
+                # slope = (clubhead_y - grip_y) / (clubhead_x - grip_x)
+                if clubhead_x != grip_x:
+                    slope = (clubhead_y - grip_y) / (clubhead_x - grip_x)
+                    # Solve for x when y = target_y
+                    clubhead_x = grip_x + (target_y - grip_y) / slope
+                clubhead_y = target_y
+                # Recalculate length after truncation
+                dx = clubhead_x - grip_x
+                dy = clubhead_y - grip_y
+                length = np.sqrt(dx ** 2 + dy ** 2)
 
             # Constraint 4: Clubhead at maximum x-value
             # Already ensured by our clubhead/grip assignment above
@@ -407,13 +425,55 @@ class BallOriginDetector:
             # If clubhead detection also fails, return best shaft candidate anyway
             logger.debug("Clubhead detection also failed, using best shaft candidate")
 
-        logger.info(
-            f"Shaft detected: clubhead at ({best['x']:.0f},{best['y']:.0f}), "
-            f"grip at ({best['grip_x']:.0f},{best['grip_y']:.0f}), "
-            f"length={best['length']:.0f}px, angle={best['angle']:.1f}°, score={best['score']:.2f}"
+        # The shaft endpoint is the HOSEL (where shaft meets clubhead).
+        # To find the ball position:
+        # - Y coordinate: Use the hosel Y (ground level where ball sits)
+        # - X coordinate: Detect the clubhead and use its center X
+
+        hosel_x = best['x']
+        hosel_y = best['y']
+
+        # Detect the clubhead region near the hosel to get accurate X position
+        clubhead_center = self._detect_clubhead_center(
+            frame, hosel_x, hosel_y, golfer_bbox
         )
 
-        return best
+        if clubhead_center:
+            ball_x = clubhead_center['x']
+            # Y from clubhead center (represents hosel midpoint better than shaft endpoint)
+            # The clubhead center Y is at approximately the same level as the hosel midpoint
+            ball_y = clubhead_center['y']
+            logger.info(
+                f"Shaft+clubhead detected: hosel at ({hosel_x:.0f},{hosel_y:.0f}), "
+                f"clubhead center at ({clubhead_center['x']:.0f},{clubhead_center['y']:.0f}), "
+                f"ball at ({ball_x:.0f},{ball_y:.0f}), "
+                f"grip at ({best['grip_x']:.0f},{best['grip_y']:.0f}), "
+                f"length={best['length']:.0f}px, angle={best['angle']:.1f}°, score={best['score']:.2f}"
+            )
+        else:
+            # Fallback: use hosel position with small X offset
+            # Driver clubhead is ~115mm wide, at 4K that's roughly 40-60px
+            ball_x = hosel_x + 30  # Conservative offset to clubhead center
+            ball_y = min(hosel_y, gy2)  # Cap at feet level
+            logger.info(
+                f"Shaft detected (no clubhead): hosel at ({hosel_x:.0f},{hosel_y:.0f}), "
+                f"ball at ({ball_x:.0f},{ball_y:.0f}) with fallback offset, "
+                f"grip at ({best['grip_x']:.0f},{best['grip_y']:.0f}), "
+                f"length={best['length']:.0f}px, angle={best['angle']:.1f}°, score={best['score']:.2f}"
+            )
+
+        return {
+            "x": ball_x,
+            "y": ball_y,
+            "hosel_x": hosel_x,
+            "hosel_y": hosel_y,
+            "grip_x": best['grip_x'],
+            "grip_y": best['grip_y'],
+            "length": best['length'],
+            "angle": best['angle'],
+            "color_score": best['color_score'],
+            "score": best['score'],
+        }
 
     def _detect_clubhead_region(
         self,
@@ -515,6 +575,140 @@ class BallOriginDetector:
             'x': ball_x,
             'y': ball_y,
             'method': 'clubhead',
+        }
+
+    def _detect_clubhead_center(
+        self,
+        frame: np.ndarray,
+        hosel_x: float,
+        hosel_y: float,
+        golfer_bbox: tuple[float, float, float, float],
+    ) -> Optional[dict]:
+        """Detect the clubhead region near the hosel and return its center.
+
+        Used to get accurate X position for the ball (center of clubhead face).
+        The Y position comes from the hosel (ground level).
+
+        Args:
+            frame: Full BGR frame
+            hosel_x: X coordinate of hosel (shaft endpoint)
+            hosel_y: Y coordinate of hosel
+            golfer_bbox: (x1, y1, x2, y2) golfer bounding box
+
+        Returns:
+            Dict with x, y of clubhead center, or None if not found
+        """
+        gx1, gy1, gx2, gy2 = [int(v) for v in golfer_bbox]
+        frame_height, frame_width = frame.shape[:2]
+
+        # Search region: small area around the hosel where clubhead should be
+        # Clubhead extends to the right of the hosel (for RH golfer)
+        # At 4K, clubhead is roughly 60-100px wide
+        search_margin = 80
+        roi_x1 = max(0, int(hosel_x - 20))  # Small margin left of hosel
+        roi_x2 = min(frame_width, int(hosel_x + search_margin))  # Extend right
+        roi_y1 = max(0, int(hosel_y - 40))  # Above hosel
+        roi_y2 = min(frame_height, int(hosel_y + 40))  # Below hosel
+
+        roi = frame[roi_y1:roi_y2, roi_x1:roi_x2]
+        if roi.size == 0:
+            return None
+
+        # Convert to HSV for better color analysis
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+
+        # Driver clubheads are typically:
+        # - Black (matte): low value, low saturation
+        # - Metallic silver: high value, low saturation
+        # - White crown: very high value
+
+        # Detect bright/metallic regions (driver crown or silver clubhead)
+        v_channel = hsv[:, :, 2]
+        s_channel = hsv[:, :, 1]
+
+        # Mask 1: Bright regions (metallic/white)
+        bright_mask = v_channel > 140
+
+        # Mask 2: Low saturation (metallic, not grass)
+        low_sat_mask = s_channel < 80
+
+        # Combine: bright AND low saturation = likely clubhead
+        clubhead_mask = (bright_mask & low_sat_mask).astype(np.uint8) * 255
+
+        # Also detect very dark regions (matte black clubhead)
+        dark_mask = (v_channel < 60).astype(np.uint8) * 255
+
+        # Combine both possibilities
+        combined_mask = cv2.bitwise_or(clubhead_mask, dark_mask)
+
+        # Clean up with morphology
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel)
+        combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel)
+
+        # Find contours
+        contours, _ = cv2.findContours(
+            combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        # Find the best clubhead candidate
+        candidates = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < 100 or area > 8000:  # Clubhead area range at 4K
+                continue
+
+            # Get bounding rect
+            x, y, w, h = cv2.boundingRect(cnt)
+
+            # Clubhead should be roughly as wide as tall or wider
+            aspect_ratio = w / max(h, 1)
+            if aspect_ratio < 0.5 or aspect_ratio > 4.0:
+                continue
+
+            # Get centroid
+            M = cv2.moments(cnt)
+            if M['m00'] == 0:
+                continue
+            cx = int(M['m10'] / M['m00'])
+            cy = int(M['m01'] / M['m00'])
+
+            # Convert to frame coordinates
+            fx = roi_x1 + cx
+            fy = roi_y1 + cy
+
+            # Clubhead center should be to the right of hosel
+            if fx < hosel_x:
+                continue
+
+            # Should be at similar Y level as hosel
+            if abs(fy - hosel_y) > 30:
+                continue
+
+            candidates.append({
+                'x': fx,
+                'y': fy,
+                'area': area,
+                'width': w,
+            })
+
+        if not candidates:
+            logger.debug("No clubhead region detected near hosel")
+            return None
+
+        # Pick the candidate closest to expected position (just right of hosel)
+        # and with reasonable size
+        best = max(candidates, key=lambda c: c['area'])
+
+        logger.debug(
+            f"Clubhead center detected at ({best['x']:.0f},{best['y']:.0f}), "
+            f"area={best['area']:.0f}, width={best['width']:.0f}px"
+        )
+
+        return {
+            'x': best['x'],
+            'y': best['y'],
+            'area': best['area'],
         }
 
     def _analyze_line_color(

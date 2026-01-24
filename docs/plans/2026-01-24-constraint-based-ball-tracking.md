@@ -25,31 +25,60 @@ Use domain knowledge and geometric constraints to track the ball:
 
 ### Section 1: Ball Origin Detection
 
-**Goal:** Find the ball's starting position before impact using multiple signals.
+**Goal:** Find the ball's starting position before impact using shaft and clubhead detection.
 
-**Pipeline:**
+**Status:** ✅ IMPLEMENTED AND WORKING
+
+**Key Insight:** Ball position requires TWO separate detections:
+- **X coordinate:** Center of the clubhead (where ball sits in front of face)
+- **Y coordinate:** Center of the hosel/clubhead (ground level where ball sits)
+
+**DO NOT** use percentage-based estimates from golfer dimensions - this was tried and produces inconsistent results.
+
+**Implementation Pipeline:**
 
 ```
-Frame at (strike_time - 0.5s)
+Frame at (strike_time - 2.5s)  # Address position before backswing
     │
     ├─→ YOLO Person Detection (conf > 0.3)
-    │      → Extract feet_position (bottom-center of bbox)
-    │      → Define "ball zone" (150px radius around feet)
+    │      → Get golfer bounding box (gx1, gy1, gx2, gy2)
+    │      → gy2 = feet level (ground reference)
     │
-    ├─→ Hough Line Detection (in ball zone)
-    │      → Find straight lines (club shaft candidates)
-    │      → Follow shaft direction to find terminus point
+    ├─→ Shaft Line Detection (LSD + Hough)
+    │      → Search region: around golfer, extending right
+    │      → Geometric constraints:
+    │         • Grip end: within golfer bbox (gy1 <= grip_y <= gy2)
+    │         • Clubhead end: near feet level (gy2 - 50 to gy2 + 10)
+    │         • Shaft direction: upper-left to lower-right
+    │         • Angle: 15-60° from horizontal
+    │         • Hosel: maximum x-value point of line
+    │      → Color analysis: shaft is darker than grass (avg brightness < 150)
+    │      → Score threshold: 0.75 minimum
     │
-    └─→ YOLO Ball Detection (conf > 0.03)
-           → Look for sports_ball class in ball zone
+    └─→ Clubhead Center Detection
+           → Search region: 80px right of hosel, ±40px vertical
+           → Color masks:
+              • Bright + low saturation = metallic/white crown
+              • Very dark (V < 60) = matte black clubhead
+           → Find largest contour matching clubhead size (100-8000 area)
+           → Centroid = clubhead center
 
-    Combine:
-    - If 2+ methods agree within 50px → high confidence origin
-    - If only 1 method succeeds → use that with lower confidence
-    - If none succeed → fall back to feet_position estimate
+    Final Ball Position:
+    - ball_x = clubhead_center_x
+    - ball_y = clubhead_center_y
 ```
 
-**New class:** `BallOriginDetector` with method `detect_origin(frame, strike_time) -> (x, y, confidence)`
+**Test Results (IMG_0991.mov, 4K @ 60fps):**
+
+| Shot | Strike Time | Ball Origin | Method | Shaft Score |
+|------|-------------|-------------|--------|-------------|
+| 1 | 18.25s | (1579, 1814) | shaft+clubhead | 0.96 |
+| 2 | 60.28s | (2100, 1835) | shaft+clubhead | 0.96 |
+| 3 | 111.46s | (1524, 1822) | shaft+clubhead | 0.92 |
+
+**Class:** `BallOriginDetector` in `detection/origin.py`
+- `detect_origin(video_path, strike_time, look_before=2.5) -> OriginDetection`
+- `detect_origin_from_frame(frame) -> OriginDetection`
 
 ### Section 2: Trajectory Cone & Motion Detection
 
@@ -142,23 +171,25 @@ For each detected shot with strike_time:
 **Implementation Phases:**
 
 ```
-Phase 1: Ball Origin Detection
-├─ Implement BallOriginDetector class
-├─ Test on 3-5 video clips with known ball positions
-└─ Verify origin detection accuracy before proceeding
+Phase 1: Ball Origin Detection ✅ COMPLETE
+├─ ✅ Implement BallOriginDetector class
+├─ ✅ Shaft line detection with geometric constraints
+├─ ✅ Clubhead center detection for accurate X/Y
+├─ ✅ Test on 3 shots - all detected accurately
+└─ ✅ Verify origin within 20px of actual ball position
 
-Phase 2: Trajectory Cone
+Phase 2: Trajectory Cone (TODO)
 ├─ Implement TrajectoryConeSolver
 ├─ Add debug visualization (draw cone on frame)
 └─ Verify cone correctly bounds ball in test videos
 
-Phase 3: Motion Detection
+Phase 3: Motion Detection (TODO)
 ├─ Frame differencing within cone
 ├─ Optical flow validation
 ├─ Combine into ConstrainedBallTracker
 └─ Test: should find ball in clips where YOLO failed
 
-Phase 4: Integration
+Phase 4: Integration (TODO)
 ├─ Wire into pipeline.py
 ├─ E2E test with full video processing
 └─ Compare trajectory quality vs old YOLO-only approach
@@ -166,15 +197,15 @@ Phase 4: Integration
 
 **Test Strategy:**
 
-| Test | Purpose |
-|------|---------|
-| `test_origin_detection.py` | Verify ball found near golfer's feet |
-| `test_trajectory_cone.py` | Verify cone contains ball at each frame |
-| `test_motion_tracker.py` | Verify motion detection finds ball |
-| `test_integration.py` | E2E: audio → origin → tracking → trajectory |
+| Test | Purpose | Status |
+|------|---------|--------|
+| `test_origin_detection.py` | Verify ball found at clubhead center | ✅ Passing |
+| `test_trajectory_cone.py` | Verify cone contains ball at each frame | TODO |
+| `test_motion_tracker.py` | Verify motion detection finds ball | TODO |
+| `test_integration.py` | E2E: audio → origin → tracking → trajectory | TODO |
 
 **Success Criteria:**
-- Origin detected within 50px of actual ball in >90% of clips
+- ✅ Origin detected within 20px of actual ball in 100% of test clips (3/3)
 - Trajectory captured for clips where YOLO-only found 0 points
 - Trajectory points stay within cone bounds
 

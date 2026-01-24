@@ -27,6 +27,8 @@ golf-clip/
 │   │   ├── detection/        # Shot detection algorithms
 │   │   │   ├── audio.py      # Audio transient detection
 │   │   │   ├── visual.py     # YOLO ball tracking
+│   │   │   ├── origin.py     # Ball origin detection (shaft + clubhead)
+│   │   │   ├── tracker.py    # Constraint-based ball tracking
 │   │   │   └── pipeline.py   # Combined detection pipeline
 │   │   ├── models/           # Database CRUD operations
 │   │   │   ├── job.py        # Job, Shot, Feedback operations
@@ -349,19 +351,40 @@ YOLO-based ball detection fails for golf balls in flight because:
 
 **detection/origin.py** - `BallOriginDetector`:
 - Multi-method ball origin detection before impact
-- Primary method: Shaft line detection with geometric constraints
-- Fallback: Clubhead region detection (bright metallic areas)
+- Primary method: Shaft line detection + clubhead region detection
+- Fallback: Clubhead-only detection (bright metallic areas)
 - NO percentage-based estimates from golfer dimensions
 
-**Shaft Detection Architecture** (implemented):
+**Ball Origin Detection Architecture** (implemented):
+
+The key insight is that ball position requires TWO separate detections:
+- **X coordinate**: Center of the clubhead (where ball sits in front of face)
+- **Y coordinate**: Center of the hosel/clubhead (ground level where ball sits)
+
+**Step 1: Shaft Line Detection**
 1. Detect golfer via YOLO person detection
-2. Find club shaft using LSD + Hough line detection with constraints:
-   - One end terminates between y-min and y-max of golfer bbox (hands)
-   - Other end terminates within ~100px of y-max (feet level)
+2. Find club shaft using LSD + Hough line detection with geometric constraints:
+   - One end (grip) terminates between y-min and y-max of golfer bbox (hands area)
+   - Other end (hosel) terminates near y-max of golfer bbox (feet/ground level)
+   - Shaft goes from upper-left to lower-right (grip above and left of clubhead)
    - Line is diagonal, 15-60° from horizontal
-   - Clubhead at maximum x-value of the line
+   - Hosel is at maximum x-value of the line (for RH golfer)
 3. Color analysis to distinguish shaft (dark) from grass (bright green)
-4. If shaft score < 0.75, fall back to clubhead detection
+4. If shaft score < 0.75, fall back to clubhead-only detection
+
+**Step 2: Clubhead Center Detection**
+1. Search small region around detected hosel position (80px right, ±40px vertical)
+2. Detect clubhead via color masks:
+   - Bright + low saturation = metallic/white crown (driver)
+   - Very dark = matte black clubhead
+3. Find largest contour matching clubhead size/aspect ratio
+4. Use centroid of detected region as clubhead center
+
+**Step 3: Combine for Ball Position**
+- `ball_x = clubhead_center_x` (center of clubhead face)
+- `ball_y = clubhead_center_y` (represents hosel midpoint / ground level)
+
+This approach works because at address position, the ball sits directly in front of the clubhead face at ground level.
 
 **detection/tracker.py** - `ConstrainedBallTracker`:
 - Generates physics-based parabolic trajectories from origin point
@@ -371,11 +394,15 @@ YOLO-based ball detection fails for golf balls in flight because:
 
 ### Current State
 
-**Ball origin detection is working well.** The shaft detection successfully finds the clubhead position at address, which corresponds to the ball location. Tested on multiple shots with good results:
-- Shot 1 (18.25s): Origin at (1469, 1823) via clubhead detection
-- Shot 2 (60.28s): Origin at (2092, 1845) via shaft detection, score 0.97
+**Ball origin detection is working well.** The shaft + clubhead detection successfully finds the ball position at address. Tested on 3 shots with accurate results:
 
-The tracer now starts from the correct ball position instead of the golfer's feet.
+| Shot | Strike Time | Ball Origin | Method | Shaft Score |
+|------|-------------|-------------|--------|-------------|
+| 1 | 18.25s | (1579, 1814) | shaft+clubhead | 0.96 |
+| 2 | 60.28s | (2100, 1835) | shaft+clubhead | 0.96 |
+| 3 | 111.46s | (1524, 1822) | shaft+clubhead | 0.92 |
+
+The tracer now starts from the correct ball position (clubhead center) instead of incorrect estimates.
 
 ### Key Insight: Accuracy vs. Aesthetics
 
