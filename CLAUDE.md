@@ -349,47 +349,72 @@ YOLO-based ball detection fails for golf balls in flight because:
 
 **detection/origin.py** - `BallOriginDetector`:
 - Multi-method ball origin detection before impact
-- Pipeline: YOLO person → golfer feet → shaft detection (Hough lines) → clubhead offset
-- Reliably finds ball position even when YOLO can't detect the ball directly
+- Primary method: Shaft line detection with geometric constraints
+- Fallback: Clubhead region detection (bright metallic areas)
+- NO percentage-based estimates from golfer dimensions
+
+**Shaft Detection Architecture** (implemented):
+1. Detect golfer via YOLO person detection
+2. Find club shaft using LSD + Hough line detection with constraints:
+   - One end terminates between y-min and y-max of golfer bbox (hands)
+   - Other end terminates within ~100px of y-max (feet level)
+   - Line is diagonal, 15-60° from horizontal
+   - Clubhead at maximum x-value of the line
+3. Color analysis to distinguish shaft (dark) from grass (bright green)
+4. If shaft score < 0.75, fall back to clubhead detection
 
 **detection/tracker.py** - `ConstrainedBallTracker`:
-- Frame differencing instead of YOLO for motion detection
-- Searches in vertical band above origin (ball rises nearly vertically in behind-ball camera view)
-- Scores candidates by: brightness (white ball), position (above origin), centering, consistency
-- Filters to keep only high-confidence points from first 200ms
+- Generates physics-based parabolic trajectories from origin point
+- Uses calibrated parameters: 3s flight, 0.5 apex height, slight draw
+- Frame differencing for early motion detection (first 200ms)
+- Scores candidates by: brightness, position, centering, consistency
 
 ### Current State
 
-The tracker successfully detects 6 consistent points in the first ~100ms after impact:
-- X spread: ~33px (nearly vertical motion)
-- Y range: 101-118px above origin
-- Average confidence: 0.78
+**Ball origin detection is working well.** The shaft detection successfully finds the clubhead position at address, which corresponds to the ball location. Tested on multiple shots with good results:
+- Shot 1 (18.25s): Origin at (1469, 1823) via clubhead detection
+- Shot 2 (60.28s): Origin at (2092, 1845) via shaft detection, score 0.97
 
-**Problem**: Only captures the first 100ms of flight. Need to extend tracking for full trajectory to render a smooth shot tracer like popular YouTube golf videos.
+The tracer now starts from the correct ball position instead of the golfer's feet.
+
+### Key Insight: Accuracy vs. Aesthetics
+
+**We've been too focused on frame-by-frame accuracy.** The goal is NOT to track the exact ball position in every frame. What matters is:
+
+1. **Start point accurate**: Ball origin at impact (we have this working)
+2. **End point accurate**: Where ball lands or exits frame
+3. **Trajectory characteristics correct**:
+   - Height: high / medium / low
+   - Start direction: left / center / right
+   - Curve: draw (right-to-left) / straight / fade (left-to-right)
+4. **Tracer LOOKS GOOD**: Should match the aesthetic of professional YouTube golf channels like Good Good, Grant Horvat, or Bryan Bros
+
+The tracer doesn't need to follow the actual ball pixel-by-pixel. It needs to:
+- Start at the right place
+- End at the right place
+- Follow a believable parabolic arc with the right general shape
+- Look smooth and professional with nice glow/fade effects
 
 ### Next Steps for Shot Tracer
 
-1. **Extend tracking duration**: Currently filtering to first 200ms. Need to track for 2-4 seconds (full flight).
+1. ~~**Detect ball origin accurately**~~ ✅ DONE - Shaft detection working
+2. ~~**Generate smooth parabolic curve**~~ ✅ DONE - Physics model in `track_full_trajectory()`
+3. **Detect trajectory characteristics from early frames** (TODO):
+   - Use first 6-10 frames to determine launch angle and direction
+   - Classify as high/medium/low, left/center/right
+   - Currently using fixed parameters; could adapt per-shot
 
-2. **Handle ball getting smaller**: As ball flies away from camera, it gets smaller and dimmer. Need adaptive thresholds:
-   - Reduce `MIN_BRIGHTNESS` over time
-   - Reduce `MIN_CONTOUR_AREA` for distant ball
-   - Widen search region as ball could drift more
+4. **Landing point estimation** (TODO):
+   - Use audio (thud sound) if available
+   - Otherwise estimate from launch angle + typical flight time
+   - Or detect where ball exits frame
 
-3. **Trajectory interpolation**: When ball is undetected for several frames, interpolate using parabolic physics model:
-   - Use early detections to estimate launch angle and velocity
-   - Fit parabola to fill gaps
-   - Mark interpolated points with lower confidence
-
-4. **Apex detection**: Find the highest point (lowest y) in trajectory - this is where ball starts descending.
-
-5. **Landing detection**: Use audio (thud) or visual (ball stops moving) to detect landing point.
-
-6. **Smooth rendering**:
-   - Current TrajectoryEditor.tsx draws raw points
-   - Need Bezier curve smoothing for professional-looking tracer
-   - Add trail fade effect (older points more transparent)
-   - Glow effect around the line
+5. **Professional rendering** (TODO - reference: Good Good, Grant Horvat, Bryan Bros):
+   - Smooth Bezier curves, not raw points
+   - White/bright tracer line with glow effect
+   - Trail fade (older parts more transparent)
+   - Apex marker (optional)
+   - Consider animated "drawing" effect during playback
 
 ### Design Document
 

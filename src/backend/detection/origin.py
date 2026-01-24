@@ -60,19 +60,21 @@ class BallOriginDetector:
         self,
         video_path: Path,
         strike_time: float,
-        look_before: float = 0.5,
+        look_before: float = 1.5,
     ) -> Optional[OriginDetection]:
-        """Detect ball origin position before impact.
+        """Detect ball origin position at address (before swing).
 
         Args:
             video_path: Path to video file
             strike_time: Timestamp of ball strike (from audio detection)
-            look_before: How many seconds before strike to look for ball
+            look_before: How many seconds before strike to look for ball.
+                        Default 1.5s to catch address position before backswing.
 
         Returns:
             OriginDetection with position and confidence, or None if not found
         """
-        # Get frame just before impact
+        # Get frame at address position (before backswing starts)
+        # At address, the shaft points directly to the ball
         target_time = strike_time - look_before
         frame = self._get_frame_at_time(video_path, target_time)
         if frame is None:
@@ -216,6 +218,8 @@ class BallOriginDetector:
             "feet_position": (feet_x, feet_y),
             "ball_zone": (zone_x1, zone_y1, zone_x2, zone_y2),
             "confidence": golfer.confidence,
+            "width": person_width,
+            "height": person_height,
         }
 
     def _detect_shaft_endpoint(
@@ -224,7 +228,13 @@ class BallOriginDetector:
         golfer_bbox: tuple[float, float, float, float],
         feet_y: float,
     ) -> Optional[dict]:
-        """Detect club shaft using Hough lines and find where it points.
+        """Detect club shaft and find clubhead/ball position.
+
+        Architecture based on geometric constraints:
+        1. One end terminates between y-min and y-max of golfer bbox (hands area)
+        2. Other end terminates within ~100px of y-max of golfer bbox (feet/ground level)
+        3. Line is diagonal, 15-60° from horizontal (negative slope in Cartesian)
+        4. Clubhead is at maximum x-value of the line
 
         Args:
             frame: Full frame
@@ -232,145 +242,421 @@ class BallOriginDetector:
             feet_y: Y coordinate of golfer's feet (bottom of bbox)
 
         Returns:
-            Dict with x, y of shaft endpoint (likely ball position)
+            Dict with x, y of clubhead position (ball location)
         """
         gx1, gy1, gx2, gy2 = [int(v) for v in golfer_bbox]
         golfer_height = gy2 - gy1
         golfer_width = gx2 - gx1
-        feet_x = (gx1 + gx2) / 2  # Approximate feet x position
         frame_height, frame_width = frame.shape[:2]
 
-        # Search region: around the golfer, extending below feet where ball/club head are
-        # Start from 20% down the golfer's body to capture full shaft
-        search_x1 = max(0, gx1 - golfer_width)
-        search_x2 = min(frame_width, gx2 + golfer_width)
-        search_y1 = max(0, int(gy1 + golfer_height * 0.2))
-        search_y2 = min(frame_height, int(feet_y + golfer_height * 0.15))
+        # Search region: around the golfer area where the shaft would be visible
+        # Include full golfer height plus some margin below for clubhead
+        search_x1 = max(0, gx1 - int(golfer_width * 0.5))
+        search_x2 = min(frame_width, gx2 + int(golfer_width * 0.8))
+        search_y1 = max(0, gy1)
+        search_y2 = min(frame_height, int(gy2 + 100))
 
         # Extract search region
         region = frame[search_y1:search_y2, search_x1:search_x2]
         if region.size == 0:
             return None
 
-        # Convert to grayscale and detect edges
-        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+        # Try multiple line detection methods
+        lines = self._detect_lines_multi_method(region)
 
-        # Detect lines using Hough transform
-        # Use longer minLineLength (80) to get better shaft segments
-        lines = cv2.HoughLinesP(
-            edges,
-            rho=1,
-            theta=np.pi / 180,
-            threshold=25,
-            minLineLength=80,
-            maxLineGap=15,
-        )
-
-        if lines is None:
+        if lines is None or len(lines) == 0:
             logger.debug("No lines detected in search region")
             return None
 
-        # Find lines that could be the club shaft
-        # Key constraints based on golf swing geometry:
-        # 1. Shaft is diagonal (15-55° from vertical, going top-left to bottom-right)
-        # 2. Bottom of shaft is near feet level (within 60px)
-        # 3. Top should be within/near golfer's body horizontally
-        # 4. Bottom should be near ball zone (within golfer_width of feet_x)
+        # Filter lines using shaft geometric constraints
         shaft_candidates = []
 
-        for line in lines:
-            lx1, ly1, lx2, ly2 = line[0]
+        for line_coords in lines:
+            if len(line_coords) == 4:
+                lx1, ly1, lx2, ly2 = line_coords
+            else:
+                lx1, ly1, lx2, ly2 = line_coords[0]
 
             # Convert to frame coordinates
             fx1, fy1 = search_x1 + lx1, search_y1 + ly1
             fx2, fy2 = search_x1 + lx2, search_y1 + ly2
 
-            # Identify top and bottom endpoints (top = higher = smaller y)
-            if fy1 > fy2:
-                bottom_x, bottom_y = fx1, fy1
-                top_x, top_y = fx2, fy2
+            # Identify which end has maximum x (clubhead end)
+            if fx1 > fx2:
+                clubhead_x, clubhead_y = fx1, fy1
+                grip_x, grip_y = fx2, fy2
             else:
-                bottom_x, bottom_y = fx2, fy2
-                top_x, top_y = fx1, fy1
+                clubhead_x, clubhead_y = fx2, fy2
+                grip_x, grip_y = fx1, fy1
 
             # Calculate line properties
-            dx = fx2 - fx1
-            dy = fy2 - fy1
+            dx = clubhead_x - grip_x
+            dy = clubhead_y - grip_y
             length = np.sqrt(dx ** 2 + dy ** 2)
 
-            if length < 80:
+            if length < 60:  # Shaft must be at least 60px long
                 continue
 
-            # Angle from vertical (in degrees)
-            angle_from_vertical = abs(90 - abs(np.degrees(np.arctan2(dy, dx))))
+            # Calculate angle from horizontal (y=0 line)
+            # In screen coords: positive dx (right), positive dy (down)
+            # arctan2(dy, dx) gives angle from horizontal
+            angle_from_horizontal = abs(np.degrees(np.arctan2(abs(dy), abs(dx))))
 
-            # Constraint 1: Must be diagonal (15-55° from vertical)
-            if not (15 <= angle_from_vertical <= 55):
+            # Constraint 3: Angle 15-60° from horizontal
+            if not (15 <= angle_from_horizontal <= 60):
                 continue
 
-            # Constraint 2: Must go from top-left to bottom-right
-            if top_x >= bottom_x:
+            # Constraint: Shaft goes from upper-left to lower-right (negative slope in Cartesian)
+            # In screen coords: grip should be above and left of clubhead
+            # grip_y should be < clubhead_y (grip is higher on screen)
+            # grip_x should be < clubhead_x (grip is to the left)
+            if grip_y >= clubhead_y or grip_x >= clubhead_x:
                 continue
 
-            # Constraint 3: Bottom must be near feet level (within 60px)
-            if abs(bottom_y - feet_y) > 60:
+            # Constraint 1: Grip end (one end) terminates between y-min and y-max of golfer
+            # The grip/hands should be somewhere in the golfer's body
+            if not (gy1 <= grip_y <= gy2):
                 continue
 
-            # Constraint 4: Top should be within/near golfer's horizontal range
-            horizontal_margin = golfer_width * 0.4
-            if not (gx1 - horizontal_margin <= top_x <= gx2 + horizontal_margin):
+            # Constraint 2: Clubhead end terminates within ~100px of y-max (feet level)
+            # gy2 is y-max of golfer bbox (feet)
+            if abs(clubhead_y - gy2) > 100:
                 continue
 
-            # Constraint 5: Bottom should be reachable from golfer (within 1.5x golfer_width)
-            # Club head can extend quite far from body center, especially for right-handed golfers
-            if abs(bottom_x - feet_x) > golfer_width * 1.5:
+            # Constraint 4: Clubhead at maximum x-value
+            # Already ensured by our clubhead/grip assignment above
+
+            # Additional constraint: clubhead position relative to golfer bbox
+            # For camera angles from the side or DTL with angle:
+            # - Clubhead CAN be significantly to the right of golfer bbox
+            # - But grip should still be within/near the golfer's body
+            golfer_center_x = (gx1 + gx2) / 2
+
+            # Clubhead must be to the right of golfer center (for RH golfer)
+            if clubhead_x < golfer_center_x:
                 continue
 
-            vertical_extent = bottom_y - top_y
+            # Grip end (hands) should be within the golfer bbox or just slightly outside
+            # At address position, hands are roughly centered over the golfer's stance
+            # Not too far to the left or right of the golfer's body
+            if grip_x < gx1 - golfer_width * 0.1 or grip_x > gx2 + golfer_width * 0.1:
+                continue
+
+            # Analyze color along the line to distinguish shaft from grass
+            # The shaft should be darker than bright green grass
+            color_score = self._analyze_line_color(
+                frame, grip_x, grip_y, clubhead_x, clubhead_y
+            )
+
+            # Skip lines that look like bright grass (very low score)
+            if color_score < 0.2:
+                continue
+
+            # Score this candidate
+            # Prefer: longer lines, clubhead closer to feet level, good angle, dark color
+            angle_score = 1.0 - abs(angle_from_horizontal - 40) / 45  # Prefer ~40° angle
+            length_score = min(length / 300, 1.0)  # Normalize length
+            y_proximity_score = 1.0 - abs(clubhead_y - gy2) / 100  # Closer to feet = better
+
+            # Weight: color is most important to distinguish from grass
+            score = (
+                color_score * 0.4 +
+                length_score * 0.25 +
+                angle_score * 0.2 +
+                y_proximity_score * 0.15
+            )
+
             shaft_candidates.append({
-                "x": bottom_x,
-                "y": bottom_y,
-                "top_x": top_x,
-                "top_y": top_y,
+                "x": clubhead_x,
+                "y": clubhead_y,
+                "grip_x": grip_x,
+                "grip_y": grip_y,
                 "length": length,
-                "angle": angle_from_vertical,
-                "vertical_extent": vertical_extent,
+                "angle": angle_from_horizontal,
+                "color_score": color_score,
+                "score": score,
             })
 
         if not shaft_candidates:
-            logger.debug("No shaft-like lines found matching constraints")
+            logger.debug(
+                f"No shaft lines found matching constraints. "
+                f"Trying clubhead detection fallback. "
+                f"Golfer bbox: ({gx1},{gy1})-({gx2},{gy2}), feet_y={feet_y:.0f}"
+            )
+            # Fallback: detect clubhead as a bright metallic region
+            clubhead = self._detect_clubhead_region(frame, golfer_bbox, feet_y)
+            if clubhead:
+                return clubhead
             return None
 
         logger.debug(f"Found {len(shaft_candidates)} shaft candidates after filtering")
 
-        # Pick the best shaft candidate - prefer longest line
-        best = max(shaft_candidates, key=lambda s: s["length"])
+        # Pick the best shaft candidate by score
+        best = max(shaft_candidates, key=lambda s: s["score"])
 
-        # Find the ball position relative to the shaft endpoint
-        # The club head extends to the RIGHT of the shaft end (perpendicular),
-        # and the ball sits just behind the club head
-        # For a right-handed golfer: shaft bottom → club head is to the right
-        clubhead_offset_x = 50  # Club head extends ~50px to the right of shaft end
-        clubhead_offset_y = 20  # Slightly down (toward ground level)
+        # Require minimum quality for shaft detection
+        # If score is too low, fall back to clubhead detection
+        if best["score"] < 0.75:
+            logger.debug(
+                f"Best shaft candidate score {best['score']:.2f} below threshold 0.75. "
+                f"Trying clubhead detection fallback."
+            )
+            clubhead = self._detect_clubhead_region(frame, golfer_bbox, feet_y)
+            if clubhead:
+                return clubhead
+            # If clubhead detection also fails, return best shaft candidate anyway
+            logger.debug("Clubhead detection also failed, using best shaft candidate")
 
-        clubhead_x = best["x"] + clubhead_offset_x
-        clubhead_y = best["y"] + clubhead_offset_y
+        logger.info(
+            f"Shaft detected: clubhead at ({best['x']:.0f},{best['y']:.0f}), "
+            f"grip at ({best['grip_x']:.0f},{best['grip_y']:.0f}), "
+            f"length={best['length']:.0f}px, angle={best['angle']:.1f}°, score={best['score']:.2f}"
+        )
 
-        logger.debug(
-            f"Shaft detected: bottom at ({best['x']:.0f},{best['y']:.0f}), "
-            f"top at ({best['top_x']:.0f},{best['top_y']:.0f}), "
-            f"length={best['length']:.0f}px, angle={best['angle']:.1f}°, "
-            f"extended to clubhead at ({clubhead_x:.0f},{clubhead_y:.0f})"
+        return best
+
+    def _detect_clubhead_region(
+        self,
+        frame: np.ndarray,
+        golfer_bbox: tuple[float, float, float, float],
+        feet_y: float,
+    ) -> Optional[dict]:
+        """Detect clubhead as a bright/metallic region near the feet.
+
+        Fallback method when shaft line detection fails.
+        Looks for the driver head (metallic/bright) and estimates ball position.
+
+        Args:
+            frame: Full BGR frame
+            golfer_bbox: (x1, y1, x2, y2) golfer bounding box
+            feet_y: Y coordinate of golfer's feet
+
+        Returns:
+            Dict with x, y of estimated ball position
+        """
+        gx1, gy1, gx2, gy2 = [int(v) for v in golfer_bbox]
+        golfer_width = gx2 - gx1
+        golfer_center_x = (gx1 + gx2) / 2
+        frame_height, frame_width = frame.shape[:2]
+
+        # Search region: to the right of golfer, near feet level
+        roi_x1 = int(gx1 + golfer_width * 0.3)
+        roi_x2 = int(min(frame_width, gx2 + golfer_width * 1.0))
+        roi_y1 = int(feet_y - 100)
+        roi_y2 = int(min(frame_height, feet_y + 80))
+
+        roi = frame[roi_y1:roi_y2, roi_x1:roi_x2]
+        if roi.size == 0:
+            return None
+
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+
+        # Detect bright regions (clubhead is metallic/reflective)
+        v_channel = hsv[:, :, 2]
+        _, bright_mask = cv2.threshold(v_channel, 160, 255, cv2.THRESH_BINARY)
+
+        # Clean up
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        bright_mask = cv2.morphologyEx(bright_mask, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(
+            bright_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        # Find the clubhead - should be a large bright region to the right of golfer
+        candidates = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < 200 or area > 5000:  # Clubhead area range
+                continue
+
+            M = cv2.moments(cnt)
+            if M['m00'] == 0:
+                continue
+            cx = int(M['m10'] / M['m00'])
+            cy = int(M['m01'] / M['m00'])
+
+            fx = roi_x1 + cx
+            fy = roi_y1 + cy
+
+            # Must be to the right of golfer center
+            if fx < golfer_center_x + golfer_width * 0.2:
+                continue
+
+            # Near feet level
+            if abs(fy - feet_y) > 100:
+                continue
+
+            candidates.append({
+                'x': fx,
+                'y': fy,
+                'area': area,
+            })
+
+        if not candidates:
+            return None
+
+        # Find the candidate closest to expected clubhead position
+        # (to the right of golfer but not too far)
+        target_x = golfer_center_x + golfer_width * 0.5
+        best = min(candidates, key=lambda c: abs(c['x'] - target_x))
+
+        # Ball is right in front of the clubhead at address
+        # Offset slightly to the left (toward golfer) from clubhead center
+        ball_offset_x = -40  # Ball is left of clubhead center
+        ball_x = best['x'] + ball_offset_x
+        ball_y = max(best['y'], feet_y - 20)  # Ball is at or near ground level
+
+        logger.info(
+            f"Clubhead detected at ({best['x']:.0f},{best['y']:.0f}), "
+            f"area={best['area']:.0f}. Estimated ball at ({ball_x:.0f},{ball_y:.0f})"
         )
 
         return {
-            **best,
-            "x": clubhead_x,  # Override with extended position
-            "y": clubhead_y,
-            "shaft_bottom_x": best["x"],  # Keep original for reference
-            "shaft_bottom_y": best["y"],
+            'x': ball_x,
+            'y': ball_y,
+            'method': 'clubhead',
         }
+
+    def _analyze_line_color(
+        self,
+        frame: np.ndarray,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        num_samples: int = 10,
+    ) -> float:
+        """Analyze color along a line to determine if it's a shaft or grass.
+
+        The club shaft should be:
+        - Dark (low brightness)
+        - Not green (low green-dominance)
+        - Metallic (grayish, low saturation)
+
+        Grass is:
+        - Bright green
+        - High saturation in green channel
+
+        Args:
+            frame: Full BGR frame
+            x1, y1: Start point
+            x2, y2: End point
+            num_samples: Number of points to sample along the line
+
+        Returns:
+            Score 0-1 where higher = more likely to be shaft, lower = more like grass
+        """
+        frame_height, frame_width = frame.shape[:2]
+        samples = []
+
+        for i in range(num_samples):
+            t = i / max(num_samples - 1, 1)
+            px = int(x1 + t * (x2 - x1))
+            py = int(y1 + t * (y2 - y1))
+
+            # Clamp to frame bounds
+            px = max(0, min(frame_width - 1, px))
+            py = max(0, min(frame_height - 1, py))
+
+            # Get BGR color at this point
+            b, g, r = frame[py, px]
+            samples.append((b, g, r))
+
+        if not samples:
+            return 0.5
+
+        # Analyze the samples
+        total_brightness = 0
+
+        for b, g, r in samples:
+            brightness = (int(b) + int(g) + int(r)) / 3
+            total_brightness += brightness
+
+        avg_brightness = total_brightness / len(samples)
+
+        # Score based primarily on darkness
+        # Shaft is typically darker than grass
+        # Grass brightness ~140-180, shaft ~100-130
+        # Use a gentler curve so both can pass but darker is preferred
+        if avg_brightness < 100:
+            score = 1.0  # Very dark = definitely not grass
+        elif avg_brightness < 130:
+            score = 0.8  # Dark = likely shaft
+        elif avg_brightness < 150:
+            score = 0.5  # Medium = could be either
+        elif avg_brightness < 180:
+            score = 0.3  # Brighter = likely grass but possible
+        else:
+            score = 0.1  # Very bright = definitely grass
+
+        return score
+
+    def _detect_lines_multi_method(
+        self,
+        region: np.ndarray,
+    ) -> Optional[list]:
+        """Detect lines using multiple methods for robustness.
+
+        Tries:
+        1. LSD (Line Segment Detector) - often better for actual line segments
+        2. Hough with enhanced preprocessing
+        3. Hough with different parameters
+
+        Returns list of (x1, y1, x2, y2) line segments.
+        """
+        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+        all_lines = []
+
+        # Method 1: LSD (Line Segment Detector)
+        # LSD is generally better than Hough for detecting actual line segments
+        try:
+            lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)
+            lsd_lines, _, _, _ = lsd.detect(gray)
+            if lsd_lines is not None:
+                for line in lsd_lines:
+                    x1, y1, x2, y2 = line[0]
+                    all_lines.append((int(x1), int(y1), int(x2), int(y2)))
+                logger.debug(f"LSD found {len(lsd_lines)} line segments")
+        except Exception as e:
+            logger.debug(f"LSD detection failed: {e}")
+
+        # Method 2: Enhanced Hough with preprocessing
+        # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to enhance edges
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+
+        # Bilateral filter to reduce noise while preserving edges
+        filtered = cv2.bilateralFilter(enhanced, 9, 75, 75)
+
+        # Multi-scale edge detection
+        edges_low = cv2.Canny(filtered, 30, 100, apertureSize=3)
+        edges_high = cv2.Canny(filtered, 50, 150, apertureSize=3)
+        edges = cv2.bitwise_or(edges_low, edges_high)
+
+        # Morphological closing to connect broken edge segments
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+
+        # Hough with different parameter sets
+        for threshold, min_length, max_gap in [(20, 50, 20), (30, 80, 15), (15, 40, 25)]:
+            hough_lines = cv2.HoughLinesP(
+                edges,
+                rho=1,
+                theta=np.pi / 180,
+                threshold=threshold,
+                minLineLength=min_length,
+                maxLineGap=max_gap,
+            )
+            if hough_lines is not None:
+                for line in hough_lines:
+                    x1, y1, x2, y2 = line[0]
+                    all_lines.append((x1, y1, x2, y2))
+
+        if all_lines:
+            logger.debug(f"Total lines found: {len(all_lines)}")
+
+        return all_lines if all_lines else None
 
     def _detect_ball_in_zone(
         self, frame: np.ndarray, zone: tuple[float, float, float, float]
@@ -452,17 +738,15 @@ class BallOriginDetector:
             methods.append("yolo_ball")
 
         if shaft_result:
+            # Shaft detection points directly to the clubhead/ball position
+            # This is the primary method - the bottom of the shaft IS where the ball is
             candidates.append((shaft_result["x"], shaft_result["y"]))
             methods.append("shaft")
 
-        if golfer_result:
-            # Estimate ball position from feet (slightly in front)
-            feet_x, feet_y = golfer_result["feet_position"]
-            # Ball is typically at feet level, slightly offset horizontally
-            est_x = feet_x
-            est_y = feet_y + 10  # Slightly below feet line
-            candidates.append((est_x, est_y))
-            methods.append("golfer_feet")
+        # DO NOT use golfer_feet percentage-based estimate as fallback
+        # The user explicitly requested: "DO NOT USE A % OF THE HEIGHT OR WIDTH
+        # OF THE GOLFER TO APPROXIMATE THE BALL POSITION"
+        # If shaft detection fails, we should return None rather than guess
 
         if not candidates:
             logger.debug("No origin candidates found by any method")
@@ -515,13 +799,19 @@ class BallOriginDetector:
             method = "yolo_ball"
             x, y = ball_result["x"], ball_result["y"]
         elif shaft_result:
-            confidence = 0.5
+            # Shaft detection points directly to the clubhead/ball
+            # The bottom of the shaft at address IS where the ball is
+            confidence = 0.65
             method = "shaft"
             x, y = shaft_result["x"], shaft_result["y"]
         else:
-            confidence = 0.3
-            method = "golfer_feet"
-            x, y = candidates[-1]  # Last candidate is feet estimate
+            # No valid detection - return None instead of guessing
+            # DO NOT use percentage-based estimates from golfer position
+            logger.warning(
+                "Ball origin detection failed: no shaft or ball detected. "
+                "Shaft detection is required for accurate tracer placement."
+            )
+            return None
 
         logger.info(
             f"Ball origin: ({x:.0f},{y:.0f}) - method={method}, confidence={confidence:.2f}"

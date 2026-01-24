@@ -259,7 +259,7 @@ class ShotDetectionPipeline:
                     visual_features = None
                     trajectory_points = []
 
-                    # Try constrained tracker first (better for small/fast balls)
+                    # Try physics-based trajectory generation first (best quality)
                     try:
                         # Detect ball origin
                         origin = self.origin_detector.detect_origin(self.video_path, strike_time)
@@ -269,31 +269,55 @@ class ShotDetectionPipeline:
                         )
 
                         if origin.confidence >= 0.2:
-                            # Track ball flight from origin
-                            constrained_trajectory = self.constrained_tracker.track_flight(
-                                self.video_path,
-                                origin,
-                                strike_time,
-                                max_flight_duration=1.0,  # Focus on early frames
+                            # Try physics-based full trajectory first
+                            origin_normalized = (
+                                origin.x / self._frame_width,
+                                origin.y / self._frame_height,
                             )
 
-                            if constrained_trajectory and len(constrained_trajectory) >= 2:
-                                trajectory_points = [
-                                    {
-                                        "timestamp": pt.timestamp,
-                                        "x": pt.x,
-                                        "y": pt.y,
-                                        "confidence": pt.confidence,
-                                        "interpolated": False,
-                                    }
-                                    for pt in constrained_trajectory
-                                ]
-                                logger.debug(
-                                    f"Constrained tracker found {len(trajectory_points)} points "
-                                    f"for strike at {strike_time:.2f}s"
+                            physics_trajectory = self.constrained_tracker.track_full_trajectory(
+                                video_path=self.video_path,
+                                origin_point=origin_normalized,
+                                strike_time=strike_time,
+                                frame_width=self._frame_width or 1920,
+                                frame_height=self._frame_height or 1080,
+                                audio_path=str(self.video_path),  # For landing detection
+                            )
+
+                            if physics_trajectory and physics_trajectory.get("points"):
+                                trajectory_points = physics_trajectory["points"]
+                                visual_features = physics_trajectory  # Contains all trajectory data
+                                logger.info(
+                                    f"Generated physics trajectory for strike at {strike_time:.2f}s: "
+                                    f"{len(trajectory_points)} points, "
+                                    f"shot_shape={physics_trajectory.get('shot_shape')}"
                                 )
+                            else:
+                                # Fall back to basic constrained tracking
+                                constrained_trajectory = self.constrained_tracker.track_flight(
+                                    self.video_path,
+                                    origin,
+                                    strike_time,
+                                    max_flight_duration=1.0,
+                                )
+
+                                if constrained_trajectory and len(constrained_trajectory) >= 2:
+                                    trajectory_points = [
+                                        {
+                                            "timestamp": pt.timestamp,
+                                            "x": pt.x / (self._frame_width or 1920),
+                                            "y": pt.y / (self._frame_height or 1080),
+                                            "confidence": pt.confidence,
+                                            "interpolated": False,
+                                        }
+                                        for pt in constrained_trajectory
+                                    ]
+                                    logger.debug(
+                                        f"Constrained tracker found {len(trajectory_points)} points "
+                                        f"for strike at {strike_time:.2f}s"
+                                    )
                     except Exception as e:
-                        logger.warning(f"Constrained tracking failed for strike at {strike_time:.2f}s: {e}")
+                        logger.warning(f"Physics/constrained tracking failed for strike at {strike_time:.2f}s: {e}")
 
                     # Fall back to YOLO-based approach if constrained tracker didn't find enough
                     if len(trajectory_points) < 3:
@@ -323,8 +347,8 @@ class ShotDetectionPipeline:
                         except Exception as e:
                             logger.warning(f"YOLO trajectory analysis failed for strike at {strike_time:.2f}s: {e}")
 
-                    # Build visual features if we have trajectory
-                    if trajectory_points:
+                    # Build visual features if we have trajectory (and don't already have them from physics)
+                    if trajectory_points and visual_features is None:
                         # Find apex (highest point = min y)
                         apex_point = min(trajectory_points, key=lambda p: p["y"])
                         apex_dict = {
@@ -351,6 +375,13 @@ class ShotDetectionPipeline:
                         logger.debug(
                             f"Captured trajectory for strike at {strike_time:.2f}s: "
                             f"{len(trajectory_points)} points, confidence={avg_confidence:.2f}"
+                        )
+                    elif visual_features is not None:
+                        # Physics trajectory provided visual_features, ensure trajectory key exists
+                        if "points" in visual_features and "trajectory" not in visual_features:
+                            visual_features["trajectory"] = visual_features["points"]
+                        logger.debug(
+                            f"Using physics-based visual features for strike at {strike_time:.2f}s"
                         )
 
                     confirmed_shots.append({

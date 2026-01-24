@@ -19,18 +19,32 @@ from loguru import logger
 @dataclass
 class TracerStyle:
     """Configuration for tracer visual appearance."""
+    # Core line appearance
     color: Tuple[int, int, int] = (255, 255, 255)  # BGR white
     line_width: int = 3
+
+    # Glow settings
     glow_enabled: bool = True
     glow_color: Tuple[int, int, int] = (255, 255, 255)  # BGR
     glow_radius: int = 8
     glow_intensity: float = 0.5
+
+    # Markers
     show_apex_marker: bool = True
     show_landing_marker: bool = True
     apex_marker_radius: int = 6
     landing_marker_radius: int = 8
+
+    # Legacy fields (kept for backwards compatibility)
     fade_tail: bool = False
-    tail_length_seconds: float = 0.5  # How much trail to show behind current position
+
+    # Enhanced rendering mode
+    style_mode: str = "hybrid"  # "solid", "comet", or "hybrid"
+    tail_length_seconds: float = 0.4  # How much trail to show behind current position
+    tail_fade: bool = True  # Fade opacity along tail
+    tail_width_taper: bool = True  # Taper width along tail
+    perspective_width: bool = True  # Scale width by depth
+    min_line_width: float = 1.0  # Minimum width at far distance
 
     @classmethod
     def from_dict(cls, d: dict) -> "TracerStyle":
@@ -50,6 +64,19 @@ class TracerStyle:
             style.show_apex_marker = d["show_apex_marker"]
         if "show_landing_marker" in d:
             style.show_landing_marker = d["show_landing_marker"]
+        # Enhanced rendering options
+        if "style_mode" in d:
+            style.style_mode = d["style_mode"]
+        if "tail_length_seconds" in d:
+            style.tail_length_seconds = d["tail_length_seconds"]
+        if "tail_fade" in d:
+            style.tail_fade = d["tail_fade"]
+        if "tail_width_taper" in d:
+            style.tail_width_taper = d["tail_width_taper"]
+        if "perspective_width" in d:
+            style.perspective_width = d["perspective_width"]
+        if "min_line_width" in d:
+            style.min_line_width = d["min_line_width"]
         return style
 
 
@@ -110,13 +137,52 @@ class TracerRenderer:
 
         # Convert normalized coords to pixel coords
         pixel_points = []
+        timestamps = []
         for p in visible_points:
             px = int(p["x"] * frame_width)
             py = int(p["y"] * frame_height)
             pixel_points.append((px, py))
+            timestamps.append(p["timestamp"])
 
-        # Draw the tracer
-        frame = self._draw_tracer_line(frame, pixel_points)
+        # Estimate depths for perspective width (based on Y position)
+        # Higher on screen = farther away (closer to vanishing point)
+        depths = None
+        if self.style.perspective_width:
+            # Estimate origin Y from first point (ball starts low on screen)
+            origin_y = 0.8 * frame_height
+            vanishing_y = 0.35 * frame_height
+            max_depth = 5000.0
+            depths = []
+            for px, py in pixel_points:
+                if py >= origin_y:
+                    depth = 0.0
+                elif py <= vanishing_y:
+                    depth = max_depth
+                else:
+                    progress = (origin_y - py) / (origin_y - vanishing_y)
+                    depth = progress * max_depth
+                depths.append(depth)
+
+        # Render based on style mode
+        if self.style.style_mode == "comet":
+            # Comet tail only - fading trail behind current position
+            frame = self._draw_comet_tail(
+                frame, pixel_points, timestamps, current_time, depths
+            )
+        elif self.style.style_mode == "hybrid":
+            # Hybrid: solid line underneath, then comet overlay for emphasis
+            # Draw fainter solid line first (shows full path)
+            solid_frame = frame.copy()
+            solid_frame = self._draw_tracer_line(solid_frame, pixel_points)
+            # Blend solid line at reduced opacity
+            cv2.addWeighted(solid_frame, 0.4, frame, 0.6, 0, frame)
+            # Draw comet tail on top for current position emphasis
+            frame = self._draw_comet_tail(
+                frame, pixel_points, timestamps, current_time, depths
+            )
+        else:
+            # Solid mode - original behavior
+            frame = self._draw_tracer_line(frame, pixel_points)
 
         # Draw apex marker if we've passed it
         if self.style.show_apex_marker and apex_point:
@@ -199,6 +265,178 @@ class TracerRenderer:
         thickness = 2
         cv2.line(frame, (point[0] - r, point[1] - r), (point[0] + r, point[1] + r), color, thickness, cv2.LINE_AA)
         cv2.line(frame, (point[0] - r, point[1] + r), (point[0] + r, point[1] - r), color, thickness, cv2.LINE_AA)
+
+    def _perspective_width(
+        self,
+        base_width: float,
+        depth: float,
+        focal_length: float = 1000.0,
+    ) -> float:
+        """Calculate line width at given depth for perspective effect.
+
+        Lines appear thinner as they go into the distance.
+
+        Args:
+            base_width: Base line width in pixels
+            depth: Z-depth value (0 = near camera, larger = farther)
+            focal_length: Controls perspective strength
+
+        Returns:
+            Adjusted line width, never below min_line_width
+        """
+        if depth <= 0:
+            return base_width
+        scale = focal_length / (focal_length + depth)
+        return max(base_width * scale, self.style.min_line_width)
+
+    def _draw_head_marker(
+        self,
+        frame: np.ndarray,
+        point: Tuple[int, int],
+        width: int = 6,
+    ) -> None:
+        """Draw a bright marker at the current ball position (head of comet).
+
+        Args:
+            frame: BGR image to draw on
+            point: Pixel coordinates (x, y)
+            width: Marker diameter
+        """
+        # Draw outer glow
+        if self.style.glow_enabled:
+            cv2.circle(
+                frame,
+                point,
+                width + self.style.glow_radius // 2,
+                self.style.glow_color,
+                -1,
+                cv2.LINE_AA,
+            )
+        # Draw bright center
+        cv2.circle(frame, point, width // 2, self.style.color, -1, cv2.LINE_AA)
+
+    def _draw_segment_with_glow(
+        self,
+        frame: np.ndarray,
+        p1: Tuple[int, int],
+        p2: Tuple[int, int],
+        alpha: float,
+        width: int,
+    ) -> None:
+        """Draw a single line segment with glow at specified opacity.
+
+        Args:
+            frame: BGR image to draw on (modified in place)
+            p1: Start point (x, y) in pixels
+            p2: End point (x, y) in pixels
+            alpha: Opacity 0-1
+            width: Line width in pixels
+        """
+        if alpha < 0.05:
+            return
+
+        # Ensure minimum width
+        width = max(int(width), int(self.style.min_line_width))
+
+        # Create overlay for alpha blending
+        overlay = frame.copy()
+
+        if self.style.glow_enabled:
+            # Draw glow first (thicker line)
+            glow_width = width + self.style.glow_radius
+            cv2.line(
+                overlay, p1, p2,
+                self.style.glow_color,
+                glow_width,
+                cv2.LINE_AA,
+            )
+
+        # Draw main line
+        cv2.line(overlay, p1, p2, self.style.color, width, cv2.LINE_AA)
+
+        # Blend with alpha
+        blend_alpha = alpha * self.style.glow_intensity
+        cv2.addWeighted(overlay, blend_alpha, frame, 1 - blend_alpha, 0, frame)
+
+    def _draw_comet_tail(
+        self,
+        frame: np.ndarray,
+        points: List[Tuple[int, int]],
+        timestamps: List[float],
+        current_time: float,
+        depths: Optional[List[float]] = None,
+    ) -> np.ndarray:
+        """Draw tracer with comet tail effect.
+
+        The comet effect shows only a trailing portion of the trajectory
+        with opacity and width fading toward the tail.
+
+        Args:
+            frame: BGR image to draw on
+            points: Pixel coordinates for each point
+            timestamps: Time for each point
+            current_time: Current video time
+            depths: Optional Z-depth for each point (for perspective width)
+
+        Returns:
+            Frame with comet tail rendered
+        """
+        if len(points) < 2 or len(timestamps) < 2:
+            return frame
+
+        tail_start_time = current_time - self.style.tail_length_seconds
+
+        # Find points in the tail range
+        tail_points = []
+        tail_alphas = []
+        tail_widths = []
+
+        for i, (pt, t) in enumerate(zip(points, timestamps)):
+            if tail_start_time <= t <= current_time:
+                # Calculate fade (1.0 at head, 0.0 at tail end)
+                if self.style.tail_length_seconds > 0:
+                    progress = (t - tail_start_time) / self.style.tail_length_seconds
+                else:
+                    progress = 1.0
+
+                alpha = progress if self.style.tail_fade else 1.0
+
+                # Calculate width
+                width = float(self.style.line_width)
+                if self.style.tail_width_taper:
+                    # Width tapers from 50% to 100% along the tail
+                    width = width * (0.5 + 0.5 * progress)
+
+                if self.style.perspective_width and depths and i < len(depths):
+                    width = self._perspective_width(width, depths[i])
+
+                width = max(width, self.style.min_line_width)
+
+                tail_points.append(pt)
+                tail_alphas.append(alpha)
+                tail_widths.append(width)
+
+        if len(tail_points) < 2:
+            return frame
+
+        # Draw segments with varying alpha and width
+        for i in range(len(tail_points) - 1):
+            avg_alpha = (tail_alphas[i] + tail_alphas[i + 1]) / 2
+            avg_width = int((tail_widths[i] + tail_widths[i + 1]) / 2)
+            self._draw_segment_with_glow(
+                frame,
+                tail_points[i],
+                tail_points[i + 1],
+                alpha=avg_alpha,
+                width=avg_width,
+            )
+
+        # Draw bright head at the most recent point
+        if tail_points:
+            head_width = int(max(tail_widths[-1], self.style.line_width))
+            self._draw_head_marker(frame, tail_points[-1], head_width)
+
+        return frame
 
 
 class TracerExporter:
