@@ -32,8 +32,11 @@ golf-clip/
 │   │   │   └── job.py        # Job, Shot, Feedback operations
 │   │   └── tests/            # Integration tests
 │   │       ├── conftest.py   # Pytest fixtures
-│   │       ├── test_integration.py
-│   │       └── test_feedback.py
+│   │       ├── test_audio_detection.py
+│   │       ├── test_database.py
+│   │       ├── test_download.py
+│   │       ├── test_feedback.py
+│   │       └── test_integration.py
 │   └── frontend/
 │       └── src/
 │           ├── App.tsx           # Main app with view routing
@@ -94,6 +97,22 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+## Environment Variables
+
+All settings can be configured via environment variables with the `GOLFCLIP_` prefix:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GOLFCLIP_HOST` | `127.0.0.1` | Server host |
+| `GOLFCLIP_PORT` | `8420` | Server port |
+| `GOLFCLIP_DEBUG` | `true` | Enable debug mode |
+| `GOLFCLIP_CONFIDENCE_THRESHOLD` | `0.70` | Clips below this require review |
+| `GOLFCLIP_CLIP_PADDING_BEFORE` | `2.0` | Seconds before ball strike |
+| `GOLFCLIP_CLIP_PADDING_AFTER` | `2.0` | Seconds after ball lands |
+| `GOLFCLIP_AUDIO_SENSITIVITY` | `0.5` | Detection sensitivity (0-1, try 0.7-0.9 if getting 0 shots) |
+| `GOLFCLIP_FFMPEG_THREADS` | `0` | FFmpeg threads (0 = auto-detect) |
+| `GOLFCLIP_FFMPEG_TIMEOUT` | `600` | FFmpeg timeout in seconds |
+
 ## Windows/FFmpeg Notes
 
 - **ffmpeg via winget**: Installed but NOT in PATH by default
@@ -145,7 +164,7 @@ class JobCacheProxy:
 - `GET /api/jobs` - List all jobs
 - `DELETE /api/jobs/{job_id}` - Delete a job
 - `GET /api/video-info?path=...` - Get video metadata
-- `GET /api/video?path=...` - Stream video file (supports Range requests for seeking)
+- `GET /api/video?path=...&download=true` - Stream video file (supports Range requests for seeking, add `download=true` to trigger browser download)
 
 ### Feedback Collection (for ML improvement)
 - `POST /api/feedback/{job_id}` - Submit TP/FP feedback on detected shots
@@ -193,6 +212,16 @@ The pipeline includes a deduplication step (`deduplicate_strikes()`) that groups
 - Practice swings before/after real shots
 - Echo/reverberation from strikes
 - Club waggle sounds
+
+### Troubleshooting: 0 Shots Detected
+
+If the detector finds 0 shots, check the logs for diagnostic messages:
+- `Audio appears very quiet (peak < 0.01)` - Source audio may be too quiet
+- `No peaks met threshold` - Try increasing sensitivity:
+  ```bash
+  export GOLFCLIP_AUDIO_SENSITIVITY=0.8
+  ```
+- Typical sensitivity values: 0.5 (default), 0.7-0.9 for quiet audio
 
 ## Database Schema
 
