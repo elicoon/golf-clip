@@ -29,7 +29,10 @@ golf-clip/
 │   │   │   ├── visual.py     # YOLO ball tracking
 │   │   │   └── pipeline.py   # Combined detection pipeline
 │   │   ├── models/           # Database CRUD operations
-│   │   │   └── job.py        # Job, Shot, Feedback operations
+│   │   │   ├── job.py        # Job, Shot, Feedback operations
+│   │   │   └── trajectory.py # Trajectory CRUD for shot tracers
+│   │   ├── processing/       # Video processing utilities
+│   │   │   └── tracer.py     # Shot tracer rendering (OpenCV)
 │   │   └── tests/            # Integration tests
 │   │       ├── conftest.py   # Pytest fixtures
 │   │       ├── test_audio_detection.py
@@ -45,7 +48,8 @@ golf-clip/
 │           │   ├── ProcessingView.tsx  # Progress tracking
 │           │   ├── ClipReview.tsx      # Shot review + export
 │           │   ├── ExportComplete.tsx  # Feedback collection
-│           │   └── Scrubber.tsx        # Timeline controls
+│           │   ├── Scrubber.tsx        # Timeline controls
+│           │   └── TrajectoryEditor.tsx # Shot tracer canvas overlay
 │           └── stores/
 │               └── appStore.ts   # Zustand state management
 └── PRD.md
@@ -172,14 +176,20 @@ class JobCacheProxy:
 - `GET /api/feedback/export` - Export all feedback data for analysis
 - `GET /api/feedback/stats` - Get aggregate precision statistics
 
+### Trajectory / Shot Tracer (Phase 2)
+- `GET /api/trajectory/{job_id}/{shot_id}` - Get trajectory data for a shot (normalized 0-1 coords)
+- `PUT /api/trajectory/{job_id}/{shot_id}` - Update trajectory after manual edits
+- `GET /api/trajectories/{job_id}` - Get all trajectories for a job
+
 ## Detection Pipeline
 
 1. **Audio Detection**: Analyze audio for transient peaks (golf strike sounds)
 2. **Deduplication**: Filter nearby detections to keep strongest in each 25s window
 3. **Visual Detection**: Track ball movement using YOLO + optical flow
-4. **Confidence Scoring**: Combine audio/visual signals with confidence thresholds
-5. **Review**: User reviews and adjusts detected shots
-6. **Export**: Trim and export selected clips with customizable pre/post padding
+4. **Trajectory Capture**: Store ball flight path for tracer rendering (Phase 2)
+5. **Confidence Scoring**: Combine audio/visual signals with confidence thresholds
+6. **Review**: User reviews and adjusts detected shots (with optional tracer preview)
+7. **Export**: Trim and export selected clips with optional tracer overlay
 
 ## Audio Detection Features
 
@@ -228,10 +238,11 @@ If the detector finds 0 shots, check the logs for diagnostic messages:
 SQLite database at `~/.golfclip/golfclip.db` with schema versioning:
 
 ```sql
--- Schema v2 (current)
+-- Schema v3 (current)
 jobs (id, video_path, output_dir, status, progress, ...)
 shots (id, job_id FK, shot_number, strike_time, confidence, ...)
 shot_feedback (id, job_id FK, shot_id, feedback_type, notes, confidence_snapshot, ...)
+shot_trajectories (id, job_id FK, shot_id, points JSON, apex_point JSON, confidence, ...)
 ```
 
 ## Feedback Collection System
@@ -258,3 +269,134 @@ curl http://localhost:8420/api/feedback/stats
 2. **Weight Optimization**: Train logistic regression on detection features
 3. **Pattern Analysis**: Categorize FP reasons from notes
 4. **Active Learning**: Prioritize uncertain detections for review
+
+## Shot Tracer Feature (Phase 2)
+
+The shot tracer overlays ball flight trajectory on video clips during review and export.
+
+### How It Works
+
+1. **Detection**: During `detect_shots()`, the pipeline captures ball positions via YOLO tracking
+2. **Storage**: Trajectory points are stored in `shot_trajectories` table with normalized coordinates (0-1)
+3. **Preview**: `TrajectoryEditor.tsx` renders trajectory on a canvas overlay synced to video playback
+4. **Edit**: Users can drag trajectory points to correct detection errors
+5. **Export**: Optionally render tracer overlay onto exported clips using OpenCV
+
+### Frontend Components
+
+**TrajectoryEditor.tsx** - Canvas overlay on video player:
+- Progressive animation (line grows as video plays)
+- Control points: green (detected) vs gray (interpolated)
+- Hover highlight (yellow ring) and drag-to-edit
+- Touch/pointer event support for mobile
+- Safari fallback for canvas blur filter
+
+**ClipReview.tsx** additions:
+- "Show Tracer" checkbox to toggle trajectory visibility
+- "Render Shot Tracers" checkbox for export
+- Loading spinner while trajectory fetches
+
+### Backend Modules
+
+**models/trajectory.py** - CRUD operations:
+```python
+create_trajectory(job_id, shot_id, trajectory_points, ...)
+get_trajectory(job_id, shot_id) -> dict | None
+get_trajectories_for_job(job_id) -> list[dict]
+update_trajectory(job_id, shot_id, trajectory_points, is_manual_override=True)
+```
+
+**processing/tracer.py** - OpenCV renderer:
+```python
+TracerRenderer.render_tracer_on_frame(frame, trajectory_points, current_time, ...)
+TracerExporter.export_with_tracer(output_path, start_time, end_time, trajectory_points, ...)
+```
+
+### Trajectory Data Format
+
+```json
+{
+  "shot_id": 1,
+  "points": [
+    {"timestamp": 0.0, "x": 0.5, "y": 0.8, "confidence": 0.95, "interpolated": false},
+    {"timestamp": 0.1, "x": 0.52, "y": 0.7, "confidence": 0.90, "interpolated": false}
+  ],
+  "apex_point": {"timestamp": 0.5, "x": 0.6, "y": 0.2},
+  "confidence": 0.85,
+  "frame_width": 1920,
+  "frame_height": 1080,
+  "is_manual_override": false
+}
+```
+
+### Tracer Style Options
+
+When exporting with tracer, you can customize appearance:
+- `color`: Hex color for tracer line (default: white)
+- `line_width`: Line thickness in pixels
+- `glow_enabled`: Add glow effect around line
+- `show_apex_marker`: Circle at highest point
+- `show_landing_marker`: X marker at landing point
+
+## Constraint-Based Ball Tracking (WIP)
+
+YOLO-based ball detection fails for golf balls in flight because:
+- Golf balls are small (~1% of frame width)
+- Fast movement (150+ mph) causes motion blur
+- YOLO's "sports ball" class is trained on larger balls (soccer, basketball)
+
+### New Tracking Modules
+
+**detection/origin.py** - `BallOriginDetector`:
+- Multi-method ball origin detection before impact
+- Pipeline: YOLO person → golfer feet → shaft detection (Hough lines) → clubhead offset
+- Reliably finds ball position even when YOLO can't detect the ball directly
+
+**detection/tracker.py** - `ConstrainedBallTracker`:
+- Frame differencing instead of YOLO for motion detection
+- Searches in vertical band above origin (ball rises nearly vertically in behind-ball camera view)
+- Scores candidates by: brightness (white ball), position (above origin), centering, consistency
+- Filters to keep only high-confidence points from first 200ms
+
+### Current State
+
+The tracker successfully detects 6 consistent points in the first ~100ms after impact:
+- X spread: ~33px (nearly vertical motion)
+- Y range: 101-118px above origin
+- Average confidence: 0.78
+
+**Problem**: Only captures the first 100ms of flight. Need to extend tracking for full trajectory to render a smooth shot tracer like popular YouTube golf videos.
+
+### Next Steps for Shot Tracer
+
+1. **Extend tracking duration**: Currently filtering to first 200ms. Need to track for 2-4 seconds (full flight).
+
+2. **Handle ball getting smaller**: As ball flies away from camera, it gets smaller and dimmer. Need adaptive thresholds:
+   - Reduce `MIN_BRIGHTNESS` over time
+   - Reduce `MIN_CONTOUR_AREA` for distant ball
+   - Widen search region as ball could drift more
+
+3. **Trajectory interpolation**: When ball is undetected for several frames, interpolate using parabolic physics model:
+   - Use early detections to estimate launch angle and velocity
+   - Fit parabola to fill gaps
+   - Mark interpolated points with lower confidence
+
+4. **Apex detection**: Find the highest point (lowest y) in trajectory - this is where ball starts descending.
+
+5. **Landing detection**: Use audio (thud) or visual (ball stops moving) to detect landing point.
+
+6. **Smooth rendering**:
+   - Current TrajectoryEditor.tsx draws raw points
+   - Need Bezier curve smoothing for professional-looking tracer
+   - Add trail fade effect (older points more transparent)
+   - Glow effect around the line
+
+### Design Document
+
+See `docs/plans/2026-01-24-constraint-based-ball-tracking.md` for full design.
+
+### Test Video
+
+Test video location: `/Users/ecoon/Desktop/golf-clip test videos/IMG_0991.mov`
+- 4K @ 60fps, 119 seconds
+- 3 detected shots at 18.25s, 60.28s, 111.46s

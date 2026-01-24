@@ -14,6 +14,7 @@ from loguru import logger
 from backend.api.schemas import ClipBoundary, HoleInfo
 from backend.core.config import settings
 from backend.core.video import VideoProcessor, VideoMetadata
+from backend.processing.tracer import TracerExporter, TracerStyle
 
 
 ProgressCallback = Callable[[str, float], None]
@@ -179,6 +180,84 @@ class ClipExporter:
             return ExportResult(
                 success=False,
                 output_path=None,
+                shot_id=-1,
+                duration=duration,
+                error_message=str(e),
+            )
+
+    def export_clip_with_tracer(
+        self,
+        start_time: float,
+        end_time: float,
+        output_path: Path,
+        trajectory_points: list[dict],
+        frame_width: int,
+        frame_height: int,
+        apex_point: Optional[dict] = None,
+        tracer_style: Optional[dict] = None,
+        progress_callback: Optional[ProgressCallback] = None,
+    ) -> "ExportResult":
+        """Export a clip with shot tracer overlay.
+
+        Args:
+            start_time: Clip start in seconds
+            end_time: Clip end in seconds
+            output_path: Where to save output
+            trajectory_points: Normalized trajectory points
+            frame_width: Source video width
+            frame_height: Source video height
+            apex_point: Optional apex point for marker
+            tracer_style: Optional style configuration dict
+            progress_callback: Progress callback
+
+        Returns:
+            ExportResult with status
+        """
+        output_path = Path(output_path)
+        duration = end_time - start_time
+
+        try:
+            # Create style from dict if provided
+            style = None
+            if tracer_style:
+                style = TracerStyle.from_dict(tracer_style)
+
+            # Create exporter and render
+            exporter = TracerExporter(self.video_path, style)
+
+            def tracer_progress(p: float):
+                if progress_callback:
+                    progress_callback("Rendering tracer", p)
+
+            exporter.export_with_tracer(
+                output_path=output_path,
+                start_time=start_time,
+                end_time=end_time,
+                trajectory_points=trajectory_points,
+                frame_width=frame_width,
+                frame_height=frame_height,
+                apex_point=apex_point,
+                progress_callback=tracer_progress,
+            )
+
+            # Get file size if export succeeded
+            file_size = 0
+            if output_path.exists():
+                file_size = output_path.stat().st_size
+
+            return ExportResult(
+                success=True,
+                output_path=output_path,
+                shot_id=-1,
+                duration=duration,
+                file_size=file_size,
+            )
+
+        except Exception as e:
+            logger.exception(f"Failed to export clip with tracer: {e}")
+            return ExportResult(
+                success=False,
+                output_path=output_path,
                 shot_id=-1,
                 duration=duration,
                 error_message=str(e),

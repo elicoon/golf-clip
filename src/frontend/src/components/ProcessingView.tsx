@@ -288,6 +288,11 @@ export function ProcessingView({ jobId, onComplete, onCancel }: ProcessingViewPr
           <p className="initializing-hint">
             {usePolling ? 'Using polling fallback' : 'Connecting to processing server'}
           </p>
+          <div className="init-progress-container">
+            <div className="init-progress-bar">
+              <div className="init-progress-fill" />
+            </div>
+          </div>
           <button
             className="btn-danger"
             onClick={handleCancel}

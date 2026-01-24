@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useAppStore } from '../stores/appStore'
 
 interface ExportCompleteProps {
@@ -23,11 +23,102 @@ export function ExportComplete({ jobId, exportedClips, onReset }: ExportComplete
   const [error, setError] = useState<string | null>(null)
   const [expandedNotes, setExpandedNotes] = useState<number | null>(null)
 
+  // Download state
+  const [selectedForDownload, setSelectedForDownload] = useState<Set<string>>(
+    () => new Set(exportedClips)
+  )
+  const [downloading, setDownloading] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<string | null>(null)
+
   // Get exported shot IDs from file paths (shot_{id}.mp4)
-  const exportedShotIds = exportedClips.map(path => {
-    const match = path.match(/shot_(\d+)\.mp4$/)
-    return match ? parseInt(match[1], 10) : null
-  }).filter((id): id is number => id !== null)
+  const exportedShotIds = useMemo(() =>
+    exportedClips.map(path => {
+      const match = path.match(/shot_(\d+)\.mp4$/)
+      return match ? parseInt(match[1], 10) : null
+    }).filter((id): id is number => id !== null),
+    [exportedClips]
+  )
+
+  // Map paths to shot IDs for display
+  const clipInfo = useMemo(() =>
+    exportedClips.map(path => {
+      const match = path.match(/shot_(\d+)\.mp4$/)
+      const shotId = match ? parseInt(match[1], 10) : null
+      const shot = shotId ? shots.find(s => s.id === shotId) : null
+      const filename = path.split('/').pop() || path
+      return { path, shotId, shot, filename }
+    }),
+    [exportedClips, shots]
+  )
+
+  const handleToggleClip = useCallback((path: string) => {
+    setSelectedForDownload(prev => {
+      const updated = new Set(prev)
+      if (updated.has(path)) {
+        updated.delete(path)
+      } else {
+        updated.add(path)
+      }
+      return updated
+    })
+  }, [])
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedForDownload(new Set(exportedClips))
+  }, [exportedClips])
+
+  const handleDeselectAll = useCallback(() => {
+    setSelectedForDownload(new Set())
+  }, [])
+
+  const handleDownloadSelected = useCallback(async () => {
+    const selected = Array.from(selectedForDownload)
+    if (selected.length === 0) return
+
+    setDownloading(true)
+    setDownloadProgress(null)
+
+    try {
+      for (let i = 0; i < selected.length; i++) {
+        const path = selected[i]
+        const filename = path.split('/').pop() || `clip_${i + 1}.mp4`
+
+        setDownloadProgress(`Downloading ${i + 1} of ${selected.length}...`)
+
+        // Fetch the file with download flag
+        const response = await fetch(
+          `http://127.0.0.1:8420/api/video?path=${encodeURIComponent(path)}&download=true`
+        )
+
+        if (!response.ok) {
+          throw new Error(`Failed to download ${filename}`)
+        }
+
+        // Create blob and trigger download
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+
+        // Small delay between downloads to prevent browser issues
+        if (i < selected.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 300))
+        }
+      }
+
+      setDownloadProgress(`Downloaded ${selected.length} clip${selected.length !== 1 ? 's' : ''}!`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Download failed'
+      setDownloadProgress(`Error: ${message}`)
+    } finally {
+      setDownloading(false)
+    }
+  }, [selectedForDownload])
 
   const handleFeedback = useCallback((shotId: number, type: FeedbackType) => {
     setFeedbackMap(prev => {
@@ -92,6 +183,8 @@ export function ExportComplete({ jobId, exportedClips, onReset }: ExportComplete
   }, [feedbackMap, jobId, onReset])
 
   const feedbackCount = Array.from(feedbackMap.values()).filter(f => f.feedback_type !== null).length
+  const allSelected = selectedForDownload.size === exportedClips.length
+  const noneSelected = selectedForDownload.size === 0
 
   if (submitted) {
     return (
@@ -117,6 +210,68 @@ export function ExportComplete({ jobId, exportedClips, onReset }: ExportComplete
         {exportedClips.length} clip{exportedClips.length !== 1 ? 's' : ''} exported successfully.
       </p>
 
+      {/* Download Section */}
+      <div className="download-section">
+        <h3>Download Clips</h3>
+        <p className="download-description">
+          Select the clips you want to download to your computer.
+        </p>
+
+        <div className="download-select-actions">
+          <button
+            className="btn-link"
+            onClick={handleSelectAll}
+            disabled={allSelected}
+          >
+            Select All
+          </button>
+          <span className="select-divider">|</span>
+          <button
+            className="btn-link"
+            onClick={handleDeselectAll}
+            disabled={noneSelected}
+          >
+            Deselect All
+          </button>
+        </div>
+
+        <div className="clips-download-list">
+          {clipInfo.map(({ path, shotId, shot, filename }) => (
+            <label key={path} className="clip-download-item">
+              <input
+                type="checkbox"
+                checked={selectedForDownload.has(path)}
+                onChange={() => handleToggleClip(path)}
+                disabled={downloading}
+              />
+              <span className="clip-download-info">
+                <span className="clip-name">{shotId ? `Shot ${shotId}` : filename}</span>
+                {shot && (
+                  <span className="clip-time">
+                    {formatTime(shot.clip_start)} - {formatTime(shot.clip_end)}
+                  </span>
+                )}
+              </span>
+            </label>
+          ))}
+        </div>
+
+        {downloadProgress && (
+          <div className={`download-status ${downloadProgress.startsWith('Error') ? 'download-error' : ''}`}>
+            {downloadProgress}
+          </div>
+        )}
+
+        <button
+          onClick={handleDownloadSelected}
+          className="btn-primary btn-download"
+          disabled={downloading || noneSelected}
+        >
+          {downloading ? 'Downloading...' : `Download${selectedForDownload.size > 0 ? ` (${selectedForDownload.size})` : ''}`}
+        </button>
+      </div>
+
+      {/* Feedback Section */}
       <div className="feedback-section">
         <h3>Help Improve Detection</h3>
         <p className="feedback-description">

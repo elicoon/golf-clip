@@ -9,9 +9,12 @@ from loguru import logger
 from backend.api.schemas import DetectedShot
 from backend.core.config import settings
 from backend.core.video import VideoProcessor
-from backend.detection.audio import AudioStrikeDetector
+from backend.detection.audio import AudioStrikeDetector, DetectionConfig
 from backend.detection.classifier import ShotClassifier
+from backend.detection.origin import BallOriginDetector
+from backend.detection.tracker import ConstrainedBallTracker
 from backend.detection.visual import BallDetector
+from backend.models.trajectory import create_trajectory
 
 
 class PipelineError(Exception):
@@ -92,6 +95,11 @@ class ShotDetectionPipeline:
         self.ball_detector: Optional[BallDetector] = None
         self.shot_classifier = ShotClassifier()
         self._cancelled = False
+        self._frame_width: Optional[int] = None
+        self._frame_height: Optional[int] = None
+        if self.video_info:
+            self._frame_width = self.video_info.width
+            self._frame_height = self.video_info.height
 
     def cancel(self):
         """Request cancellation of the pipeline."""
@@ -105,11 +113,13 @@ class ShotDetectionPipeline:
     async def detect_shots(
         self,
         progress_callback: Optional[Callable[[str, float], None]] = None,
+        job_id: Optional[str] = None,
     ) -> list[DetectedShot]:
         """Run the full detection pipeline.
 
         Args:
             progress_callback: Callback(step_name, progress_percent)
+            job_id: Job ID for storing trajectories (required for tracer feature)
 
         Returns:
             List of detected shots with timing and confidence
@@ -149,7 +159,9 @@ class ShotDetectionPipeline:
             self._check_cancelled()
             report_progress("Analyzing audio for strikes", 10)
 
-            self.audio_detector = AudioStrikeDetector(audio_path)
+            audio_config = DetectionConfig(sensitivity=settings.audio_sensitivity)
+            self.audio_detector = AudioStrikeDetector(audio_path, config=audio_config)
+            logger.info(f"Audio detection sensitivity: {settings.audio_sensitivity}")
 
             def audio_progress(p: float):
                 # Map 0-100 to 10-40
@@ -164,7 +176,10 @@ class ShotDetectionPipeline:
             report_progress("Analyzing audio for strikes", 40)
 
             if len(audio_strikes) == 0:
-                logger.warning("No audio strikes detected, falling back to visual-only detection")
+                logger.warning(
+                    "No audio strikes detected, falling back to visual-only detection. "
+                    "If your video has golf shots, try: export GOLFCLIP_AUDIO_SENSITIVITY=0.8"
+                )
                 return await self._visual_only_detection(progress_callback, start_progress=40)
 
             # Step 3: Visual analysis around each audio strike (40-80%)
@@ -172,6 +187,10 @@ class ShotDetectionPipeline:
             report_progress("Analyzing video for ball detection", 40)
 
             self.ball_detector = BallDetector()
+
+            # Initialize constrained ball tracker for trajectory detection
+            self.origin_detector = BallOriginDetector()
+            self.constrained_tracker = ConstrainedBallTracker(self.origin_detector)
 
             confirmed_shots = []
             total_strikes = len(audio_strikes)
@@ -236,13 +255,111 @@ class ShotDetectionPipeline:
 
                 # Only include if above minimum threshold
                 if combined_confidence > 0.3:
+                    # Analyze ball flight trajectory for tracer rendering
+                    visual_features = None
+                    trajectory_points = []
+
+                    # Try constrained tracker first (better for small/fast balls)
+                    try:
+                        # Detect ball origin
+                        origin = self.origin_detector.detect_origin(self.video_path, strike_time)
+                        logger.debug(
+                            f"Origin detection for strike at {strike_time:.2f}s: "
+                            f"({origin.x:.0f},{origin.y:.0f}) conf={origin.confidence:.2f} method={origin.method}"
+                        )
+
+                        if origin.confidence >= 0.2:
+                            # Track ball flight from origin
+                            constrained_trajectory = self.constrained_tracker.track_flight(
+                                self.video_path,
+                                origin,
+                                strike_time,
+                                max_flight_duration=1.0,  # Focus on early frames
+                            )
+
+                            if constrained_trajectory and len(constrained_trajectory) >= 2:
+                                trajectory_points = [
+                                    {
+                                        "timestamp": pt.timestamp,
+                                        "x": pt.x,
+                                        "y": pt.y,
+                                        "confidence": pt.confidence,
+                                        "interpolated": False,
+                                    }
+                                    for pt in constrained_trajectory
+                                ]
+                                logger.debug(
+                                    f"Constrained tracker found {len(trajectory_points)} points "
+                                    f"for strike at {strike_time:.2f}s"
+                                )
+                    except Exception as e:
+                        logger.warning(f"Constrained tracking failed for strike at {strike_time:.2f}s: {e}")
+
+                    # Fall back to YOLO-based approach if constrained tracker didn't find enough
+                    if len(trajectory_points) < 3:
+                        try:
+                            flight_analysis = self.ball_detector.analyze_ball_flight(
+                                self.video_path,
+                                strike_time - 0.5,
+                                min(self.video_info.duration, strike_time + 8.0),
+                                sample_fps=30.0,
+                            )
+
+                            if flight_analysis.trajectory and len(flight_analysis.trajectory) >= 2:
+                                trajectory_points = [
+                                    {
+                                        "timestamp": pt.timestamp,
+                                        "x": pt.x,
+                                        "y": pt.y,
+                                        "confidence": pt.confidence,
+                                        "interpolated": pt.interpolated,
+                                    }
+                                    for pt in flight_analysis.trajectory
+                                ]
+                                logger.debug(
+                                    f"YOLO fallback found {len(trajectory_points)} points "
+                                    f"for strike at {strike_time:.2f}s"
+                                )
+                        except Exception as e:
+                            logger.warning(f"YOLO trajectory analysis failed for strike at {strike_time:.2f}s: {e}")
+
+                    # Build visual features if we have trajectory
+                    if trajectory_points:
+                        # Find apex (highest point = min y)
+                        apex_point = min(trajectory_points, key=lambda p: p["y"])
+                        apex_dict = {
+                            "timestamp": apex_point["timestamp"],
+                            "x": apex_point["x"],
+                            "y": apex_point["y"],
+                        }
+
+                        # Calculate flight duration and average confidence
+                        flight_duration = trajectory_points[-1]["timestamp"] - trajectory_points[0]["timestamp"]
+                        avg_confidence = sum(p["confidence"] for p in trajectory_points) / len(trajectory_points)
+
+                        visual_features = {
+                            "trajectory": trajectory_points,
+                            "apex_point": apex_dict,
+                            "launch_angle": None,  # Not computed by constrained tracker
+                            "flight_duration": flight_duration,
+                            "trajectory_confidence": avg_confidence,
+                            "smoothness_score": 0.8 if len(trajectory_points) >= 4 else 0.5,
+                            "physics_plausibility": 0.8,
+                            "has_gaps": False,
+                            "gap_count": 0,
+                        }
+                        logger.debug(
+                            f"Captured trajectory for strike at {strike_time:.2f}s: "
+                            f"{len(trajectory_points)} points, confidence={avg_confidence:.2f}"
+                        )
+
                     confirmed_shots.append({
                         "strike_time": strike_time,
                         "audio_confidence": audio_confidence,
                         "visual_confidence": visual_confidence,
                         "combined_confidence": combined_confidence,
                         "audio_features": audio_features,
-                        "visual_features": None,  # TODO: Extract visual trajectory features
+                        "visual_features": visual_features,
                     })
 
                 # Report progress for visual analysis
@@ -304,6 +421,28 @@ class ShotDetectionPipeline:
                         visual_confidence=shot["visual_confidence"],
                     )
                 )
+
+                # Store trajectory if available
+                if job_id and shot.get("visual_features") and shot["visual_features"].get("trajectory"):
+                    vf = shot["visual_features"]
+                    try:
+                        await create_trajectory(
+                            job_id=job_id,
+                            shot_id=i + 1,
+                            trajectory_points=vf["trajectory"],
+                            confidence=vf.get("trajectory_confidence", 0),
+                            smoothness_score=vf.get("smoothness_score"),
+                            physics_plausibility=vf.get("physics_plausibility"),
+                            apex_point=vf.get("apex_point"),
+                            launch_angle=vf.get("launch_angle"),
+                            flight_duration=vf.get("flight_duration"),
+                            has_gaps=vf.get("has_gaps", False),
+                            gap_count=vf.get("gap_count", 0),
+                            frame_width=self._frame_width or 1920,
+                            frame_height=self._frame_height or 1080,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to store trajectory for shot {i+1}: {e}")
 
                 progress = 80 + ((i + 1) / max(1, len(confirmed_shots))) * 20
                 report_progress("Estimating ball landing times", progress)
@@ -442,6 +581,14 @@ class ShotDetectionPipeline:
 
         report_progress("Detection complete", 100)
         logger.info(f"Visual-only detection found {len(shots)} potential shots")
+
+        if len(shots) == 0:
+            logger.warning(
+                "Visual detection also found 0 shots. Possible reasons: "
+                "1) No golf ball visible in frame, "
+                "2) Video quality/resolution too low, "
+                "3) Camera angle makes ball hard to track"
+            )
 
         return shots
 

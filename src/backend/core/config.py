@@ -23,8 +23,15 @@ class Settings(BaseSettings):
 
     # ML Models
     yolo_model: str = "yolov8n.pt"  # Start with nano for speed, upgrade later
-    yolo_confidence: float = 0.5
+    # Golf ball detection requires very low confidence (balls detected at 3-15%)
+    # COCO's "sports ball" class is trained on larger balls (soccer, basketball)
+    # so golf balls score much lower. Size filtering handles false positives.
+    yolo_confidence: float = 0.03
     audio_sample_rate: int = 44100
+
+    # Audio detection sensitivity (0-1, higher = more sensitive, more detections)
+    # Try 0.7-0.9 if getting 0 shots detected
+    audio_sensitivity: float = 0.5
 
     # FFmpeg
     ffmpeg_threads: int = 0  # 0 = auto-detect

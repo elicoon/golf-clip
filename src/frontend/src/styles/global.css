@@ -334,6 +334,66 @@ button:disabled {
 }
 
 /* ============================================
+   Upload Progress
+   ============================================ */
+
+.upload-progress-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  max-width: 300px;
+}
+
+.upload-progress-text {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+
+.upload-progress-bar {
+  width: 100%;
+  height: 8px;
+  background-color: var(--color-bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover));
+  transition: width 0.15s ease;
+  border-radius: 4px;
+}
+
+.upload-progress-indeterminate .upload-progress-fill {
+  width: 30% !important;
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(233%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.upload-progress-percent {
+  font-size: 0.875rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+}
+
+/* ============================================
    Processing View
    ============================================ */
 
@@ -431,6 +491,28 @@ button:disabled {
 .initializing-hint {
   color: var(--color-text-muted);
   margin-top: var(--spacing-sm);
+}
+
+.init-progress-container {
+  width: 100%;
+  max-width: 300px;
+  margin-top: var(--spacing-lg);
+}
+
+.init-progress-bar {
+  width: 100%;
+  height: 6px;
+  background-color: var(--color-bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.init-progress-fill {
+  width: 30%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover));
+  border-radius: 3px;
+  animation: indeterminate 1.5s ease-in-out infinite;
 }
 
 .processing-steps {
@@ -1365,6 +1447,100 @@ kbd {
 }
 
 /* ============================================
+   Download Section
+   ============================================ */
+
+.download-section {
+  width: 100%;
+  text-align: left;
+  padding: var(--spacing-lg);
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--border-radius);
+  margin-bottom: var(--spacing-lg);
+}
+
+.download-section h3 {
+  font-size: 1rem;
+  margin-bottom: var(--spacing-xs);
+}
+
+.download-description {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-md);
+}
+
+.download-select-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.select-divider {
+  color: var(--color-text-muted);
+}
+
+.clips-download-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.clip-download-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.clip-download-item:hover {
+  background-color: var(--color-bg-elevated);
+}
+
+.clip-download-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.clip-download-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+.download-status {
+  text-align: center;
+  padding: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  background-color: var(--color-primary-dim);
+  color: var(--color-primary);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.875rem;
+}
+
+.download-status.download-error {
+  background-color: var(--color-danger-dim);
+  color: var(--color-danger);
+}
+
+.btn-download {
+  width: 100%;
+}
+
+/* ============================================
    App Error / Overlay States
    ============================================ */
 
@@ -1520,4 +1696,34 @@ kbd {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ============================================
+   Trajectory Editor
+   ============================================ */
+
+.trajectory-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+}
+
+.tracer-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin: var(--spacing-sm) 0;
+  padding: var(--spacing-sm);
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--border-radius-sm);
+}
+
+.tracer-controls label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  cursor: pointer;
 }

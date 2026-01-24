@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { Scrubber } from './Scrubber'
+import { TrajectoryEditor } from './TrajectoryEditor'
 
 interface ClipReviewProps {
   jobId: string
@@ -9,6 +10,24 @@ interface ClipReviewProps {
 }
 
 type LoadingState = 'idle' | 'loading' | 'error'
+
+interface TrajectoryPoint {
+  timestamp: number
+  x: number
+  y: number
+  confidence: number
+  interpolated: boolean
+}
+
+interface TrajectoryData {
+  shot_id: number
+  points: TrajectoryPoint[]
+  confidence: number
+  apex_point?: TrajectoryPoint
+  frame_width: number
+  frame_height: number
+  is_manual_override: boolean
+}
 
 interface ExportProgress {
   export_job_id: string
@@ -32,6 +51,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [videoLoaded, setVideoLoaded] = useState(false)
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
   const [showExportModal, setShowExportModal] = useState(false)
+  const [showTracer, setShowTracer] = useState(true)
+  const [trajectory, setTrajectory] = useState<TrajectoryData | null>(null)
+  const [trajectoryLoading, setTrajectoryLoading] = useState(false)
+  const [exportWithTracer, setExportWithTracer] = useState(true)
+  const [currentTime, setCurrentTime] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -44,6 +68,40 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     if (videoRef.current && currentShot) {
       videoRef.current.currentTime = currentShot.clip_start
     }
+  }, [currentShot])
+
+  // Fetch trajectory when shot changes
+  useEffect(() => {
+    if (currentShot) {
+      setTrajectoryLoading(true)
+      fetch(`http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => setTrajectory(data))
+        .catch(() => setTrajectory(null))
+        .finally(() => setTrajectoryLoading(false))
+    } else {
+      setTrajectory(null)
+    }
+  }, [currentShot?.id, jobId])
+
+  // Track current video time for trajectory rendering and enforce clip boundaries
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !currentShot) return
+
+    const handleTimeUpdate = () => {
+      setCurrentTime(video.currentTime)
+
+      // Stop playback when reaching clip end
+      if (video.currentTime >= currentShot.clip_end && !video.paused) {
+        video.pause()
+        video.currentTime = currentShot.clip_end
+        setIsPlaying(false)
+      }
+    }
+
+    video.addEventListener('timeupdate', handleTimeUpdate)
+    return () => video.removeEventListener('timeupdate', handleTimeUpdate)
   }, [currentShot])
 
   // Keyboard shortcuts
@@ -125,16 +183,20 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentShotIndex, shotsNeedingReview.length, currentShot])
+  // Note: We intentionally use a minimal dependency array here.
+  // The handlers (handleAccept, handleReject, etc.) are called at event time
+  // and reference the current component scope, so they get the latest state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentShotIndex, shotsNeedingReview.length])
 
-  const handleTimeUpdate = (newStart: number, newEnd: number) => {
+  const handleTimeUpdate = useCallback((newStart: number, newEnd: number) => {
     if (currentShot) {
       updateShot(currentShot.id, {
         clip_start: newStart,
         clip_end: newEnd,
       })
     }
-  }
+  }, [currentShot, updateShot])
 
   const handleAccept = async () => {
     if (!currentShot || loadingState === 'loading') return
@@ -144,7 +206,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     try {
       // Mark as approved (confidence = 1.0)
+      console.log('Accepting shot', currentShot.id, '- setting confidence to 1.0')
       updateShot(currentShot.id, { confidence: 1.0 })
+      console.log('After updateShot, store state:', useAppStore.getState().shots.map(s => ({ id: s.id, confidence: s.confidence })))
 
       // Send update to server
       const response = await fetch(`http://127.0.0.1:8420/api/shots/${jobId}/update`, {
@@ -166,13 +230,16 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
       setLoadingState('idle')
 
-      // Move to next shot or complete
-      if (currentShotIndex < shotsNeedingReview.length - 1) {
-        setCurrentShotIndex(currentShotIndex + 1)
-      } else {
+      // Check if this was the last shot needing review
+      if (shotsNeedingReview.length === 1) {
         // All shots reviewed, export clips
+        // handleExportComplete() will call onComplete() when user clicks Done
         await exportClips()
-        onComplete()
+      } else {
+        // Reset to index 0 - the accepted shot will be filtered out on re-render,
+        // so remaining shots shift down. Setting to 0 ensures we don't go out of bounds
+        // if user had navigated to a later shot.
+        setCurrentShotIndex(0)
       }
     } catch (error) {
       setLoadingState('error')
@@ -189,8 +256,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     if (currentShotIndex < shotsNeedingReview.length - 1) {
       setCurrentShotIndex(currentShotIndex + 1)
     } else {
+      // handleExportComplete() will call onComplete() when user clicks Done
       await exportClips()
-      onComplete()
     }
   }
 
@@ -200,7 +267,10 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setShowExportModal(true)
 
     try {
-      const approvedClips = shots
+      // Get fresh state from store (shots variable may be stale from render cycle)
+      const currentShots = useAppStore.getState().shots
+      console.log('Export - all shots:', currentShots.map(s => ({ id: s.id, confidence: s.confidence })))
+      const approvedClips = currentShots
         .filter((s) => s.confidence >= 0.7)
         .map((s) => ({
           shot_id: s.id,
@@ -208,6 +278,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           end_time: s.clip_end,
           approved: true,
         }))
+      console.log('Export - approved clips:', approvedClips)
 
       const outputDir = videoPath.replace(/\.[^.]+$/, '_clips')
 
@@ -220,6 +291,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           clips: approvedClips,
           output_dir: outputDir,
           filename_pattern: 'shot_{shot_id}',
+          render_tracer: exportWithTracer,
+          tracer_style: exportWithTracer ? { color: '#FFFFFF', glow_enabled: true } : undefined,
         }),
       })
 
@@ -457,6 +530,32 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         </span>
       </div>
 
+      <div className="review-actions">
+        <button
+          onClick={handleReject}
+          className="btn-secondary btn-reject"
+          disabled={loadingState === 'loading'}
+          title="Reject (Escape)"
+        >
+          ✗ Reject
+        </button>
+        <button
+          onClick={handleAccept}
+          className="btn-primary btn-accept"
+          disabled={loadingState === 'loading'}
+          title="Accept (Enter)"
+        >
+          {loadingState === 'loading' ? (
+            <>
+              <span className="spinner" />
+              Saving...
+            </>
+          ) : (
+            '✓ Accept'
+          )}
+        </button>
+      </div>
+
       <div className={`video-container ${!videoLoaded ? 'video-loading' : ''}`}>
         {!videoLoaded && (
           <div className="video-loader">
@@ -472,6 +571,22 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           onLoadedData={handleVideoLoad}
           onError={handleVideoError}
           playsInline
+        />
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={trajectory}
+          currentTime={currentTime}
+          showTracer={showTracer}
+          disabled={false}
+          onTrajectoryUpdate={(points) => {
+            // Save updated trajectory - only if we have a valid shot
+            if (!currentShot) return
+            fetch(`http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ points }),
+            }).catch((err) => console.error('Failed to save trajectory:', err))
+          }}
         />
       </div>
 
@@ -526,6 +641,27 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         </button>
       </div>
 
+      <div className="tracer-controls">
+        <label>
+          <input
+            type="checkbox"
+            checked={showTracer}
+            onChange={(e) => setShowTracer(e.target.checked)}
+            disabled={trajectoryLoading}
+          />
+          Show Tracer
+          {trajectoryLoading && <span className="spinner" style={{ marginLeft: 8 }} />}
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={exportWithTracer}
+            onChange={(e) => setExportWithTracer(e.target.checked)}
+          />
+          Render Shot Tracers
+        </label>
+      </div>
+
       <div className="confidence-info">
         <div className="confidence-badge" data-level={getConfidenceLevel(currentShot.confidence)}>
           {Math.round(currentShot.confidence * 100)}%
@@ -546,32 +682,6 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           <button onClick={() => setErrorMessage(null)} className="error-dismiss">×</button>
         </div>
       )}
-
-      <div className="review-actions">
-        <button
-          onClick={handleReject}
-          className="btn-secondary btn-reject"
-          disabled={loadingState === 'loading'}
-          title="Reject (Escape)"
-        >
-          ✗ Reject
-        </button>
-        <button
-          onClick={handleAccept}
-          className="btn-primary btn-accept"
-          disabled={loadingState === 'loading'}
-          title="Accept (Enter)"
-        >
-          {loadingState === 'loading' ? (
-            <>
-              <span className="spinner" />
-              Saving...
-            </>
-          ) : (
-            '✓ Accept'
-          )}
-        </button>
-      </div>
 
       <div className="time-display">
         <span>Start: {currentShot.clip_start.toFixed(2)}s</span>

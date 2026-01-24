@@ -29,10 +29,14 @@ from backend.api.schemas import (
     ProgressEvent,
     ShotFeedbackRequest,
     ShotFeedbackResponse,
+    TrajectoryData,
+    TrajectoryPoint,
+    TrajectoryUpdateRequest,
     VideoInfo,
 )
 from backend.core.config import settings
 from backend.core.video import extract_clip, get_video_info
+from backend.processing.clips import ClipExporter
 from backend.detection.pipeline import ShotDetectionPipeline
 from backend.models.job import (
     create_feedback,
@@ -47,6 +51,11 @@ from backend.models.job import (
     get_shots_for_job,
     update_job,
     update_shot,
+)
+from backend.models.trajectory import (
+    get_trajectory,
+    get_trajectories_for_job,
+    update_trajectory as update_trajectory_db,
 )
 
 router = APIRouter()
@@ -257,7 +266,7 @@ async def run_detection_pipeline(job_id: str):
             except RuntimeError:
                 pass  # No event loop, skip SSE
 
-        shots = await pipeline.detect_shots(progress_callback=sync_progress_callback)
+        shots = await pipeline.detect_shots(progress_callback=sync_progress_callback, job_id=job_id)
 
         # Check for cancellation again after processing
         if job.get("cancelled"):
@@ -373,12 +382,28 @@ async def stream_progress(job_id: str):
             step=job.get("current_step", "Unknown"),
             progress=job.get("progress", 0),
             timestamp=datetime.utcnow().isoformat(),
+            total_shots_detected=job.get("total_shots_detected", 0),
+            shots_needing_review=job.get("shots_needing_review", 0),
         )
         yield f"data: {initial_event.model_dump_json()}\n\n"
 
-        # Check if job is already complete
-        if job.get("status") in ("complete", "error", "cancelled"):
-            yield f"event: complete\ndata: {initial_event.model_dump_json()}\n\n"
+        # Check if job is already complete - refresh from database to get latest data
+        if job.get("status") in ("complete", "error", "cancelled", "review"):
+            # Get fresh data from database to ensure we have shots_needing_review
+            fresh_job = await get_job(job_id)
+            if fresh_job:
+                _cache_job(job_id, fresh_job)  # Update cache
+                complete_event = ProgressEvent(
+                    job_id=job_id,
+                    step=fresh_job.get("current_step", "Complete"),
+                    progress=100,
+                    timestamp=datetime.utcnow().isoformat(),
+                    total_shots_detected=fresh_job.get("total_shots_detected", 0),
+                    shots_needing_review=fresh_job.get("shots_needing_review", 0),
+                )
+                yield f"event: complete\ndata: {complete_event.model_dump_json()}\n\n"
+            else:
+                yield f"event: complete\ndata: {initial_event.model_dump_json()}\n\n"
             return
 
         # Stream updates
@@ -389,8 +414,17 @@ async def stream_progress(job_id: str):
 
                 # Check if job is complete (from cache or database)
                 current_job = _get_cached_job(job_id) or await get_job(job_id)
-                if current_job and current_job.get("status") in ("complete", "error", "cancelled"):
-                    yield f"event: complete\ndata: {event.model_dump_json()}\n\n"
+                if current_job and current_job.get("status") in ("complete", "error", "cancelled", "review"):
+                    # Create completion event with shots data from job
+                    complete_event = ProgressEvent(
+                        job_id=job_id,
+                        step=current_job.get("current_step", "Complete"),
+                        progress=100,
+                        timestamp=datetime.utcnow().isoformat(),
+                        total_shots_detected=current_job.get("total_shots_detected", 0),
+                        shots_needing_review=current_job.get("shots_needing_review", 0),
+                    )
+                    yield f"event: complete\ndata: {complete_event.model_dump_json()}\n\n"
                     break
 
             except asyncio.TimeoutError:
@@ -399,7 +433,7 @@ async def stream_progress(job_id: str):
 
                 # Check if job still exists and is active
                 current_job = _get_cached_job(job_id) or await get_job(job_id)
-                if not current_job or current_job.get("status") in ("complete", "error", "cancelled"):
+                if not current_job or current_job.get("status") in ("complete", "error", "cancelled", "review"):
                     break
 
     return StreamingResponse(
@@ -423,6 +457,13 @@ async def get_status(job_id: str):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         _cache_job(job_id, job)
+
+    # For completed jobs, always refresh from database to avoid stale cache
+    if job.get("status") in ("complete", "error", "cancelled", "review"):
+        fresh_job = await get_job(job_id)
+        if fresh_job:
+            job = fresh_job
+            _cache_job(job_id, job)
 
     return ProcessingStatus(
         video_path=job["video_path"],
@@ -570,6 +611,8 @@ async def export_clips(request: ExportClipsRequest, background_tasks: Background
         "exported": [],
         "errors": [],
         "has_errors": False,
+        "render_tracer": request.render_tracer,
+        "tracer_style": request.tracer_style.model_dump() if request.tracer_style else None,
     }
     _export_jobs[export_job_id] = export_job
 
@@ -600,6 +643,9 @@ async def run_export_job(export_job_id: str):
         clips = export_job["clips"]
         total_clips = len(clips)
 
+        # Create ClipExporter for tracer rendering if needed
+        clip_exporter = ClipExporter(video_path) if export_job.get("render_tracer") else None
+
         for i, clip in enumerate(clips):
             export_job["current_clip"] = clip["shot_id"]
             export_job["progress"] = (i / max(total_clips, 1)) * 100
@@ -608,19 +654,63 @@ async def run_export_job(export_job_id: str):
             output_path = output_dir / filename
 
             try:
-                # Run extract_clip in thread pool to not block event loop
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(
-                    None,
-                    extract_clip,
-                    video_path,
-                    output_path,
-                    clip["start_time"],
-                    clip["end_time"],
-                )
-                export_job["exported"].append(str(output_path))
-                export_job["exported_count"] = len(export_job["exported"])
-                logger.info(f"Exported clip {clip['shot_id']} to {output_path}")
+
+                if export_job.get("render_tracer"):
+                    # Get trajectory for this shot
+                    trajectory = await get_trajectory(export_job["job_id"], clip["shot_id"])
+
+                    if trajectory and trajectory.get("points"):
+                        # Export with tracer overlay
+                        tracer_style_dict = export_job.get("tracer_style")
+
+                        def export_with_tracer():
+                            return clip_exporter.export_clip_with_tracer(
+                                start_time=clip["start_time"],
+                                end_time=clip["end_time"],
+                                output_path=output_path,
+                                trajectory_points=trajectory["points"],
+                                frame_width=trajectory["frame_width"],
+                                frame_height=trajectory["frame_height"],
+                                apex_point=trajectory.get("apex_point"),
+                                tracer_style=tracer_style_dict,
+                            )
+
+                        result = await loop.run_in_executor(None, export_with_tracer)
+
+                        if result.success:
+                            export_job["exported"].append(str(output_path))
+                            export_job["exported_count"] = len(export_job["exported"])
+                            logger.info(f"Exported clip {clip['shot_id']} with tracer to {output_path}")
+                        else:
+                            raise Exception(result.error_message or "Tracer export failed")
+                    else:
+                        # No trajectory, fall back to normal export
+                        logger.warning(f"No trajectory for shot {clip['shot_id']}, exporting without tracer")
+                        await loop.run_in_executor(
+                            None,
+                            extract_clip,
+                            video_path,
+                            output_path,
+                            clip["start_time"],
+                            clip["end_time"],
+                        )
+                        export_job["exported"].append(str(output_path))
+                        export_job["exported_count"] = len(export_job["exported"])
+                        logger.info(f"Exported clip {clip['shot_id']} to {output_path}")
+                else:
+                    # Normal export without tracer
+                    await loop.run_in_executor(
+                        None,
+                        extract_clip,
+                        video_path,
+                        output_path,
+                        clip["start_time"],
+                        clip["end_time"],
+                    )
+                    export_job["exported"].append(str(output_path))
+                    export_job["exported_count"] = len(export_job["exported"])
+                    logger.info(f"Exported clip {clip['shot_id']} to {output_path}")
 
             except Exception as e:
                 error_msg = f"Failed to export clip {clip['shot_id']}: {e}"
@@ -689,10 +779,11 @@ async def get_video_info_endpoint(path: str):
 
 
 @router.get("/video")
-async def stream_video(path: str, request: Request):
+async def stream_video(path: str, request: Request, download: bool = False):
     """Stream a video file for playback in the browser.
 
     Supports HTTP Range requests for seeking.
+    Set download=true to trigger browser download instead of playback.
     """
     video_path = Path(path)
     if not video_path.exists():
@@ -712,8 +803,18 @@ async def stream_video(path: str, request: Request):
     # Handle range requests for video seeking
     range_header = request.headers.get("range")
 
-    if range_header:
-        # Parse range header (e.g., "bytes=0-1024")
+    # Build common headers
+    extra_headers = {"Accept-Ranges": "bytes"}
+    if download:
+        # Trigger browser download with original filename
+        # Escape quotes in filename and use RFC 5987 encoding for Unicode
+        filename = video_path.name
+        # Escape double quotes
+        safe_filename = filename.replace('"', '\\"')
+        extra_headers["Content-Disposition"] = f'attachment; filename="{safe_filename}"'
+
+    if range_header and not download:
+        # Parse range header (e.g., "bytes=0-1024") - only for streaming, not downloads
         try:
             range_match = range_header.replace("bytes=", "").split("-")
             start = int(range_match[0]) if range_match[0] else 0
@@ -745,8 +846,8 @@ async def stream_video(path: str, request: Request):
             status_code=206,
             media_type=content_type,
             headers={
+                **extra_headers,
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
-                "Accept-Ranges": "bytes",
                 "Content-Length": str(content_length),
             },
         )
@@ -755,7 +856,7 @@ async def stream_video(path: str, request: Request):
         return FileResponse(
             video_path,
             media_type=content_type,
-            headers={"Accept-Ranges": "bytes"},
+            headers=extra_headers,
         )
 
 
@@ -1021,3 +1122,152 @@ async def get_job_feedback(job_id: str):
         )
         for record in feedback_records
     ]
+
+
+# === TRAJECTORY ENDPOINTS (Phase 2) ===
+
+@router.get("/trajectory/{job_id}/{shot_id}")
+async def get_shot_trajectory(job_id: str, shot_id: int):
+    """Get trajectory data for a specific shot.
+
+    Returns trajectory points in normalized coordinates (0-1).
+    """
+    trajectory = await get_trajectory(job_id, shot_id)
+
+    if not trajectory:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No trajectory found for job {job_id} shot {shot_id}",
+        )
+
+    # Convert to response format
+    points = [
+        TrajectoryPoint(
+            timestamp=p["timestamp"],
+            x=p["x"],
+            y=p["y"],
+            confidence=p.get("confidence", 0),
+            interpolated=p.get("interpolated", False),
+        )
+        for p in trajectory["points"]
+    ]
+
+    apex = None
+    if trajectory["apex_point"]:
+        ap = trajectory["apex_point"]
+        apex = TrajectoryPoint(
+            timestamp=ap.get("timestamp", 0),
+            x=ap["x"],
+            y=ap["y"],
+            confidence=1.0,
+            interpolated=False,
+        )
+
+    return TrajectoryData(
+        shot_id=trajectory["shot_id"],
+        points=points,
+        confidence=trajectory["confidence"],
+        smoothness_score=trajectory["smoothness_score"],
+        physics_plausibility=trajectory["physics_plausibility"],
+        apex_point=apex,
+        launch_angle=trajectory["launch_angle"],
+        flight_duration=trajectory["flight_duration"],
+        has_gaps=trajectory["has_gaps"],
+        gap_count=trajectory["gap_count"],
+        is_manual_override=trajectory["is_manual_override"],
+        frame_width=trajectory["frame_width"],
+        frame_height=trajectory["frame_height"],
+    )
+
+
+@router.get("/trajectories/{job_id}")
+async def get_job_trajectories(job_id: str):
+    """Get all trajectories for a job."""
+    trajectories = await get_trajectories_for_job(job_id)
+
+    if not trajectories:
+        return {"job_id": job_id, "trajectories": []}
+
+    result = []
+    for t in trajectories:
+        points = [
+            TrajectoryPoint(
+                timestamp=p["timestamp"],
+                x=p["x"],
+                y=p["y"],
+                confidence=p.get("confidence", 0),
+                interpolated=p.get("interpolated", False),
+            )
+            for p in t["points"]
+        ]
+
+        apex = None
+        if t["apex_point"]:
+            ap = t["apex_point"]
+            apex = TrajectoryPoint(
+                timestamp=ap.get("timestamp", 0),
+                x=ap["x"],
+                y=ap["y"],
+                confidence=1.0,
+                interpolated=False,
+            )
+
+        result.append(TrajectoryData(
+            shot_id=t["shot_id"],
+            points=points,
+            confidence=t["confidence"],
+            smoothness_score=t["smoothness_score"],
+            physics_plausibility=t["physics_plausibility"],
+            apex_point=apex,
+            launch_angle=t["launch_angle"],
+            flight_duration=t["flight_duration"],
+            has_gaps=t["has_gaps"],
+            gap_count=t["gap_count"],
+            is_manual_override=t["is_manual_override"],
+            frame_width=t["frame_width"],
+            frame_height=t["frame_height"],
+        ))
+
+    return {"job_id": job_id, "trajectories": result}
+
+
+@router.put("/trajectory/{job_id}/{shot_id}")
+async def update_shot_trajectory(
+    job_id: str,
+    shot_id: int,
+    request: TrajectoryUpdateRequest,
+):
+    """Update trajectory with manual edits.
+
+    Points should be in normalized coordinates (0-1).
+    """
+    # Verify job exists
+    job = _get_cached_job(job_id) or await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    points_dicts = [
+        {
+            "timestamp": p.timestamp,
+            "x": p.x,
+            "y": p.y,
+            "confidence": p.confidence,
+            "interpolated": p.interpolated,
+        }
+        for p in request.points
+    ]
+
+    success = await update_trajectory_db(
+        job_id=job_id,
+        shot_id=shot_id,
+        trajectory_points=points_dicts,
+        is_manual_override=True,
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No trajectory found for job {job_id} shot {shot_id}",
+        )
+
+    return {"status": "updated", "job_id": job_id, "shot_id": shot_id}

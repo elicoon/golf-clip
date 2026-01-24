@@ -13,7 +13,7 @@ from loguru import logger
 DB_PATH = Path.home() / ".golfclip" / "golfclip.db"
 
 # Current schema version - increment when making schema changes
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Global connection pool (single connection for SQLite)
 _db_connection: Optional[aiosqlite.Connection] = None
@@ -69,6 +69,8 @@ async def _apply_migrations(current_version: int) -> None:
         await _migrate_v1()
     if current_version < 2:
         await _migrate_v2()
+    if current_version < 3:
+        await _migrate_v3()
 
 
 async def _migrate_v1() -> None:
@@ -157,6 +159,49 @@ async def _migrate_v2() -> None:
     )
 
     logger.info("Migration v2 applied successfully")
+
+
+async def _migrate_v3() -> None:
+    """Add shot_trajectories table for storing ball flight paths."""
+    logger.info("Applying migration v3: Shot trajectories table")
+
+    await _db_connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS shot_trajectories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            shot_id INTEGER NOT NULL,
+            trajectory_json TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 0,
+            smoothness_score REAL,
+            physics_plausibility REAL,
+            apex_x REAL,
+            apex_y REAL,
+            apex_timestamp REAL,
+            launch_angle REAL,
+            flight_duration REAL,
+            has_gaps INTEGER NOT NULL DEFAULT 0,
+            gap_count INTEGER NOT NULL DEFAULT 0,
+            is_manual_override INTEGER NOT NULL DEFAULT 0,
+            frame_width INTEGER,
+            frame_height INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+            UNIQUE(job_id, shot_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_trajectories_job ON shot_trajectories(job_id);
+        CREATE INDEX IF NOT EXISTS idx_trajectories_shot ON shot_trajectories(job_id, shot_id);
+        """
+    )
+
+    await _db_connection.execute(
+        "INSERT OR IGNORE INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
+        (3, datetime.utcnow().isoformat(), "Shot trajectories table for ball flight paths"),
+    )
+
+    logger.info("Migration v3 applied successfully")
 
 
 async def close_db() -> None:

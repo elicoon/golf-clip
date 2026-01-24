@@ -25,9 +25,17 @@ export function Scrubber({
   const [hoverTime, setHoverTime] = useState<number | null>(null)
 
   // Window around the clip to show (extra context before and after)
+  // Lock the window while dragging to prevent it from shifting
   const windowPadding = 5 // seconds
-  const windowStart = Math.max(0, startTime - windowPadding)
-  const windowEnd = Math.min(duration || endTime + windowPadding, endTime + windowPadding)
+  const [lockedWindow, setLockedWindow] = useState<{ start: number; end: number } | null>(null)
+
+  // Calculate window bounds - use locked values if dragging, otherwise compute from props
+  const windowStart = lockedWindow
+    ? lockedWindow.start
+    : Math.max(0, startTime - windowPadding)
+  const windowEnd = lockedWindow
+    ? lockedWindow.end
+    : Math.min(duration || endTime + windowPadding, endTime + windowPadding)
   const windowDuration = windowEnd - windowStart
 
   // Track video metadata and time updates
@@ -88,6 +96,15 @@ export function Scrubber({
     if (disabled) return
     e.preventDefault()
     e.stopPropagation()
+
+    // Lock the window dimensions when starting to drag a handle
+    if (type === 'start' || type === 'end') {
+      setLockedWindow({
+        start: Math.max(0, startTime - windowPadding),
+        end: Math.min(duration || endTime + windowPadding, endTime + windowPadding),
+      })
+    }
+
     setIsDragging(type)
   }
 
@@ -118,6 +135,8 @@ export function Scrubber({
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(null)
+    // Unlock the window after dragging ends
+    setLockedWindow(null)
   }, [])
 
   // Global mouse event listeners for drag operations

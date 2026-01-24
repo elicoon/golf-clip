@@ -116,7 +116,18 @@ class AudioStrikeDetector:
             raise FileNotFoundError(f"Audio file not found: {self.audio_path}")
         logger.info(f"Loading audio from {self.audio_path}")
         self.y, self.sr = librosa.load(str(self.audio_path), sr=self.sr, mono=True)
-        logger.info(f"Loaded {len(self.y) / self.sr:.2f}s of audio at {self.sr}Hz")
+
+        # Diagnostic logging for audio quality
+        duration = len(self.y) / self.sr
+        peak_amplitude = np.max(np.abs(self.y))
+        rms = np.sqrt(np.mean(self.y**2))
+        logger.info(f"Loaded {duration:.2f}s of audio at {self.sr}Hz")
+        logger.info(f"Audio stats: peak={peak_amplitude:.4f}, RMS={rms:.4f}")
+
+        if peak_amplitude < 0.01:
+            logger.warning("Audio appears very quiet (peak < 0.01) - may miss strikes")
+        if rms < 0.001:
+            logger.warning("Audio RMS very low - possible silence or near-silence")
 
     def _apply_bandpass_filter(self) -> np.ndarray:
         """Apply bandpass filter to isolate strike frequencies.
@@ -228,6 +239,12 @@ class AudioStrikeDetector:
         # Prominence threshold based on local variation
         prominence_threshold = env_std * self.config.prominence_multiplier
 
+        # Log thresholds for diagnostics
+        logger.debug(
+            f"Peak detection thresholds: height={height_threshold:.4f}, "
+            f"prominence={prominence_threshold:.4f}, min_distance={min_distance} frames"
+        )
+
         peaks, properties = signal.find_peaks(
             onset_env,
             height=height_threshold,
@@ -235,6 +252,21 @@ class AudioStrikeDetector:
             prominence=prominence_threshold,
             width=(1, 50),  # Strikes are sharp, not too wide
         )
+
+        logger.info(f"Found {len(peaks)} peaks above threshold (sensitivity={self.config.sensitivity})")
+
+        if len(peaks) == 0:
+            # Diagnostic: find what the actual peaks look like
+            all_peaks, _ = signal.find_peaks(onset_env, distance=min_distance)
+            if len(all_peaks) > 0:
+                peak_heights = onset_env[all_peaks]
+                logger.warning(
+                    f"No peaks met threshold. {len(all_peaks)} peaks found with max height "
+                    f"{np.max(peak_heights):.4f} (threshold was {height_threshold:.4f}). "
+                    f"Try increasing GOLFCLIP_AUDIO_SENSITIVITY to 0.8 or 0.9"
+                )
+            else:
+                logger.warning("No peaks found in onset envelope - audio may be too quiet or constant")
 
         return peaks, properties
 
@@ -494,6 +526,14 @@ class AudioStrikeDetector:
             progress_callback(100)
 
         logger.info(f"Detected {len(strikes)} potential strikes")
+
+        if len(strikes) > 0:
+            confidences = [s["confidence"] for s in strikes]
+            logger.info(
+                f"Strike confidence range: {min(confidences):.2f} - {max(confidences):.2f}, "
+                f"mean: {np.mean(confidences):.2f}"
+            )
+
         return strikes
 
     def get_audio_features_at_timestamp(

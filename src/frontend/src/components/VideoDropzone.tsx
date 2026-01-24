@@ -13,6 +13,8 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
+  const [uploadPercent, setUploadPercent] = useState<number>(0)
+  const [uploadStarted, setUploadStarted] = useState(false)
   const [manualPath, setManualPath] = useState('')
   const [showManualInput, setShowManualInput] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -57,38 +59,72 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
 
     // Browser mode: upload file to server
     setIsLoading(true)
-    setUploadProgress('Preparing upload...')
+    setUploadStarted(false)
+    setUploadPercent(0)
 
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
+    const formData = new FormData()
+    formData.append('file', file)
 
-      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1)
-      setUploadProgress(`Uploading ${file.name} (${fileSizeMB} MB)...`)
+    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1)
+    setUploadProgress(`Uploading ${file.name} (${fileSizeMB} MB)`)
 
-      const response = await fetch('http://127.0.0.1:8420/api/upload', {
-        method: 'POST',
-        body: formData,
-      })
+    // Use XMLHttpRequest for progress tracking
+    const xhr = new XMLHttpRequest()
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.detail || `Upload failed: ${response.status}`)
+    // Track when upload actually starts (after browser prepares the data)
+    xhr.upload.addEventListener('loadstart', () => {
+      setUploadStarted(true)
+    })
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100)
+        setUploadPercent(percent)
       }
+    })
 
-      const data = await response.json()
+    const resetState = () => {
       setUploadProgress(null)
-
-      // Use the server path for processing
-      onVideoSelected(data.path)
-
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Upload failed'
-      setError(message)
-      setUploadProgress(null)
-    } finally {
+      setUploadPercent(0)
+      setUploadStarted(false)
       setIsLoading(false)
     }
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText)
+          resetState()
+          onVideoSelected(data.path)
+        } catch {
+          setError('Invalid response from server')
+          resetState()
+        }
+      } else {
+        let errorMessage = `Upload failed: ${xhr.status}`
+        try {
+          const errorData = JSON.parse(xhr.responseText)
+          if (errorData.detail) errorMessage = errorData.detail
+        } catch {
+          // Use default error message
+        }
+        setError(errorMessage)
+        resetState()
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      setError('Upload failed - network error')
+      resetState()
+    })
+
+    xhr.addEventListener('abort', () => {
+      setError('Upload cancelled')
+      resetState()
+    })
+
+    xhr.open('POST', 'http://127.0.0.1:8420/api/upload')
+    xhr.send(formData)
   }, [onVideoSelected])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -214,20 +250,38 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
         </div>
         <h2>{isDragging ? 'Drop it here!' : 'Drop your golf video here'}</h2>
         <p>or</p>
-        <button
-          onClick={handleFileSelect}
-          className="btn-primary"
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <>
+        {isLoading && uploadProgress ? (
+          <div className="upload-progress-container">
+            <div className="upload-progress-text">
               <span className="spinner" />
-              {uploadProgress || 'Loading...'}
-            </>
-          ) : (
-            'Select File'
-          )}
-        </button>
+              {uploadProgress}
+            </div>
+            <div className={`upload-progress-bar ${!uploadStarted ? 'upload-progress-indeterminate' : ''}`}>
+              <div
+                className="upload-progress-fill"
+                style={{ width: uploadStarted ? `${uploadPercent}%` : '100%' }}
+              />
+            </div>
+            <div className="upload-progress-percent">
+              {uploadStarted ? `${uploadPercent}%` : 'Preparing...'}
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={handleFileSelect}
+            className="btn-primary"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <span className="spinner" />
+                Loading...
+              </>
+            ) : (
+              'Select File'
+            )}
+          </button>
+        )}
         <p className="dropzone-hint">Supports MP4, MOV, M4V (up to {MAX_FILE_SIZE_GB}GB)</p>
 
         {/* Dev mode: manual path input */}

@@ -83,6 +83,9 @@ class ProgressEvent(BaseModel):
     progress: float = Field(..., ge=0, le=100, description="Progress percentage")
     details: Optional[str] = Field(None, description="Additional details or error message")
     timestamp: str = Field(..., description="ISO 8601 timestamp of this event")
+    # Populated on completion events for the frontend to determine next view
+    total_shots_detected: int = Field(0, description="Total shots found (on completion)")
+    shots_needing_review: int = Field(0, description="Shots needing review (on completion)")
 
 
 class ProcessVideoRequest(BaseModel):
@@ -108,6 +111,8 @@ class ExportClipsRequest(BaseModel):
     clips: list[ClipBoundary]
     output_dir: str
     filename_pattern: str = "shot_{shot_id}"
+    render_tracer: bool = Field(False, description="Whether to render shot tracer overlay")
+    tracer_style: Optional["TracerStyle"] = Field(None, description="Tracer styling options")
 
 
 class ExportClipsResponse(BaseModel):
@@ -231,3 +236,48 @@ class FeedbackExportResponse(BaseModel):
     exported_at: str
     total_records: int
     records: list[dict[str, Any]]
+
+
+# === TRAJECTORY SCHEMAS (Phase 2) ===
+
+class TrajectoryPoint(BaseModel):
+    """A point in the ball's trajectory (normalized coordinates)."""
+    timestamp: float = Field(..., description="Time in seconds from video start")
+    x: float = Field(..., ge=0, le=1, description="X position as fraction of frame width (0-1)")
+    y: float = Field(..., ge=0, le=1, description="Y position as fraction of frame height (0-1)")
+    confidence: float = Field(0, ge=0, le=1, description="Detection confidence")
+    interpolated: bool = Field(False, description="Whether this point was interpolated")
+
+
+class TrajectoryData(BaseModel):
+    """Complete trajectory data for a shot."""
+    shot_id: int
+    points: list[TrajectoryPoint]
+    confidence: float = Field(..., ge=0, le=1)
+    smoothness_score: Optional[float] = None
+    physics_plausibility: Optional[float] = None
+    apex_point: Optional[TrajectoryPoint] = None
+    launch_angle: Optional[float] = Field(None, description="Launch angle in degrees")
+    flight_duration: Optional[float] = Field(None, description="Flight time in seconds")
+    has_gaps: bool = False
+    gap_count: int = 0
+    is_manual_override: bool = False
+    frame_width: int = Field(..., description="Source video width for coordinate scaling")
+    frame_height: int = Field(..., description="Source video height for coordinate scaling")
+
+
+class TrajectoryUpdateRequest(BaseModel):
+    """Request to update trajectory with manual edits."""
+    points: list[TrajectoryPoint]
+
+
+class TracerStyle(BaseModel):
+    """Styling options for shot tracer rendering."""
+    color: str = Field("#FFFFFF", description="Tracer line color (hex)")
+    line_width: int = Field(3, ge=1, le=10, description="Line width in pixels")
+    glow_enabled: bool = Field(True, description="Whether to add glow effect")
+    glow_color: str = Field("#FFFFFF", description="Glow color (hex)")
+    glow_radius: int = Field(8, ge=0, le=20, description="Glow blur radius")
+    show_apex_marker: bool = Field(True, description="Show marker at apex point")
+    show_landing_marker: bool = Field(True, description="Show marker at landing point")
+    animation_speed: float = Field(1.0, ge=0.5, le=3.0, description="Animation speed multiplier")
