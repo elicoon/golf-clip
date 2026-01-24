@@ -501,15 +501,14 @@ class BallOriginDetector:
         target_x = golfer_center_x + golfer_width * 0.5
         best = min(candidates, key=lambda c: abs(c['x'] - target_x))
 
-        # Ball is right in front of the clubhead at address
-        # Offset slightly to the left (toward golfer) from clubhead center
-        ball_offset_x = -40  # Ball is left of clubhead center
-        ball_x = best['x'] + ball_offset_x
+        # At address, the ball is directly in front of the clubhead
+        # No offset needed - clubhead position IS the ball position
+        ball_x = best['x']
         ball_y = max(best['y'], feet_y - 20)  # Ball is at or near ground level
 
         logger.info(
             f"Clubhead detected at ({best['x']:.0f},{best['y']:.0f}), "
-            f"area={best['area']:.0f}. Estimated ball at ({ball_x:.0f},{ball_y:.0f})"
+            f"area={best['area']:.0f}. Ball at ({ball_x:.0f},{ball_y:.0f})"
         )
 
         return {
