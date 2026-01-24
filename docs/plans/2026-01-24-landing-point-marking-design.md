@@ -59,6 +59,12 @@ The screen keeps all existing functionality (video playback, scrubber, clip boun
 │  │  Detecting early ball positions...                    │  │
 │  └──────────────────────────────────────────────────────┘  │
 │                                                             │
+│  Detection warnings (if any):                               │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  ⚠ Shaft detection failed, using fallback            │  │
+│  │  ⚠ No ball detected in first 200ms, using defaults   │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                             │
 │  [ Skip Shot ]                      [ Next → ]              │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -120,9 +126,18 @@ data: {"step": "smoothing", "progress": 90, "message": "Smoothing trajectory..."
 event: complete
 data: {"trajectory": {...}, "progress": 100}
 
+event: warning
+data: {"step": "detecting_early", "progress": 35, "message": "Shaft detection failed, using fallback", "warning": "shaft_detection_failed"}
+
 event: error
 data: {"error": "Failed to detect ball origin", "progress": 0}
 ```
+
+**Warning events** are non-fatal issues that the user should see:
+- `shaft_detection_failed`: Couldn't find club shaft, using clubhead-only detection
+- `early_ball_detection_failed`: No ball detected in first 200ms, using default launch angle
+- `ball_template_extraction_failed`: Couldn't extract ball template, using motion detection only
+- `origin_detection_fallback`: Primary origin detection failed, using fallback method
 
 **Progress stages:**
 - 0-10%: Saving landing point
@@ -180,6 +195,7 @@ This produces a trajectory that:
 const [landingPoint, setLandingPoint] = useState<{x: number, y: number} | null>(null)
 const [trajectoryProgress, setTrajectoryProgress] = useState<number | null>(null)
 const [trajectoryMessage, setTrajectoryMessage] = useState<string>('')
+const [detectionWarnings, setDetectionWarnings] = useState<string[]>([])
 ```
 
 **Click handler on video container:**
@@ -199,6 +215,7 @@ const handleVideoClick = (e: React.MouseEvent) => {
 ```typescript
 const generateTrajectorySSE = (landingX: number, landingY: number) => {
   setTrajectoryProgress(0)
+  setDetectionWarnings([])  // Clear previous warnings
   const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}/generate?landing_x=${landingX}&landing_y=${landingY}`
   const eventSource = new EventSource(url)
 
@@ -206,6 +223,11 @@ const generateTrajectorySSE = (landingX: number, landingY: number) => {
     const data = JSON.parse(e.data)
     setTrajectoryProgress(data.progress)
     setTrajectoryMessage(data.message)
+  })
+
+  eventSource.addEventListener('warning', (e) => {
+    const data = JSON.parse(e.data)
+    setDetectionWarnings(prev => [...prev, data.message])
   })
 
   eventSource.addEventListener('complete', (e) => {
@@ -221,6 +243,20 @@ const generateTrajectorySSE = (landingX: number, landingY: number) => {
     eventSource.close()
   })
 }
+```
+
+**Detection warnings display:**
+```tsx
+{detectionWarnings.length > 0 && (
+  <div className="detection-warnings">
+    {detectionWarnings.map((warning, i) => (
+      <div key={i} className="warning-item">
+        <span className="warning-icon">⚠</span>
+        <span>{warning}</span>
+      </div>
+    ))}
+  </div>
+)}
 ```
 
 **Button logic:**
@@ -324,37 +360,60 @@ def track_with_landing_point(
     """
 ```
 
-## Error Handling
+## Error Handling & User Visibility
+
+### Detection Warnings (Non-Fatal)
+
+These issues are shown to the user as warnings but don't stop trajectory generation:
+
+| Detection Issue | User Message | Fallback Behavior |
+|-----------------|--------------|-------------------|
+| Shaft detection failed | "⚠ Shaft detection failed, using fallback" | Use clubhead-only origin detection |
+| Clubhead detection failed | "⚠ Clubhead detection failed, using golfer position" | Estimate from golfer bounding box |
+| No early ball detections | "⚠ No ball detected in first 200ms, using default launch angle" | Use 18° launch, straight trajectory |
+| Ball template extraction failed | "⚠ Couldn't extract ball template, using motion detection" | Skip template matching, rely on motion |
+| Low detection confidence | "⚠ Low confidence detection (45%), tracer may be inaccurate" | Continue with best-effort trajectory |
+
+### Fatal Errors
+
+These stop trajectory generation and show an error:
+
+| Error | User Message |
+|-------|--------------|
+| No origin detected at all | "Could not find ball position at impact. Try a different video angle." |
+| Video file unreadable | "Could not read video file. The file may be corrupted." |
+| Invalid landing point | "Invalid landing point. Please click within the video frame." |
+
+### Other Edge Cases
 
 1. **User clicks outside reasonable landing area:**
    - Allow any click within frame bounds
    - Physics will handle it (might produce unusual trajectory)
 
-2. **Trajectory generation fails:**
-   - Show error message: "Could not generate tracer. Try marking a different landing point."
-   - Keep landing marker visible so user can adjust
-   - "Clear" button to reset and try again
-
-3. **User changes landing point mid-generation:**
+2. **User changes landing point mid-generation:**
    - Cancel current SSE connection
    - Start new generation with updated coordinates
 
-4. **No early ball detections found:**
-   - Fall back to default launch parameters (18° launch, straight)
-   - Still constrain to hit landing point
-   - Trajectory confidence will be lower
-
-5. **Landing point very close to origin:**
+3. **Landing point very close to origin:**
    - Valid for chip shots / short pitches
    - Physics will produce a low, short arc
+
+### Why Show Warnings?
+
+Showing detection warnings helps with:
+1. **User expectations**: User knows if tracer might be less accurate
+2. **Troubleshooting**: If tracer looks wrong, user can see why
+3. **Future debugging**: Patterns in warnings help identify systematic issues
+4. **Video quality feedback**: Users learn which camera angles work best
 
 ## Summary
 
 | Component | Changes |
 |-----------|---------|
-| **UI** | Click-to-mark landing on video, progress bar during generation, ✕ marker overlay |
+| **UI** | Click-to-mark landing on video, progress bar during generation, ✕ marker overlay, detection warnings display |
 | **Flow** | "Mark landing + Next" replaces "Accept", "Skip" replaces "Reject" |
-| **API** | New SSE endpoint `GET /api/trajectory/{job_id}/{shot_id}/generate` |
+| **API** | New SSE endpoint with `progress`, `warning`, `complete`, `error` events |
 | **Database** | Add `landing_x`, `landing_y` columns to `shots` table (schema v4) |
-| **Tracker** | New `track_with_landing_point()` method constraining physics to endpoint |
+| **Tracker** | New `track_with_landing_point()` with progress callbacks and warning emission |
 | **Physics** | Hybrid: early detections for shape, landing point as fixed endpoint |
+| **Observability** | All detection failures surfaced to user as warnings for troubleshooting |
