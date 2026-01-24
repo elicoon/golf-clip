@@ -17,6 +17,12 @@ from backend.detection.trajectory_physics import TrajectoryPhysics
 from backend.detection.perspective import DTLPerspective, CameraParams
 from backend.detection.landing import LandingEstimator
 from backend.processing.curves import CurveFitter
+from backend.detection.ball_template import BallTemplateExtractor
+from backend.detection.scale_matcher import MultiScaleMatcher
+from backend.detection.flow_tracker import OpticalFlowTracker
+from backend.detection.kalman_tracker import BallKalmanFilter
+from backend.detection.detection_scorer import DetectionScorer, DetectionCandidate
+from backend.detection.trajectory_assembler import TrajectoryAssembler
 
 
 @dataclass
@@ -510,6 +516,257 @@ class ConstrainedBallTracker:
             "shot_shape": "draw",
             "flight_duration": actual_duration,
         }
+
+    def track_precise_trajectory(
+        self,
+        video_path: Path,
+        origin: OriginDetection,
+        strike_time: float,
+        max_flight_duration: float = 5.0,
+    ) -> Optional[dict]:
+        """Track ball with enhanced precision using all detection methods.
+
+        Uses the full detection pipeline:
+        1. Extract ball template from first frames
+        2. Track using multi-scale template matching
+        3. Use optical flow for motion estimation
+        4. Kalman filter for prediction and smoothing
+        5. Score and select best detections
+        6. Assemble into final trajectory
+
+        Falls back to physics-based trajectory if detection fails.
+
+        Args:
+            video_path: Path to video file
+            origin: Ball origin detection (from origin.py)
+            strike_time: When ball was struck (seconds)
+            max_flight_duration: Maximum time to track
+
+        Returns:
+            Dict with trajectory data in standard format, or None
+        """
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            logger.error(f"Could not open video: {video_path}")
+            return None
+
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+            if fps <= 0:
+                logger.error("Invalid FPS")
+                return None
+
+            # Step 1: Extract template
+            template_extractor = BallTemplateExtractor()
+            template = template_extractor.extract_template(
+                str(video_path), origin.x, origin.y, strike_time
+            )
+
+            if template is None:
+                logger.warning("Template extraction failed, using physics fallback")
+                return self.track_full_trajectory(
+                    video_path,
+                    (origin.x / frame_width, origin.y / frame_height),
+                    strike_time,
+                    frame_width,
+                    frame_height,
+                )
+
+            logger.info(f"Template extracted: radius={template.radius}px, brightness={template.brightness:.0f}")
+
+            # Step 2: Initialize components
+            scale_matcher = MultiScaleMatcher()
+            scale_matcher.prepare_template(template.image, template.mask)
+
+            flow_tracker = OpticalFlowTracker()
+
+            kalman = BallKalmanFilter(fps=fps)
+            # Initialize with template position and estimated initial velocity
+            # Ball moves up initially (negative vy in screen coords)
+            kalman.initialize(
+                float(template.center[0]),
+                float(template.center[1]),
+                vx=0.0,
+                vy=-15.0,  # Initial upward velocity
+            )
+
+            scorer = DetectionScorer()
+
+            assembler = TrajectoryAssembler(frame_width, frame_height, fps)
+
+            # Step 3: Track frame by frame
+            start_frame = int(strike_time * fps) + template.frame_index
+            end_frame = int((strike_time + max_flight_duration) * fps)
+            end_frame = min(end_frame, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
+
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            prev_gray = None
+            expected_scale = 1.0
+            detections_found = 0
+
+            for frame_idx in range(start_frame, end_frame):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                rel_frame = frame_idx - start_frame
+
+                # Get Kalman prediction
+                prediction = kalman.predict()
+                search_region = kalman.get_search_region(sigma_multiplier=4.0)
+
+                # Clamp search region to frame
+                x1, y1, x2, y2 = search_region
+                x1 = max(0, x1)
+                y1 = max(0, y1)
+                x2 = min(frame_width, x2)
+                y2 = min(frame_height, y2)
+
+                # Collect candidates from different methods
+                candidates = []
+
+                # Template matching candidates
+                try:
+                    matches = scale_matcher.match_in_region(
+                        gray, (x1, y1, x2, y2), expected_scale
+                    )
+                    for match in matches[:3]:
+                        # Get brightness at match location
+                        mx, my = int(match.x), int(match.y)
+                        if 0 <= mx < frame_width and 0 <= my < frame_height:
+                            brightness = float(gray[my, mx])
+                        else:
+                            brightness = 150.0
+
+                        candidates.append(DetectionCandidate(
+                            x=match.x,
+                            y=match.y,
+                            radius=match.radius,
+                            brightness=brightness,
+                            template_score=match.score,
+                            motion_score=0.5,
+                            source="template",
+                        ))
+                except Exception as e:
+                    logger.debug(f"Template matching error: {e}")
+
+                # Optical flow candidates
+                if prev_gray is not None:
+                    try:
+                        # Initialize flow tracker on first good detection
+                        if detections_found > 0 and flow_tracker._prev_gray is None:
+                            state = kalman.get_state()
+                            if state:
+                                flow_tracker.initialize(
+                                    prev_gray,
+                                    center=(state.x, state.y),
+                                    radius=template.radius,
+                                )
+
+                        flow_result = flow_tracker.track(gray)
+                        if flow_result and flow_result.ball_position:
+                            fx, fy = flow_result.ball_position
+                            if x1 <= fx <= x2 and y1 <= fy <= y2:
+                                candidates.append(DetectionCandidate(
+                                    x=fx,
+                                    y=fy,
+                                    radius=template.radius * expected_scale,
+                                    brightness=200.0,
+                                    template_score=0.5,
+                                    motion_score=flow_result.confidence,
+                                    source="flow",
+                                ))
+                    except Exception as e:
+                        logger.debug(f"Flow tracking error: {e}")
+
+                # Score and select
+                best = None
+                if candidates:
+                    scored = scorer.score_candidates(
+                        candidates,
+                        predicted_x=prediction.x,
+                        predicted_y=prediction.y,
+                        prediction_uncertainty=prediction.search_radius,
+                        expected_radius=template.radius * expected_scale,
+                    )
+                    best = scorer.select_best(scored)
+
+                if best and kalman.is_measurement_plausible(best.x, best.y):
+                    # Update Kalman with measurement
+                    kalman.update(best.x, best.y, best.confidence)
+                    assembler.add_detection(rel_frame, best.x, best.y, best.confidence)
+                    detections_found += 1
+
+                    # Update expected scale (ball shrinks as it goes away)
+                    if template.radius > 0:
+                        expected_scale = best.radius / template.radius
+                        expected_scale = max(0.3, min(1.2, expected_scale))
+                else:
+                    # No valid detection
+                    kalman.update_no_measurement()
+                    assembler.add_no_detection(rel_frame)
+
+                prev_gray = gray.copy()
+
+            logger.info(f"Precise tracking found {detections_found} detections")
+
+            # Step 4: Assemble trajectory
+            trajectory = assembler.assemble(strike_time)
+
+            if trajectory and len(trajectory.points) >= 6:
+                # Convert to standard format
+                points = [
+                    {
+                        "timestamp": p.timestamp,
+                        "x": p.x,
+                        "y": p.y,
+                        "confidence": p.confidence,
+                        "interpolated": p.interpolated,
+                    }
+                    for p in trajectory.points
+                ]
+
+                apex_pt = trajectory.points[trajectory.apex_index]
+
+                logger.info(
+                    f"Precise trajectory assembled: {len(points)} points, "
+                    f"gaps={trajectory.gap_count}, confidence={trajectory.avg_confidence:.2f}"
+                )
+
+                return {
+                    "points": points,
+                    "apex_point": {
+                        "timestamp": apex_pt.timestamp,
+                        "x": apex_pt.x,
+                        "y": apex_pt.y,
+                    },
+                    "landing_point": {
+                        "timestamp": points[-1]["timestamp"],
+                        "x": points[-1]["x"],
+                        "y": points[-1]["y"],
+                    },
+                    "confidence": trajectory.avg_confidence,
+                    "method": "precise_tracking",
+                    "shot_shape": "straight",
+                    "gap_count": trajectory.gap_count,
+                }
+            else:
+                # Fall back to physics
+                logger.info(f"Only {detections_found} detections, using physics fallback")
+                return self.track_full_trajectory(
+                    video_path,
+                    (origin.x / frame_width, origin.y / frame_height),
+                    strike_time,
+                    frame_width,
+                    frame_height,
+                )
+
+        finally:
+            cap.release()
 
     def _find_timestamp_index(
         self, timestamps: List[float], target_time: float
