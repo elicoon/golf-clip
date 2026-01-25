@@ -1619,6 +1619,141 @@ class ConstrainedBallTracker:
             "flight_duration": T,
         }
 
+    def generate_configured_trajectory(
+        self,
+        origin: Tuple[float, float],
+        target: Tuple[float, float],
+        landing: Tuple[float, float],
+        starting_line: str,
+        shot_shape: str,
+        shot_height: str,
+        strike_time: float,
+    ) -> Optional[dict]:
+        """Generate trajectory using Bezier curve with full configuration.
+
+        Args:
+            origin: Ball origin (x, y) in normalized coords (0-1)
+            target: Target point (x, y) where golfer was aiming
+            landing: Landing point (x, y) where ball actually landed
+            starting_line: "left", "center", or "right"
+            shot_shape: "hook", "draw", "straight", "fade", or "slice"
+            shot_height: "low", "medium", or "high"
+            strike_time: When ball was struck (seconds)
+
+        Returns:
+            Trajectory dict with points, apex_point, landing_point, etc.
+        """
+        origin_x, origin_y = origin
+        target_x, target_y = target
+        landing_x, landing_y = landing
+
+        # Flight duration by height
+        duration_map = {"low": 3.0, "medium": 4.5, "high": 6.0}
+        flight_duration = duration_map.get(shot_height, 4.5)
+
+        # Apex height (screen y, lower = higher on screen)
+        # These are absolute y values, not relative
+        apex_y_map = {"low": 0.55, "medium": 0.35, "high": 0.15}
+        apex_y = apex_y_map.get(shot_height, 0.35)
+
+        # Curve offset for shot shape (perpendicular to flight line)
+        # Negative = curves left (draw/hook), positive = curves right (fade/slice)
+        curve_offset_map = {
+            "hook": -0.12,
+            "draw": -0.06,
+            "straight": 0.0,
+            "fade": 0.06,
+            "slice": 0.12,
+        }
+        curve_offset = curve_offset_map.get(shot_shape, 0.0)
+
+        # Starting line offset (angle adjustment)
+        # For simplicity, we adjust the control point x position
+        start_offset_map = {"left": -0.05, "center": 0.0, "right": 0.05}
+        start_offset = start_offset_map.get(starting_line, 0.0)
+
+        # Calculate control point for quadratic Bezier
+        # Control point x: midpoint + curve offset + starting line influence
+        mid_x = (origin_x + landing_x) / 2
+
+        # Perpendicular direction for curve
+        dx = landing_x - origin_x
+        dy = landing_y - origin_y
+        length = np.sqrt(dx**2 + dy**2) if (dx != 0 or dy != 0) else 1.0
+        perp_x = -dy / length  # Perpendicular vector (rotated 90 degrees)
+
+        control_x = mid_x + curve_offset + start_offset + perp_x * curve_offset * 0.5
+        control_y = apex_y
+
+        # Generate points using quadratic Bezier
+        # B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
+        sample_rate = 30.0
+        num_points = int(flight_duration * sample_rate)
+        points = []
+        apex_idx = 0
+        min_y = origin_y
+
+        for i in range(num_points + 1):
+            t = i / num_points
+
+            x = (1 - t) ** 2 * origin_x + 2 * (1 - t) * t * control_x + t**2 * landing_x
+            y = (1 - t) ** 2 * origin_y + 2 * (1 - t) * t * control_y + t**2 * landing_y
+
+            # Clamp to valid range
+            x = max(0.0, min(1.0, x))
+            y = max(0.0, min(1.0, y))
+
+            if y < min_y:
+                min_y = y
+                apex_idx = len(points)
+
+            points.append({
+                "timestamp": strike_time + (t * flight_duration),
+                "x": x,
+                "y": y,
+                "confidence": 0.90,
+                "interpolated": True,
+            })
+
+        # Ensure exact endpoints
+        if points:
+            points[0]["x"] = origin_x
+            points[0]["y"] = origin_y
+            points[-1]["x"] = landing_x
+            points[-1]["y"] = landing_y
+
+        if len(points) < 2:
+            return None
+
+        apex_point = {
+            "timestamp": points[apex_idx]["timestamp"],
+            "x": points[apex_idx]["x"],
+            "y": points[apex_idx]["y"],
+        }
+
+        logger.info(
+            f"Generated Bezier trajectory: {len(points)} points, "
+            f"origin=({origin_x:.3f}, {origin_y:.3f}), "
+            f"landing=({landing_x:.3f}, {landing_y:.3f}), "
+            f"apex_y={min_y:.3f}, shape={shot_shape}, height={shot_height}"
+        )
+
+        return {
+            "points": points,
+            "apex_point": apex_point,
+            "landing_point": {
+                "timestamp": points[-1]["timestamp"],
+                "x": landing_x,
+                "y": landing_y,
+            },
+            "confidence": 0.90,
+            "method": "bezier_configured",
+            "starting_line": starting_line,
+            "shot_shape": shot_shape,
+            "shot_height": shot_height,
+            "flight_duration": flight_duration,
+        }
+
     def visualize_cone(
         self,
         frame: np.ndarray,
