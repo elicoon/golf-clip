@@ -598,13 +598,15 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     generateTrajectorySSE(clampedX, clampedY)
   }, [loadingState, trajectoryProgress, generateTrajectorySSE])
 
-  const clearLandingPoint = useCallback(() => {
+  const clearMarking = useCallback(() => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
       eventSourceRef.current = null
     }
 
+    setTargetPoint(null)
     setLandingPoint(null)
+    setMarkingStep('target')
     setTrajectory(null)
     setTrajectoryProgress(null)
     setTrajectoryMessage('')
@@ -762,8 +764,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         <button
           onClick={handleAccept}
           className="btn-primary btn-next"
-          disabled={loadingState === 'loading' || trajectoryProgress !== null || landingPoint === null}
-          title={landingPoint === null ? "Mark landing point first" : "Next (Enter)"}
+          disabled={loadingState === 'loading' || trajectoryProgress !== null || markingStep !== 'configure'}
+          title={markingStep !== 'configure' ? "Complete trajectory setup first" : "Next (Enter)"}
         >
           {loadingState === 'loading' ? (
             <>
@@ -776,10 +778,32 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         </button>
       </div>
 
+      {/* Instruction banner */}
+      <div className="marking-instruction">
+        {markingStep === 'target' && (
+          <>
+            <span className="step-badge">Step 1</span>
+            <span>Click where you were aiming (the target)</span>
+          </>
+        )}
+        {markingStep === 'landing' && (
+          <>
+            <span className="step-badge">Step 2</span>
+            <span>Click where the ball actually landed</span>
+          </>
+        )}
+        {markingStep === 'configure' && (
+          <>
+            <span className="step-badge">Step 3</span>
+            <span>Adjust trajectory settings below</span>
+          </>
+        )}
+      </div>
+
       <div
         className={`video-container ${!videoLoaded ? 'video-loading' : ''}`}
         onClick={handleVideoClick}
-        style={{ cursor: landingPoint === null && trajectoryProgress === null ? 'crosshair' : 'default' }}
+        style={{ cursor: markingStep !== 'configure' ? 'crosshair' : 'default' }}
       >
         {!videoLoaded && (
           <div className="video-loader">
@@ -888,8 +912,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         </label>
       </div>
 
-      {/* Landing point section */}
-      <div className="landing-point-section">
+      {/* Trajectory configuration section */}
+      <div className="trajectory-config-section">
         {trajectoryProgress !== null ? (
           <div className="trajectory-progress">
             <div className="progress-header">
@@ -903,28 +927,73 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
             </div>
             <div className="progress-message">{trajectoryMessage}</div>
           </div>
-        ) : landingPoint ? (
-          <div className="landing-confirmed">
-            <span className="landing-icon">📍</span>
-            <span>Landing: ({landingPoint.x.toFixed(2)}, {landingPoint.y.toFixed(2)})</span>
-            <button
-              className="btn-clear"
-              onClick={clearLandingPoint}
-              title="Clear landing point"
-            >
-              Clear
+        ) : markingStep === 'configure' ? (
+          <div className="trajectory-controls">
+            <div className="control-row">
+              <label>Starting line:</label>
+              <div className="button-group">
+                {(['left', 'center', 'right'] as const).map((value) => (
+                  <button
+                    key={value}
+                    className={`btn-option ${startingLine === value ? 'active' : ''}`}
+                    onClick={() => setStartingLine(value)}
+                  >
+                    {value.charAt(0).toUpperCase() + value.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="control-row">
+              <label>Shot shape:</label>
+              <div className="button-group">
+                {(['hook', 'draw', 'straight', 'fade', 'slice'] as const).map((value) => (
+                  <button
+                    key={value}
+                    className={`btn-option ${shotShape === value ? 'active' : ''}`}
+                    onClick={() => setShotShape(value)}
+                  >
+                    {value.charAt(0).toUpperCase() + value.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="control-row">
+              <label>Shot height:</label>
+              <div className="button-group">
+                {(['low', 'medium', 'high'] as const).map((value) => (
+                  <button
+                    key={value}
+                    className={`btn-option ${shotHeight === value ? 'active' : ''}`}
+                    onClick={() => setShotHeight(value)}
+                  >
+                    {value.charAt(0).toUpperCase() + value.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button className="btn-clear" onClick={clearMarking}>
+              Start Over
             </button>
           </div>
         ) : (
-          <div className="landing-prompt">
-            <span className="landing-icon">📍</span>
-            <span>Click on video to mark landing point</span>
+          <div className="marking-status">
+            {targetPoint && (
+              <div className="marked-point">
+                <span className="marker-icon">&#8853;</span>
+                <span>Target marked</span>
+              </div>
+            )}
+            {(targetPoint || landingPoint) && (
+              <button className="btn-clear" onClick={clearMarking}>
+                Clear
+              </button>
+            )}
           </div>
         )}
 
         {trajectoryError && (
           <div className="trajectory-error">
-            <span>⚠️ {trajectoryError}</span>
+            <span>&#9888;&#65039; {trajectoryError}</span>
           </div>
         )}
 
@@ -932,7 +1001,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           <div className="detection-warnings">
             {detectionWarnings.map((warning, i) => (
               <div key={i} className="warning-item">
-                <span className="warning-icon">⚠</span>
+                <span className="warning-icon">&#9888;</span>
                 <span>{warning}</span>
               </div>
             ))}
