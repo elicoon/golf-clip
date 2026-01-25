@@ -41,7 +41,7 @@ export function TrajectoryEditor({
   disabled = false,
   showTracer = true,
   landingPoint,
-  targetPoint: _targetPoint,  // Reserved for future target marker rendering
+  targetPoint,
   onCanvasClick,
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -178,11 +178,13 @@ export function TrajectoryEditor({
       }
     }
 
-    // Draw landing marker (X shape)
+    // Draw landing marker (downward arrow touching ground line)
     if (landingPoint && canvas.width && canvas.height) {
       const markerX = landingPoint.x * canvas.width
       const markerY = landingPoint.y * canvas.height
-      const markerSize = 12
+      const arrowWidth = 12
+      const arrowHeight = 14
+      const lineWidth = 24
 
       ctx.save()
 
@@ -191,20 +193,77 @@ export function TrajectoryEditor({
       ctx.shadowBlur = 8
 
       ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 3
+      ctx.fillStyle = '#ffffff'
+      ctx.lineWidth = 2
       ctx.lineCap = 'round'
 
-      // Draw X
+      // Draw downward arrow (triangle)
       ctx.beginPath()
-      ctx.moveTo(markerX - markerSize, markerY - markerSize)
-      ctx.lineTo(markerX + markerSize, markerY + markerSize)
-      ctx.moveTo(markerX + markerSize, markerY - markerSize)
-      ctx.lineTo(markerX - markerSize, markerY + markerSize)
+      ctx.moveTo(markerX, markerY)  // Tip at landing point
+      ctx.lineTo(markerX - arrowWidth / 2, markerY - arrowHeight)
+      ctx.lineTo(markerX + arrowWidth / 2, markerY - arrowHeight)
+      ctx.closePath()
+      ctx.fill()
+
+      // Draw ground line below arrow tip
+      ctx.beginPath()
+      ctx.moveTo(markerX - lineWidth / 2, markerY + 3)
+      ctx.lineTo(markerX + lineWidth / 2, markerY + 3)
       ctx.stroke()
 
       ctx.restore()
     }
-  }, [localPoints, currentTime, canvasSize, showTracer, disabled, trajectory?.apex_point, hoveredPoint, draggingPoint, landingPoint])
+
+    // Draw target marker (crosshair with circle)
+    if (targetPoint && canvas.width && canvas.height) {
+      const markerX = targetPoint.x * canvas.width
+      const markerY = targetPoint.y * canvas.height
+      const circleRadius = 16
+      const crosshairExtend = 8  // How far lines extend beyond circle
+
+      ctx.save()
+
+      // Glow effect
+      ctx.shadowColor = 'rgba(255, 255, 255, 0.8)'
+      ctx.shadowBlur = 6
+
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 2
+      ctx.lineCap = 'round'
+
+      // Draw circle
+      ctx.beginPath()
+      ctx.arc(markerX, markerY, circleRadius, 0, Math.PI * 2)
+      ctx.stroke()
+
+      // Draw crosshair lines extending beyond circle
+      // Vertical line (top part)
+      ctx.beginPath()
+      ctx.moveTo(markerX, markerY - circleRadius - crosshairExtend)
+      ctx.lineTo(markerX, markerY - circleRadius + 4)
+      ctx.stroke()
+
+      // Vertical line (bottom part)
+      ctx.beginPath()
+      ctx.moveTo(markerX, markerY + circleRadius - 4)
+      ctx.lineTo(markerX, markerY + circleRadius + crosshairExtend)
+      ctx.stroke()
+
+      // Horizontal line (left part)
+      ctx.beginPath()
+      ctx.moveTo(markerX - circleRadius - crosshairExtend, markerY)
+      ctx.lineTo(markerX - circleRadius + 4, markerY)
+      ctx.stroke()
+
+      // Horizontal line (right part)
+      ctx.beginPath()
+      ctx.moveTo(markerX + circleRadius - 4, markerY)
+      ctx.lineTo(markerX + circleRadius + crosshairExtend, markerY)
+      ctx.stroke()
+
+      ctx.restore()
+    }
+  }, [localPoints, currentTime, canvasSize, showTracer, disabled, trajectory?.apex_point, hoveredPoint, draggingPoint, landingPoint, targetPoint])
 
   // Find closest point to a normalized position
   const findClosestPoint = useCallback((x: number, y: number): number => {
