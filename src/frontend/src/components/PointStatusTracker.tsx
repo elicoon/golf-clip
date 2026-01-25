@@ -7,6 +7,7 @@ interface PointStatusTrackerProps {
   apexPoint: { x: number; y: number } | null
   markingStep: 'target' | 'landing' | 'apex' | 'configure'
   onClearPoint: (point: 'target' | 'landing' | 'apex') => void
+  onSelectStep: (step: 'target' | 'landing' | 'apex' | 'configure') => void
 }
 
 type StatusState = 'active' | 'complete' | 'pending' | 'optional' | 'ready'
@@ -17,6 +18,7 @@ export function PointStatusTracker({
   apexPoint,
   markingStep,
   onClearPoint,
+  onSelectStep,
 }: PointStatusTrackerProps) {
   const getStatus = useCallback(
     (
@@ -50,6 +52,7 @@ export function PointStatusTracker({
         icon="⊕"
         point={targetPoint}
         onClear={() => onClearPoint('target')}
+        onClick={() => onSelectStep('target')}
       />
 
       <StatusConnector complete={!!targetPoint} />
@@ -60,6 +63,7 @@ export function PointStatusTracker({
         icon="↓"
         point={landingPoint}
         onClear={() => onClearPoint('landing')}
+        onClick={() => onSelectStep('landing')}
       />
 
       <StatusConnector complete={!!landingPoint} />
@@ -71,11 +75,18 @@ export function PointStatusTracker({
         point={apexPoint}
         isOptional
         onClear={() => onClearPoint('apex')}
+        onClick={() => onSelectStep('apex')}
       />
 
       <StatusConnector complete={!!landingPoint} />
 
-      <StatusItem label="Generate" status={configStatus} icon="▶" isAction />
+      <StatusItem
+        label="Generate"
+        status={configStatus}
+        icon="▶"
+        isAction
+        onClick={() => onSelectStep('configure')}
+      />
     </div>
   )
 }
@@ -88,6 +99,7 @@ interface StatusItemProps {
   isOptional?: boolean
   isAction?: boolean
   onClear?: () => void
+  onClick?: () => void
 }
 
 function StatusItem({
@@ -98,9 +110,22 @@ function StatusItem({
   isOptional,
   isAction,
   onClear,
+  onClick,
 }: StatusItemProps) {
   return (
-    <div className={`status-item status-${status}`}>
+    <div
+      className={`status-item status-${status} clickable`}
+      onClick={onClick}
+      title={`Click to ${status === 'complete' ? 're-mark' : 'mark'} ${label.toLowerCase()}`}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick?.()
+        }
+      }}
+    >
       <div className="status-icon">{status === 'complete' ? '✓' : icon}</div>
       <div className="status-label">
         {label}

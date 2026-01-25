@@ -902,6 +902,13 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         apexPoint={apexPoint}
         markingStep={markingStep}
         onClearPoint={handleClearPoint}
+        onSelectStep={(step) => {
+          // Allow navigating to any step - clear trajectory when changing steps
+          if (step !== markingStep) {
+            setTrajectory(null)
+            setMarkingStep(step)
+          }
+        }}
       />
 
       {/* Trajectory configuration section - ABOVE player - always visible */}

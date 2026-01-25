@@ -2049,6 +2049,29 @@ kbd {
   background: rgba(34, 197, 94, 0.3);
 }
 
+.status-item.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.status-item.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.status-item.clickable:hover:not(.status-active) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.status-item.clickable:active {
+  transform: translateY(0);
+}
+
+.status-item.clickable:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
+}
+
 .status-icon {
   width: 28px;
   height: 28px;
