@@ -1,6 +1,7 @@
 """API routes for GolfClip."""
 
 import asyncio
+import json
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -9,7 +10,7 @@ from typing import AsyncGenerator, Optional
 import shutil
 import tempfile
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, UploadFile, File, Request
 from fastapi.responses import StreamingResponse, FileResponse
 from loguru import logger
 
@@ -59,6 +60,11 @@ from backend.models.trajectory import (
 )
 
 router = APIRouter()
+
+def sse_event(event_type: str, data: dict) -> str:
+    """Format an SSE event."""
+    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+
 
 # In-memory job cache for active jobs (synced with database)
 # This provides fast access during processing while database provides persistence
@@ -1271,3 +1277,66 @@ async def update_shot_trajectory(
         )
 
     return {"status": "updated", "job_id": job_id, "shot_id": shot_id}
+
+
+@router.get("/trajectory/{job_id}/{shot_id}/generate")
+async def generate_trajectory_sse(
+    job_id: str,
+    shot_id: int,
+    landing_x: float = Query(..., ge=0, le=1, description="Landing X coordinate (0-1)"),
+    landing_y: float = Query(..., ge=0, le=1, description="Landing Y coordinate (0-1)"),
+):
+    """Generate trajectory with SSE progress updates.
+
+    Returns Server-Sent Events with:
+    - event: progress - Progress updates during generation
+    - event: warning - Non-fatal detection issues
+    - event: complete - Final trajectory data
+    - event: error - Fatal errors
+    """
+    from backend.models.job import get_job, update_shot_landing
+
+    # Verify job exists
+    job = await get_job(job_id, include_shots=False)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        try:
+            # Step 1: Save landing point
+            yield sse_event("progress", {
+                "step": "saving",
+                "progress": 5,
+                "message": "Saving landing point..."
+            })
+
+            await update_shot_landing(job_id, shot_id, landing_x, landing_y)
+
+            # Step 2: Placeholder for trajectory generation (Task 5)
+            yield sse_event("progress", {
+                "step": "generating",
+                "progress": 50,
+                "message": "Generating trajectory..."
+            })
+
+            # For now, return a placeholder complete event
+            yield sse_event("complete", {
+                "trajectory": None,
+                "progress": 100,
+                "message": "Trajectory generation complete (placeholder)"
+            })
+
+        except Exception as e:
+            yield sse_event("error", {
+                "error": str(e),
+                "progress": 0
+            })
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
