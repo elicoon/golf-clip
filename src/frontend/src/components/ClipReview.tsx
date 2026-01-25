@@ -64,6 +64,18 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [detectionWarnings, setDetectionWarnings] = useState<string[]>([])
   const [trajectoryError, setTrajectoryError] = useState<string | null>(null)
 
+  // Target point marking state
+  const [targetPoint, setTargetPoint] = useState<{x: number, y: number} | null>(null)
+
+  // Marking step: 'target' -> 'landing' -> 'configure'
+  type MarkingStep = 'target' | 'landing' | 'configure'
+  const [markingStep, setMarkingStep] = useState<MarkingStep>('target')
+
+  // Trajectory configuration
+  const [startingLine, setStartingLine] = useState<'left' | 'center' | 'right'>('center')
+  const [shotShape, setShotShape] = useState<'hook' | 'draw' | 'straight' | 'fade' | 'slice'>('straight')
+  const [shotHeight, setShotHeight] = useState<'low' | 'medium' | 'high'>('medium')
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -93,9 +105,14 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
   }, [currentShot?.id, jobId])
 
-  // Reset landing point when shot changes
+  // Reset marking state when shot changes
   useEffect(() => {
+    setTargetPoint(null)
     setLandingPoint(null)
+    setMarkingStep('target')
+    setStartingLine('center')
+    setShotShape('straight')
+    setShotHeight('medium')
     setTrajectoryProgress(null)
     setTrajectoryMessage('')
     setDetectionWarnings([])
@@ -110,6 +127,14 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       }
     }
   }, [])
+
+  // Regenerate trajectory when config changes (only if already in configure step)
+  useEffect(() => {
+    if (markingStep === 'configure' && landingPoint && targetPoint) {
+      generateTrajectoryWithConfig(landingPoint.x, landingPoint.y)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startingLine, shotShape, shotHeight])
 
   // Track current video time for trajectory rendering and enforce clip boundaries
   useEffect(() => {
@@ -476,6 +501,87 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
   }, [jobId, currentShot?.id])
 
+  const generateTrajectoryWithConfig = useCallback((landingX: number, landingY: number) => {
+    if (!targetPoint || !currentShot) return
+
+    // Cancel previous connection if any
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+    }
+
+    setTrajectoryProgress(0)
+    setTrajectoryMessage('Starting...')
+    setDetectionWarnings([])
+    setTrajectoryError(null)
+
+    const params = new URLSearchParams({
+      landing_x: landingX.toString(),
+      landing_y: landingY.toString(),
+      target_x: targetPoint.x.toString(),
+      target_y: targetPoint.y.toString(),
+      starting_line: startingLine,
+      shot_shape: shotShape,
+      shot_height: shotHeight,
+    })
+
+    const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}/generate?${params}`
+    const eventSource = new EventSource(url)
+    eventSourceRef.current = eventSource
+
+    eventSource.addEventListener('progress', (e) => {
+      const data = JSON.parse(e.data)
+      setTrajectoryProgress(data.progress)
+      setTrajectoryMessage(data.message || '')
+    })
+
+    eventSource.addEventListener('warning', (e) => {
+      const data = JSON.parse(e.data)
+      setDetectionWarnings(prev => [...prev, data.message])
+    })
+
+    eventSource.addEventListener('complete', (e) => {
+      const data = JSON.parse(e.data)
+      setTrajectory(data.trajectory)
+      setTrajectoryProgress(null)
+      setTrajectoryMessage('')
+      eventSource.close()
+      eventSourceRef.current = null
+    })
+
+    eventSource.addEventListener('error', (e) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data)
+        setTrajectoryError(data.error || 'Failed to generate trajectory')
+      } catch {
+        setTrajectoryError('Connection lost during trajectory generation')
+      }
+      setTrajectoryProgress(null)
+      eventSource.close()
+      eventSourceRef.current = null
+    })
+
+    eventSource.onerror = () => {
+      setTrajectoryError('Connection lost during trajectory generation')
+      setTrajectoryProgress(null)
+      eventSource.close()
+      eventSourceRef.current = null
+    }
+  }, [jobId, currentShot?.id, targetPoint, startingLine, shotShape, shotHeight])
+
+  const handleCanvasClick = useCallback((x: number, y: number) => {
+    if (loadingState === 'loading' || trajectoryProgress !== null) return
+
+    if (markingStep === 'target') {
+      setTargetPoint({ x, y })
+      setMarkingStep('landing')
+    } else if (markingStep === 'landing') {
+      setLandingPoint({ x, y })
+      setMarkingStep('configure')
+      // Generate trajectory with current config
+      generateTrajectoryWithConfig(x, y)
+    }
+  }, [loadingState, trajectoryProgress, markingStep, generateTrajectoryWithConfig])
+
   const handleVideoClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!videoRef.current || loadingState === 'loading' || trajectoryProgress !== null) return
 
@@ -695,10 +801,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           trajectory={trajectory}
           currentTime={currentTime}
           showTracer={showTracer}
-          disabled={false}
+          disabled={trajectoryProgress !== null}
           landingPoint={landingPoint}
+          targetPoint={targetPoint}
+          onCanvasClick={handleCanvasClick}
           onTrajectoryUpdate={(points) => {
-            // Save updated trajectory - only if we have a valid shot
             if (!currentShot) return
             fetch(`http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}`, {
               method: 'PUT',
