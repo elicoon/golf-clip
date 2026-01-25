@@ -1628,6 +1628,7 @@ class ConstrainedBallTracker:
         shot_shape: str,
         shot_height: str,
         strike_time: float,
+        flight_time: Optional[float] = None,
     ) -> Optional[dict]:
         """Generate trajectory using Bezier curve with full configuration.
 
@@ -1639,6 +1640,7 @@ class ConstrainedBallTracker:
             shot_shape: "hook", "draw", "straight", "fade", or "slice"
             shot_height: "low", "medium", or "high"
             strike_time: When ball was struck (seconds)
+            flight_time: User-specified flight duration in seconds (overrides height-based default)
 
         Returns:
             Trajectory dict with points, apex_point, landing_point, etc.
@@ -1647,14 +1649,28 @@ class ConstrainedBallTracker:
         target_x, target_y = target
         landing_x, landing_y = landing
 
-        # Flight duration by height
-        duration_map = {"low": 3.0, "medium": 4.5, "high": 6.0}
-        flight_duration = duration_map.get(shot_height, 4.5)
+        # Flight duration: use user-specified value if provided, else derive from height
+        # Low shots are faster, high shots take longer
+        if flight_time is not None:
+            flight_duration = flight_time
+        else:
+            duration_map = {"low": 1.5, "medium": 3.0, "high": 4.5}
+            flight_duration = duration_map.get(shot_height, 3.0)
 
-        # Apex height (screen y, lower = higher on screen)
-        # These are absolute y values, not relative
-        apex_y_map = {"low": 0.55, "medium": 0.35, "high": 0.15}
-        apex_y = apex_y_map.get(shot_height, 0.35)
+        # DESIRED apex y position (screen y, lower = higher on screen)
+        # These represent where we WANT the apex to appear
+        # low: 55% down from top, medium: 25% down, high: 5% down (near top)
+        desired_apex_y_map = {"low": 0.55, "medium": 0.25, "high": 0.05}
+        desired_apex_y = desired_apex_y_map.get(shot_height, 0.25)
+
+        # For a quadratic Bezier B(t) = (1-t)^2*P0 + 2(1-t)t*P1 + t^2*P2
+        # The apex occurs at t=0.5, giving:
+        # apex_y = 0.25*origin_y + 0.5*control_y + 0.25*landing_y
+        # Solving for control_y to achieve desired_apex_y:
+        # control_y = (desired_apex_y - 0.25*origin_y - 0.25*landing_y) / 0.5
+        #           = 2*desired_apex_y - 0.5*origin_y - 0.5*landing_y
+        avg_endpoint_y = (origin_y + landing_y) / 2
+        control_y = 2 * desired_apex_y - avg_endpoint_y
 
         # Curve offset for shot shape (perpendicular to flight line)
         # Negative = curves left (draw/hook), positive = curves right (fade/slice)
@@ -1672,7 +1688,7 @@ class ConstrainedBallTracker:
         start_offset_map = {"left": -0.05, "center": 0.0, "right": 0.05}
         start_offset = start_offset_map.get(starting_line, 0.0)
 
-        # Calculate control point for quadratic Bezier
+        # Calculate control point X for quadratic Bezier
         # Control point x: midpoint + curve offset + starting line influence
         mid_x = (origin_x + landing_x) / 2
 
@@ -1683,18 +1699,33 @@ class ConstrainedBallTracker:
         perp_x = -dy / length  # Perpendicular vector (rotated 90 degrees)
 
         control_x = mid_x + curve_offset + start_offset + perp_x * curve_offset * 0.5
-        control_y = apex_y
 
-        # Generate points using quadratic Bezier
+        logger.debug(
+            f"Bezier trajectory: origin=({origin_x:.3f}, {origin_y:.3f}), "
+            f"landing=({landing_x:.3f}, {landing_y:.3f}), "
+            f"control=({control_x:.3f}, {control_y:.3f}), "
+            f"desired_apex_y={desired_apex_y:.3f}"
+        )
+
+        # Generate points using quadratic Bezier with acceleration
         # B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
-        sample_rate = 30.0
+        # Use higher sample rate for smoother rendering
+        sample_rate = 60.0  # Increased from 30 for smoother animation
         num_points = int(flight_duration * sample_rate)
         points = []
         apex_idx = 0
         min_y = origin_y
 
         for i in range(num_points + 1):
-            t = i / num_points
+            # Linear parameter
+            t_linear = i / num_points
+
+            # Apply ease-out-in for golf ball physics:
+            # - Fast start (ball accelerates off clubface)
+            # - Slows at apex
+            # - Accelerates down
+            # Using sine easing for natural feel
+            t = 0.5 - 0.5 * np.cos(t_linear * np.pi)
 
             x = (1 - t) ** 2 * origin_x + 2 * (1 - t) * t * control_x + t**2 * landing_x
             y = (1 - t) ** 2 * origin_y + 2 * (1 - t) * t * control_y + t**2 * landing_y
@@ -1708,7 +1739,7 @@ class ConstrainedBallTracker:
                 apex_idx = len(points)
 
             points.append({
-                "timestamp": strike_time + (t * flight_duration),
+                "timestamp": strike_time + (t_linear * flight_duration),
                 "x": x,
                 "y": y,
                 "confidence": 0.90,
@@ -1735,7 +1766,8 @@ class ConstrainedBallTracker:
             f"Generated Bezier trajectory: {len(points)} points, "
             f"origin=({origin_x:.3f}, {origin_y:.3f}), "
             f"landing=({landing_x:.3f}, {landing_y:.3f}), "
-            f"apex_y={min_y:.3f}, shape={shot_shape}, height={shot_height}"
+            f"actual_apex_y={min_y:.3f} (target={desired_apex_y:.3f}), "
+            f"shape={shot_shape}, height={shot_height}"
         )
 
         return {

@@ -1752,12 +1752,108 @@ kbd {
   font-size: 12px;
 }
 
-/* Trajectory config section */
+.btn-reset-inline {
+  margin-left: auto;
+  padding: 4px 12px;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-reset-inline:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+/* Trajectory config section (below player - for status/errors) */
 .trajectory-config-section {
   padding: 16px;
   background: rgba(255, 255, 255, 0.03);
   border-radius: 8px;
   margin-top: 12px;
+}
+
+/* Trajectory config section ABOVE player */
+.trajectory-config-above-player {
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.trajectory-controls-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.trajectory-controls-inline .control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trajectory-controls-inline .control-group label {
+  font-size: 12px;
+  color: #a0a0a0;
+  white-space: nowrap;
+}
+
+.trajectory-controls-inline .button-group {
+  display: flex;
+  gap: 2px;
+}
+
+.flight-time-slider {
+  width: 100px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.flight-time-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #22c55e;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.flight-time-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.flight-time-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #22c55e;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.btn-generate {
+  padding: 6px 16px;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.btn-generate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .trajectory-controls {

@@ -437,25 +437,48 @@ The tracer doesn't need to follow the actual ball pixel-by-pixel. It needs to:
 - Follow a believable parabolic arc with the right general shape
 - Look smooth and professional with nice glow/fade effects
 
-### Next Steps for Shot Tracer
+### Completed Shot Tracer Features
 
-1. ~~**Detect ball origin accurately**~~ ✅ DONE - Shaft detection working
-2. ~~**Generate smooth parabolic curve**~~ ✅ DONE - Physics model in `track_full_trajectory()`
-3. ~~**Detect trajectory characteristics from early frames**~~ ✅ DONE - `_extract_launch_params()` analyzes first 200ms
-4. ~~**Landing point marking**~~ ✅ DONE - User clicks video to mark landing, SSE streams progress
-5. **Professional rendering** (TODO - reference: Good Good, Grant Horvat, Bryan Bros):
-   - Smooth Bezier curves, not raw points
-   - White/bright tracer line with glow effect
-   - Trail fade (older parts more transparent)
-   - Apex marker (optional)
-   - Consider animated "drawing" effect during playback
+1. ✅ **Detect ball origin accurately** - Shaft + clubhead detection working
+2. ✅ **Generate smooth parabolic curve** - Physics model in `track_full_trajectory()`
+3. ✅ **Detect trajectory characteristics** - `_extract_launch_params()` analyzes first 200ms
+4. ✅ **Landing point marking** - Three-step UI: Target → Landing → Configure
+5. ✅ **Professional rendering**:
+   - Smooth quadratic Bezier curves
+   - RED tracer line with multi-layer glow effect
+   - Physics-based animation timing (research-backed)
+   - Apex marker at highest point
+   - Progressive "drawing" effect during playback
+   - 60fps animation using requestAnimationFrame
+
+### Three-Step Marking Flow
+
+The review UI uses a guided three-step process:
+
+1. **Step 1: Mark Target** - User clicks where they were aiming (crosshair marker)
+2. **Step 2: Mark Landing** - User clicks where ball actually landed (arrow marker)
+3. **Step 3: Configure & Generate** - Select trajectory settings:
+   - Starting line: Left / Center / Right
+   - Shot shape: Hook / Draw / Straight / Fade / Slice
+   - Shot height: Low / Medium / High
+   - Flight time: 1.0s - 6.0s slider
+   - Click "Generate" to create trajectory
+
+### Trajectory Animation Physics
+
+The tracer animation timing is based on real golf ball physics:
+
+| Flight Phase | % of Time | % of Distance | Reason |
+|--------------|-----------|---------------|--------|
+| Initial burst | 0-25% | 0-45% | Ball at peak velocity (160+ mph) |
+| Approaching apex | 25-50% | 45-55% | Decelerating due to drag + gravity |
+| Descent | 50-100% | 55-100% | Nearly linear (terminal velocity ~72 mph limits acceleration) |
+
+Implementation uses:
+- `easeOutQuart` for explosive start
+- `easeInOutQuad` for smooth apex transition
+- 90% linear + 10% ease-out for natural descent
 
 ### Design Document
 
 See `docs/plans/2026-01-24-constraint-based-ball-tracking.md` for full design.
-
-### Test Video
-
-Test video location: `/Users/ecoon/Desktop/golf-clip test videos/IMG_0991.mov`
-- 4K @ 60fps, 119 seconds
-- 3 detected shots at 18.25s, 60.28s, 111.46s

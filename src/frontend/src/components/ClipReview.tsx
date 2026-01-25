@@ -75,6 +75,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [startingLine, setStartingLine] = useState<'left' | 'center' | 'right'>('center')
   const [shotShape, setShotShape] = useState<'hook' | 'draw' | 'straight' | 'fade' | 'slice'>('straight')
   const [shotHeight, setShotHeight] = useState<'low' | 'medium' | 'high'>('medium')
+  const [flightTime, setFlightTime] = useState<number>(3.0)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -113,6 +114,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setStartingLine('center')
     setShotShape('straight')
     setShotHeight('medium')
+    setFlightTime(3.0)
     setTrajectoryProgress(null)
     setTrajectoryMessage('')
     setDetectionWarnings([])
@@ -128,13 +130,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
   }, [])
 
-  // Regenerate trajectory when config changes (only if already in configure step)
-  useEffect(() => {
-    if (markingStep === 'configure' && landingPoint && targetPoint) {
-      generateTrajectoryWithConfig(landingPoint.x, landingPoint.y)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startingLine, shotShape, shotHeight])
+  // NOTE: Removed auto-regeneration on config change - user must click Generate button
 
   // Track current video time for trajectory rendering and enforce clip boundaries
   useEffect(() => {
@@ -423,15 +419,19 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   }
 
   const togglePlayPause = useCallback(() => {
-    if (videoRef.current) {
+    if (videoRef.current && currentShot) {
       if (isPlaying) {
         videoRef.current.pause()
       } else {
+        // If at or past clip end, restart from clip start
+        if (videoRef.current.currentTime >= currentShot.clip_end - 0.05) {
+          videoRef.current.currentTime = currentShot.clip_start
+        }
         videoRef.current.play()
       }
       setIsPlaying(!isPlaying)
     }
-  }, [isPlaying])
+  }, [isPlaying, currentShot])
 
   const stepFrame = useCallback((direction: number) => {
     if (videoRef.current) {
@@ -522,6 +522,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       starting_line: startingLine,
       shot_shape: shotShape,
       shot_height: shotHeight,
+      flight_time: flightTime.toString(),
     })
 
     const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}/generate?${params}`
@@ -566,7 +567,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       eventSource.close()
       eventSourceRef.current = null
     }
-  }, [jobId, currentShot?.id, targetPoint, startingLine, shotShape, shotHeight])
+  }, [jobId, currentShot?.id, targetPoint, startingLine, shotShape, shotHeight, flightTime])
 
   const handleCanvasClick = useCallback((x: number, y: number) => {
     if (loadingState === 'loading' || trajectoryProgress !== null) return
@@ -577,10 +578,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     } else if (markingStep === 'landing') {
       setLandingPoint({ x, y })
       setMarkingStep('configure')
-      // Generate trajectory with current config
-      generateTrajectoryWithConfig(x, y)
+      // Don't auto-generate - user must click Generate button
     }
-  }, [loadingState, trajectoryProgress, markingStep, generateTrajectoryWithConfig])
+  }, [loadingState, trajectoryProgress, markingStep])
 
   const handleVideoClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!videoRef.current || loadingState === 'loading' || trajectoryProgress !== null) return
@@ -790,19 +790,106 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           <>
             <span className="step-badge">Step 2</span>
             <span>Click where the ball actually landed</span>
+            <button className="btn-reset-inline" onClick={clearMarking} title="Reset and start over">
+              Reset
+            </button>
           </>
         )}
         {markingStep === 'configure' && (
           <>
             <span className="step-badge">Step 3</span>
-            <span>Adjust trajectory settings below</span>
+            <span>Select trajectory settings and click Generate</span>
           </>
         )}
       </div>
 
+      {/* Trajectory configuration section - ABOVE player - always visible */}
+      <div className="trajectory-config-above-player">
+          {trajectoryProgress !== null ? (
+            <div className="trajectory-progress">
+              <div className="progress-header">
+                Generating tracer... {trajectoryProgress}%
+              </div>
+              <div className="progress-bar">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${trajectoryProgress}%` }}
+                />
+              </div>
+              <div className="progress-message">{trajectoryMessage}</div>
+            </div>
+          ) : (
+            <div className="trajectory-controls-inline">
+              <div className="control-group">
+                <label>Starting line:</label>
+                <div className="button-group">
+                  {(['left', 'center', 'right'] as const).map((value) => (
+                    <button
+                      key={value}
+                      className={`btn-option ${startingLine === value ? 'active' : ''}`}
+                      onClick={() => setStartingLine(value)}
+                    >
+                      {value.charAt(0).toUpperCase() + value.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="control-group">
+                <label>Shot shape:</label>
+                <div className="button-group">
+                  {(['hook', 'draw', 'straight', 'fade', 'slice'] as const).map((value) => (
+                    <button
+                      key={value}
+                      className={`btn-option ${shotShape === value ? 'active' : ''}`}
+                      onClick={() => setShotShape(value)}
+                    >
+                      {value.charAt(0).toUpperCase() + value.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="control-group">
+                <label>Shot height:</label>
+                <div className="button-group">
+                  {(['low', 'medium', 'high'] as const).map((value) => (
+                    <button
+                      key={value}
+                      className={`btn-option ${shotHeight === value ? 'active' : ''}`}
+                      onClick={() => setShotHeight(value)}
+                    >
+                      {value.charAt(0).toUpperCase() + value.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="control-group">
+                <label>Flight time: {flightTime.toFixed(1)}s</label>
+                <input
+                  type="range"
+                  min="1.0"
+                  max="6.0"
+                  step="0.5"
+                  value={flightTime}
+                  onChange={(e) => setFlightTime(parseFloat(e.target.value))}
+                  className="flight-time-slider"
+                />
+              </div>
+              <button
+                className="btn-primary btn-generate"
+                onClick={() => landingPoint && generateTrajectoryWithConfig(landingPoint.x, landingPoint.y)}
+                disabled={!landingPoint || trajectoryProgress !== null}
+              >
+                Generate
+              </button>
+              <button className="btn-clear" onClick={clearMarking}>
+                Start Over
+              </button>
+            </div>
+          )}
+        </div>
+
       <div
         className={`video-container ${!videoLoaded ? 'video-loading' : ''}`}
-        onClick={handleVideoClick}
         style={{ cursor: markingStep !== 'configure' ? 'crosshair' : 'default' }}
       >
         {!videoLoaded && (
@@ -912,70 +999,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         </label>
       </div>
 
-      {/* Trajectory configuration section */}
-      <div className="trajectory-config-section">
-        {trajectoryProgress !== null ? (
-          <div className="trajectory-progress">
-            <div className="progress-header">
-              Generating tracer... {trajectoryProgress}%
-            </div>
-            <div className="progress-bar">
-              <div
-                className="progress-fill"
-                style={{ width: `${trajectoryProgress}%` }}
-              />
-            </div>
-            <div className="progress-message">{trajectoryMessage}</div>
-          </div>
-        ) : markingStep === 'configure' ? (
-          <div className="trajectory-controls">
-            <div className="control-row">
-              <label>Starting line:</label>
-              <div className="button-group">
-                {(['left', 'center', 'right'] as const).map((value) => (
-                  <button
-                    key={value}
-                    className={`btn-option ${startingLine === value ? 'active' : ''}`}
-                    onClick={() => setStartingLine(value)}
-                  >
-                    {value.charAt(0).toUpperCase() + value.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="control-row">
-              <label>Shot shape:</label>
-              <div className="button-group">
-                {(['hook', 'draw', 'straight', 'fade', 'slice'] as const).map((value) => (
-                  <button
-                    key={value}
-                    className={`btn-option ${shotShape === value ? 'active' : ''}`}
-                    onClick={() => setShotShape(value)}
-                  >
-                    {value.charAt(0).toUpperCase() + value.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="control-row">
-              <label>Shot height:</label>
-              <div className="button-group">
-                {(['low', 'medium', 'high'] as const).map((value) => (
-                  <button
-                    key={value}
-                    className={`btn-option ${shotHeight === value ? 'active' : ''}`}
-                    onClick={() => setShotHeight(value)}
-                  >
-                    {value.charAt(0).toUpperCase() + value.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button className="btn-clear" onClick={clearMarking}>
-              Start Over
-            </button>
-          </div>
-        ) : (
+      {/* Trajectory status section (for non-configure steps) */}
+      {markingStep !== 'configure' && (targetPoint || landingPoint) && (
+        <div className="trajectory-config-section">
           <div className="marking-status">
             {targetPoint && (
               <div className="marked-point">
@@ -983,31 +1009,33 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
                 <span>Target marked</span>
               </div>
             )}
-            {(targetPoint || landingPoint) && (
-              <button className="btn-clear" onClick={clearMarking}>
-                Clear
-              </button>
-            )}
+            <button className="btn-clear" onClick={clearMarking}>
+              Clear
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {trajectoryError && (
-          <div className="trajectory-error">
-            <span>&#9888;&#65039; {trajectoryError}</span>
-          </div>
-        )}
-
-        {detectionWarnings.length > 0 && (
-          <div className="detection-warnings">
-            {detectionWarnings.map((warning, i) => (
-              <div key={i} className="warning-item">
-                <span className="warning-icon">&#9888;</span>
-                <span>{warning}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Trajectory errors/warnings */}
+      {(trajectoryError || detectionWarnings.length > 0) && (
+        <div className="trajectory-config-section">
+          {trajectoryError && (
+            <div className="trajectory-error">
+              <span>&#9888;&#65039; {trajectoryError}</span>
+            </div>
+          )}
+          {detectionWarnings.length > 0 && (
+            <div className="detection-warnings">
+              {detectionWarnings.map((warning, i) => (
+                <div key={i} className="warning-item">
+                  <span className="warning-icon">&#9888;</span>
+                  <span>{warning}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="confidence-info">
         <div className="confidence-badge" data-level={getConfidenceLevel(currentShot.confidence)}>

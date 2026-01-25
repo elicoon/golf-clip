@@ -78,3 +78,11 @@ tmp/
 # Git worktrees
 .worktrees/
 .playwright-mcp/
+
+# Claude Code
+.claude/
+
+# Test screenshots and artifacts
+trajectory-*.png
+trajectory-*.gif
+*.screenshot.png

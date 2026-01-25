@@ -1,24 +1,25 @@
 # GolfClip
 
-A Mac desktop application that automatically transforms raw iPhone golf recordings into polished, YouTube-ready video clips.
+AI-powered golf clip detection and export tool. Automatically finds golf shots in your videos using audio analysis, lets you add professional shot tracers, and exports polished clips ready for YouTube.
 
 ## Features
 
-- **Auto Shot Detection** - Identifies golf shots using combined audio and visual analysis
-- **Smart Clip Cutting** - Automatically cuts clips to start 2s before impact and end 2s after landing
-- **Confidence Scoring** - Flags uncertain clips for manual review
-- **iPhone-style Review UI** - Intuitive scrubber interface for adjusting clip boundaries
-- **Shot Tracers** (Phase 2) - Adds professional ball flight tracers
-- **Hole Overlays** (Phase 3) - Displays hole number, yardage, and shot count
+- **Automatic Shot Detection** - Uses audio transient analysis to find ball strikes (the satisfying "thwack" sound)
+- **Shot Tracer Overlays** - Add professional-looking ball flight tracers like you see on Good Good or PGA broadcasts
+- **Smart Clip Boundaries** - Automatically sets clip start/end with configurable padding
+- **Confidence Scoring** - Flags uncertain detections for manual review
+- **Batch Export** - Export multiple clips at once with or without tracers
 
-## Requirements
+## Quick Start
 
-- macOS with Apple Silicon (M1/M2/M3) or Intel
+### Prerequisites
+
+- macOS (Apple Silicon or Intel) or Windows
 - Python 3.11+
 - Node.js 18+
 - FFmpeg
 
-## Quick Start
+### Installation
 
 ```bash
 # Clone the repository
@@ -26,34 +27,230 @@ git clone https://github.com/YOUR_USERNAME/golf-clip.git
 cd golf-clip
 
 # Set up Python environment
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
+python3.11 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
 
 # Install frontend dependencies
 cd src/frontend
 npm install
-
-# Run the development server
-npm run tauri dev
 ```
 
-## Architecture
+### Running the App
+
+You need to run both the backend and frontend servers:
+
+**Terminal 1 - Backend:**
+```bash
+cd golf-clip
+source .venv/bin/activate
+cd src
+uvicorn backend.main:app --host 127.0.0.1 --port 8420 --reload
+```
+
+**Terminal 2 - Frontend:**
+```bash
+cd golf-clip/src/frontend
+npm run dev
+```
+
+Then open http://localhost:5173 in your browser.
+
+---
+
+## User Interface Walkthrough
+
+### Step 1: Select Video
+
+When you open the app, you'll see the video selection screen:
+
+1. **Click "Select File"** to upload a video from your computer
+2. The video is uploaded to the backend for processing
+3. Alternatively, use "Enter path manually (dev mode)" if you have a local file path
+
+**Supported formats:** MP4, MOV, and other common video formats
+
+### Step 2: Processing
+
+After selecting a video, the app automatically:
+
+1. **Extracts audio** from the video
+2. **Analyzes audio** for ball strike sounds (transient detection)
+3. **Deduplicates** nearby detections (keeps strongest in 25s windows)
+4. **Detects ball origin** using computer vision (shaft + clubhead analysis)
+
+A progress bar shows the current step. Processing typically takes 30-60 seconds for a 2-minute video.
+
+### Step 3: Review Shots
+
+For each detected shot, you'll see:
+
+- **Video player** showing the shot clip
+- **Timeline scrubber** with adjustable start/end handles
+- **Confidence badge** (green/yellow/red based on detection confidence)
+
+#### Adding a Shot Tracer (3-Step Process)
+
+1. **Step 1: Mark Target**
+   - Click on the video where you were **aiming**
+   - A crosshair marker appears at that location
+
+2. **Step 2: Mark Landing**
+   - Click where the ball **actually landed**
+   - A downward arrow marker appears
+
+3. **Step 3: Configure Trajectory**
+   - **Starting line:** Left / Center / Right (initial ball direction)
+   - **Shot shape:** Hook / Draw / Straight / Fade / Slice
+   - **Shot height:** Low / Medium / High
+   - **Flight time:** Adjust with slider (1-6 seconds)
+   - Click **"Generate"** to create the trajectory
+
+The tracer appears as a **red glowing line** that animates as the video plays, following realistic golf ball physics.
+
+#### Playback Controls
+
+| Control | Action |
+|---------|--------|
+| `Space` | Play/Pause |
+| `←` / `→` | Step one frame |
+| `Shift + ←` / `→` | Jump 1 second |
+| `[` / `]` | Set clip start/end to current time |
+| `Enter` | Accept shot and go to next |
+| `Esc` | Skip shot (mark as false positive) |
+
+#### Review Actions
+
+- **Skip Shot** - Mark as false positive, don't export
+- **Next →** - Accept the shot and move to the next one (requires trajectory to be set)
+- **Start Over** - Clear target/landing markers and re-mark
+
+### Step 4: Export
+
+After reviewing all shots:
+
+1. A modal shows export progress
+2. Clips are saved to `[video_name]_clips/` folder
+3. If "Render Shot Tracers" is checked, tracers are burned into the video
+
+---
+
+## End-to-End User Flow
 
 ```
-┌─────────────────────────────────────────┐
-│           GolfClip Desktop App          │
-├─────────────────────────────────────────┤
-│  Frontend (React + Tauri)               │
-│  Backend (Python + FastAPI)             │
-│  ML (PyTorch + YOLO)                    │
-│  Video (FFmpeg)                         │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        USER FLOW                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. SELECT VIDEO                                                 │
+│     └─> Upload or enter path                                    │
+│                                                                  │
+│  2. PROCESSING (automatic)                                      │
+│     ├─> Extract audio                                           │
+│     ├─> Detect ball strikes                                     │
+│     ├─> Deduplicate detections                                  │
+│     └─> Detect ball origin (computer vision)                    │
+│                                                                  │
+│  3. REVIEW EACH SHOT                                            │
+│     ├─> Adjust clip boundaries (drag handles or use [ ] keys)   │
+│     ├─> Mark target point (where you aimed)                     │
+│     ├─> Mark landing point (where ball went)                    │
+│     ├─> Configure trajectory (shape, height, flight time)       │
+│     ├─> Generate tracer                                         │
+│     ├─> Preview animation (play video)                          │
+│     └─> Accept (Next →) or Skip                                 │
+│                                                                  │
+│  4. EXPORT                                                       │
+│     ├─> Clips exported to output folder                         │
+│     └─> Optional: tracers burned into video                     │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Development
+---
 
-See [PRD.md](./PRD.md) for detailed product requirements and technical specifications.
+## Configuration
+
+All settings can be configured via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GOLFCLIP_AUDIO_SENSITIVITY` | `0.5` | Detection sensitivity (0-1). Try 0.7-0.9 if getting 0 shots |
+| `GOLFCLIP_CONFIDENCE_THRESHOLD` | `0.70` | Clips below this require manual review |
+| `GOLFCLIP_CLIP_PADDING_BEFORE` | `2.0` | Seconds before ball strike |
+| `GOLFCLIP_CLIP_PADDING_AFTER` | `2.0` | Seconds after ball lands |
+
+Example:
+```bash
+export GOLFCLIP_AUDIO_SENSITIVITY=0.8
+```
+
+---
+
+## Troubleshooting
+
+### No shots detected
+
+1. Check if audio is audible in the source video
+2. Try increasing sensitivity: `export GOLFCLIP_AUDIO_SENSITIVITY=0.8`
+3. Check backend logs for diagnostic messages
+
+### Tracer not appearing
+
+1. Ensure "Show Tracer" checkbox is enabled
+2. Verify trajectory was generated (click "Generate" after marking points)
+3. Play the video - tracer animates with playback
+
+### Video won't load
+
+1. Ensure backend is running on port 8420
+2. Check browser console for CORS errors
+3. Try refreshing the page
+
+---
+
+## Tech Stack
+
+- **Backend:** FastAPI + Python 3.11
+- **Frontend:** React + TypeScript + Vite
+- **Audio Processing:** librosa, ffmpeg-python
+- **Video Processing:** OpenCV, ffmpeg
+- **Database:** SQLite (async with aiosqlite)
+- **State Management:** Zustand
+
+---
+
+## Project Structure
+
+```
+golf-clip/
+├── src/
+│   ├── backend/
+│   │   ├── api/              # FastAPI routes
+│   │   ├── core/             # Database, config
+│   │   ├── detection/        # Shot detection algorithms
+│   │   ├── models/           # Database operations
+│   │   ├── processing/       # Video/tracer rendering
+│   │   └── tests/            # Integration tests
+│   └── frontend/
+│       └── src/
+│           ├── components/   # React components
+│           └── stores/       # Zustand state
+├── docs/                     # Documentation
+├── CLAUDE.md                 # AI assistant context
+├── PRD.md                    # Product requirements
+└── README.md                 # This file
+```
+
+---
+
+## Documentation
+
+- [CLAUDE.md](./CLAUDE.md) - Technical reference for AI assistants and developers
+- [docs/FEATURES.md](./docs/FEATURES.md) - Detailed feature documentation
+- [PRD.md](./PRD.md) - Product requirements document
+
+---
 
 ## License
 
