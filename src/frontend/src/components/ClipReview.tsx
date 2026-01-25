@@ -694,6 +694,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           currentTime={currentTime}
           showTracer={showTracer}
           disabled={false}
+          landingPoint={landingPoint}
           onTrajectoryUpdate={(points) => {
             // Save updated trajectory - only if we have a valid shot
             if (!currentShot) return
