@@ -63,9 +63,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [trajectoryMessage, setTrajectoryMessage] = useState<string>('')
   const [detectionWarnings, setDetectionWarnings] = useState<string[]>([])
   const [trajectoryError, setTrajectoryError] = useState<string | null>(null)
-  const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null)
 
   const videoRef = useRef<HTMLVideoElement>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Filter to shots needing review (confidence < 70%)
@@ -105,11 +105,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   // Cleanup EventSource on unmount
   useEffect(() => {
     return () => {
-      if (eventSourceRef) {
-        eventSourceRef.close()
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
       }
     }
-  }, [eventSourceRef])
+  }, [])
 
   // Track current video time for trajectory rendering and enforce clip boundaries
   useEffect(() => {
@@ -421,8 +421,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
   const generateTrajectorySSE = useCallback((landingX: number, landingY: number) => {
     // Cancel previous connection if any
-    if (eventSourceRef) {
-      eventSourceRef.close()
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
     }
 
     setTrajectoryProgress(0)
@@ -432,7 +432,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot?.id}/generate?landing_x=${landingX}&landing_y=${landingY}`
     const eventSource = new EventSource(url)
-    setEventSourceRef(eventSource)
+    eventSourceRef.current = eventSource
 
     eventSource.addEventListener('progress', (e) => {
       const data = JSON.parse(e.data)
@@ -451,7 +451,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       setTrajectoryProgress(null)
       setTrajectoryMessage('')
       eventSource.close()
-      setEventSourceRef(null)
+      eventSourceRef.current = null
     })
 
     eventSource.addEventListener('error', (e) => {
@@ -463,16 +463,16 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       }
       setTrajectoryProgress(null)
       eventSource.close()
-      setEventSourceRef(null)
+      eventSourceRef.current = null
     })
 
     eventSource.onerror = () => {
       setTrajectoryError('Connection lost during trajectory generation')
       setTrajectoryProgress(null)
       eventSource.close()
-      setEventSourceRef(null)
+      eventSourceRef.current = null
     }
-  }, [jobId, currentShot?.id, eventSourceRef])
+  }, [jobId, currentShot?.id])
 
   const handleVideoClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!videoRef.current || loadingState === 'loading' || trajectoryProgress !== null) return
@@ -491,9 +491,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   }, [loadingState, trajectoryProgress, generateTrajectorySSE])
 
   const clearLandingPoint = useCallback(() => {
-    if (eventSourceRef) {
-      eventSourceRef.close()
-      setEventSourceRef(null)
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null
     }
 
     setLandingPoint(null)
@@ -502,7 +502,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setTrajectoryMessage('')
     setDetectionWarnings([])
     setTrajectoryError(null)
-  }, [eventSourceRef])
+  }, [])
 
   const handleVideoLoad = () => {
     setVideoLoaded(true)
