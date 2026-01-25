@@ -2,6 +2,8 @@
 
 AI-powered golf clip detection and export tool. Automatically finds golf shots in your videos using audio analysis, lets you add professional shot tracers, and exports polished clips ready for YouTube.
 
+> **Quick Links:** [How Features Work](docs/FEATURES.md) | [Step-by-Step Walkthrough](docs/PRODUCT-WALKTHROUGH.md) | [Contributing](CONTRIBUTING.md)
+
 ## Features
 
 - **Automatic Shot Detection** - Uses audio transient analysis to find ball strikes (the satisfying "thwack" sound)
