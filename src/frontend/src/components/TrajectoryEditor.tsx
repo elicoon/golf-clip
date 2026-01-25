@@ -20,6 +20,7 @@ interface TrajectoryEditorProps {
   onTrajectoryUpdate?: (points: TrajectoryPoint[]) => void
   disabled?: boolean
   showTracer?: boolean
+  landingPoint?: { x: number; y: number } | null
 }
 
 // Check if canvas filter is supported (Safari < 15.4 doesn't support it)
@@ -37,6 +38,7 @@ export function TrajectoryEditor({
   onTrajectoryUpdate,
   disabled = false,
   showTracer = true,
+  landingPoint,
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
@@ -171,7 +173,34 @@ export function TrajectoryEditor({
         ctx.fill()
       }
     }
-  }, [localPoints, currentTime, canvasSize, showTracer, disabled, trajectory?.apex_point, hoveredPoint, draggingPoint])
+
+    // Draw landing marker (X shape)
+    if (landingPoint && canvas.width && canvas.height) {
+      const markerX = landingPoint.x * canvas.width
+      const markerY = landingPoint.y * canvas.height
+      const markerSize = 12
+
+      ctx.save()
+
+      // Glow effect
+      ctx.shadowColor = 'rgba(255, 255, 255, 0.8)'
+      ctx.shadowBlur = 8
+
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 3
+      ctx.lineCap = 'round'
+
+      // Draw X
+      ctx.beginPath()
+      ctx.moveTo(markerX - markerSize, markerY - markerSize)
+      ctx.lineTo(markerX + markerSize, markerY + markerSize)
+      ctx.moveTo(markerX + markerSize, markerY - markerSize)
+      ctx.lineTo(markerX - markerSize, markerY + markerSize)
+      ctx.stroke()
+
+      ctx.restore()
+    }
+  }, [localPoints, currentTime, canvasSize, showTracer, disabled, trajectory?.apex_point, hoveredPoint, draggingPoint, landingPoint])
 
   // Find closest point to a normalized position
   const findClosestPoint = useCallback((x: number, y: number): number => {

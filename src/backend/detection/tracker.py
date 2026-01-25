@@ -6,7 +6,7 @@ which YOLO fails to detect reliably due to size and motion blur.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -249,6 +249,29 @@ class ConstrainedBallTracker:
 
     # Minimum brightness for a valid ball candidate
     MIN_BRIGHTNESS = 100
+
+    # Early detection settings (for track_with_landing_point)
+    EARLY_DETECTION_WINDOW_SEC = 0.2  # Window to detect early ball positions
+    MIN_EARLY_DETECTIONS = 3  # Minimum detections needed for launch params
+
+    # Default launch parameters (when early detection fails)
+    DEFAULT_LAUNCH_ANGLE = 18.0  # degrees
+    DEFAULT_LATERAL_ANGLE = 0.0  # degrees
+    DEFAULT_APEX_HEIGHT = 0.45  # normalized (0-1)
+    DEFAULT_APEX_TIME = 1.2  # seconds
+    DEFAULT_FLIGHT_DURATION = 3.0  # seconds
+
+    # Trajectory generation settings
+    TRAJECTORY_SAMPLE_RATE = 30.0  # points per second
+    TRAJECTORY_CONFIDENCE = 0.85  # confidence for generated points
+
+    # Flight duration bounds
+    MIN_FLIGHT_DURATION = 2.0  # seconds
+    MAX_FLIGHT_DURATION = 5.0  # seconds
+
+    # Apex height bounds
+    MIN_APEX_HEIGHT = 0.1  # normalized (0-1)
+    MAX_APEX_HEIGHT = 0.6  # normalized (0-1)
 
     def __init__(self, origin_detector: Optional[BallOriginDetector] = None):
         """Initialize the tracker.
@@ -1301,6 +1324,299 @@ class ConstrainedBallTracker:
             "y": best["y"],
             "confidence": confidence,
             "method": "motion_diff",
+        }
+
+    def track_with_landing_point(
+        self,
+        video_path: Path,
+        origin: OriginDetection,
+        strike_time: float,
+        landing_point: Tuple[float, float],
+        frame_width: int,
+        frame_height: int,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+        warning_callback: Optional[Callable[[str, str], None]] = None,
+    ) -> Optional[dict]:
+        """Generate trajectory constrained to hit user-marked landing point.
+
+        Uses hybrid approach:
+        1. Detect early ball positions (first 200ms) for launch angle
+        2. Constrain parabola to pass through origin and landing point
+        3. Use early detections to determine apex timing
+
+        Args:
+            video_path: Path to video file
+            origin: Detected ball origin (from origin.py)
+            strike_time: When ball was struck (seconds)
+            landing_point: User-marked landing (x, y) in normalized coords (0-1)
+            frame_width: Video width in pixels
+            frame_height: Video height in pixels
+            progress_callback: Called with (percent, message) during generation
+            warning_callback: Called with (warning_code, message) for non-fatal issues
+
+        Returns:
+            Trajectory dict with points constrained to hit landing point
+        """
+        logger.info(
+            f"Generating trajectory with landing point: origin=({origin.x:.0f}, {origin.y:.0f}), "
+            f"landing=({landing_point[0]:.3f}, {landing_point[1]:.3f}), strike_time={strike_time:.2f}s"
+        )
+
+        def emit_progress(percent: int, message: str):
+            if progress_callback:
+                progress_callback(percent, message)
+
+        def emit_warning(code: str, message: str):
+            if warning_callback:
+                warning_callback(code, message)
+
+        emit_progress(10, "Detecting early ball positions...")
+
+        # Try to detect early ball movement for launch angle
+        early_detections = []
+        try:
+            early_detections = self.track_flight(
+                video_path,
+                origin,
+                strike_time,
+                end_time=strike_time + self.EARLY_DETECTION_WINDOW_SEC,
+                max_flight_duration=self.EARLY_DETECTION_WINDOW_SEC,
+            )
+        except Exception as e:
+            emit_warning("early_ball_detection_failed", f"No ball detected in first 200ms: {e}")
+            logger.warning(f"Early ball detection failed: {e}")
+
+        emit_progress(30, "Extracting launch parameters...")
+
+        # Extract launch params from early detections or use defaults
+        if len(early_detections) >= self.MIN_EARLY_DETECTIONS:
+            logger.info(f"Using {len(early_detections)} early detections to extract launch parameters")
+            launch_params = self._extract_launch_params(
+                early_detections, origin, frame_width, frame_height
+            )
+        else:
+            logger.info(
+                f"Only {len(early_detections)} early detections (need {self.MIN_EARLY_DETECTIONS}), "
+                "using default launch parameters"
+            )
+            emit_warning(
+                "early_ball_detection_failed",
+                "No ball detected in first 200ms, using default launch angle"
+            )
+            launch_params = {
+                "launch_angle": self.DEFAULT_LAUNCH_ANGLE,
+                "lateral_angle": self.DEFAULT_LATERAL_ANGLE,
+                "apex_height": self.DEFAULT_APEX_HEIGHT,
+                "apex_time": self.DEFAULT_APEX_TIME,
+                "flight_duration": self.DEFAULT_FLIGHT_DURATION,
+                "shot_shape": "straight",
+            }
+
+        emit_progress(50, "Generating physics trajectory...")
+
+        # Normalize origin
+        origin_x = origin.x / frame_width
+        origin_y = origin.y / frame_height
+        landing_x, landing_y = landing_point
+
+        # Calculate trajectory that hits both origin and landing
+        trajectory = self._generate_constrained_trajectory(
+            origin_point=(origin_x, origin_y),
+            landing_point=(landing_x, landing_y),
+            strike_time=strike_time,
+            launch_params=launch_params,
+        )
+
+        emit_progress(80, "Smoothing trajectory...")
+
+        if trajectory:
+            emit_progress(100, "Trajectory complete")
+
+        return trajectory
+
+    def _extract_launch_params(
+        self,
+        early_detections: List[TrajectoryPoint],
+        origin: OriginDetection,
+        frame_width: int,
+        frame_height: int,
+    ) -> dict:
+        """Extract launch parameters from early ball detections.
+
+        Args:
+            early_detections: List of early trajectory points
+            origin: Ball origin detection
+            frame_width: Video width in pixels
+            frame_height: Video height in pixels
+
+        Returns:
+            Dictionary with launch_angle, lateral_angle, apex_height, etc.
+        """
+        if len(early_detections) < 2:
+            return {
+                "launch_angle": self.DEFAULT_LAUNCH_ANGLE,
+                "lateral_angle": self.DEFAULT_LATERAL_ANGLE,
+                "apex_height": self.DEFAULT_APEX_HEIGHT,
+                "apex_time": self.DEFAULT_APEX_TIME,
+                "flight_duration": self.DEFAULT_FLIGHT_DURATION,
+                "shot_shape": "straight",
+            }
+
+        # Use first and last early detection to estimate launch angle
+        first_pt = early_detections[0]
+        last_pt = early_detections[-1]
+
+        dx = last_pt.x - first_pt.x
+        dy = first_pt.y - last_pt.y  # Invert since screen y increases downward
+
+        # Calculate angle (ball rising = positive dy)
+        if abs(dx) > 0.001 or abs(dy) > 0.001:
+            # Launch angle from vertical movement
+            # Higher dy/dt = steeper launch
+            time_diff = last_pt.timestamp - first_pt.timestamp
+            if time_diff > 0:
+                vertical_speed = dy / time_diff
+                # Map vertical speed to launch angle (rough approximation)
+                # Faster rise = higher launch angle
+                launch_angle = min(35.0, max(10.0, 15.0 + vertical_speed / 100))
+            else:
+                launch_angle = self.DEFAULT_LAUNCH_ANGLE
+
+            # Lateral angle from horizontal movement
+            horizontal_speed = dx / time_diff if time_diff > 0 else 0
+            lateral_angle = horizontal_speed / 50  # Rough mapping
+            lateral_angle = min(15.0, max(-15.0, lateral_angle))
+        else:
+            launch_angle = self.DEFAULT_LAUNCH_ANGLE
+            lateral_angle = self.DEFAULT_LATERAL_ANGLE
+
+        # Determine shot shape from lateral movement
+        if lateral_angle < -2:
+            shot_shape = "draw"
+        elif lateral_angle > 2:
+            shot_shape = "fade"
+        else:
+            shot_shape = "straight"
+
+        return {
+            "launch_angle": launch_angle,
+            "lateral_angle": lateral_angle,
+            "apex_height": self.DEFAULT_APEX_HEIGHT,
+            "apex_time": self.DEFAULT_APEX_TIME,
+            "flight_duration": self.DEFAULT_FLIGHT_DURATION,
+            "shot_shape": shot_shape,
+        }
+
+    def _generate_constrained_trajectory(
+        self,
+        origin_point: Tuple[float, float],
+        landing_point: Tuple[float, float],
+        strike_time: float,
+        launch_params: dict,
+    ) -> Optional[dict]:
+        """Generate parabolic trajectory constrained to hit both endpoints.
+
+        Args:
+            origin_point: (x, y) in normalized coords (0-1)
+            landing_point: (x, y) in normalized coords (0-1)
+            strike_time: When ball was struck (seconds)
+            launch_params: Dictionary with launch_angle, apex_height, etc.
+
+        Returns:
+            Trajectory dict with points, apex_point, landing_point, etc.
+        """
+        origin_x, origin_y = origin_point
+        landing_x, landing_y = landing_point
+
+        dx = landing_x - origin_x
+        dy = landing_y - origin_y
+        distance = np.sqrt(dx**2 + dy**2)
+
+        base_duration = launch_params.get("flight_duration", self.DEFAULT_FLIGHT_DURATION)
+        flight_duration = max(
+            self.MIN_FLIGHT_DURATION,
+            min(self.MAX_FLIGHT_DURATION, base_duration * (distance / 0.3))
+        )
+
+        apex_ratio = 0.4 + (launch_params.get("launch_angle", self.DEFAULT_LAUNCH_ANGLE) / 90.0) * 0.2
+        apex_time = flight_duration * apex_ratio
+
+        T = flight_duration
+        t_a = apex_time
+
+        coefficient = 2 * T / t_a - (T * T) / (t_a * t_a)
+
+        if abs(coefficient) < 0.001:
+            apex_height = 0.3
+        else:
+            apex_height = (origin_y - landing_y) / coefficient
+
+        apex_height = max(self.MIN_APEX_HEIGHT, min(self.MAX_APEX_HEIGHT, apex_height))
+
+        gravity = 2 * apex_height / (t_a * t_a)
+        v_y0 = gravity * t_a
+        v_x = dx / T
+
+        points = []
+        apex_idx = 0
+        min_y = origin_y
+
+        t = 0.0
+        while t <= T:
+            y_offset = v_y0 * t - 0.5 * gravity * t * t
+            x_offset = v_x * t
+
+            screen_x = origin_x + x_offset
+            screen_y = origin_y - y_offset
+
+            if screen_y < min_y:
+                min_y = screen_y
+                apex_idx = len(points)
+
+            points.append({
+                "timestamp": strike_time + t,
+                "x": max(0.0, min(1.0, screen_x)),
+                "y": max(0.0, min(1.0, screen_y)),
+                "confidence": self.TRAJECTORY_CONFIDENCE,
+                "interpolated": True,
+            })
+            t += 1.0 / self.TRAJECTORY_SAMPLE_RATE
+
+        if points:
+            points[-1]["x"] = landing_x
+            points[-1]["y"] = landing_y
+
+        if len(points) < 2:
+            logger.warning("Failed to generate trajectory points")
+            return None
+
+        apex_point = {
+            "timestamp": points[apex_idx]["timestamp"],
+            "x": points[apex_idx]["x"],
+            "y": points[apex_idx]["y"],
+        }
+
+        logger.info(
+            f"Generated constrained trajectory: {len(points)} points, "
+            f"origin=({origin_x:.3f}, {origin_y:.3f}), "
+            f"landing=({landing_x:.3f}, {landing_y:.3f}), "
+            f"apex_y={min_y:.3f}, duration={T:.2f}s"
+        )
+
+        return {
+            "points": points,
+            "apex_point": apex_point,
+            "landing_point": {
+                "timestamp": points[-1]["timestamp"],
+                "x": landing_x,
+                "y": landing_y,
+            },
+            "confidence": self.TRAJECTORY_CONFIDENCE,
+            "method": "constrained_landing",
+            "launch_angle": launch_params.get("launch_angle", self.DEFAULT_LAUNCH_ANGLE),
+            "lateral_angle": launch_params.get("lateral_angle", self.DEFAULT_LATERAL_ANGLE),
+            "shot_shape": launch_params.get("shot_shape", "straight"),
+            "flight_duration": T,
         }
 
     def visualize_cone(

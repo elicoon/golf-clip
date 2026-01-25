@@ -56,7 +56,16 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [trajectoryLoading, setTrajectoryLoading] = useState(false)
   const [exportWithTracer, setExportWithTracer] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
+
+  // Landing point marking state
+  const [landingPoint, setLandingPoint] = useState<{x: number, y: number} | null>(null)
+  const [trajectoryProgress, setTrajectoryProgress] = useState<number | null>(null)
+  const [trajectoryMessage, setTrajectoryMessage] = useState<string>('')
+  const [detectionWarnings, setDetectionWarnings] = useState<string[]>([])
+  const [trajectoryError, setTrajectoryError] = useState<string | null>(null)
+
   const videoRef = useRef<HTMLVideoElement>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Filter to shots needing review (confidence < 70%)
@@ -83,6 +92,24 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       setTrajectory(null)
     }
   }, [currentShot?.id, jobId])
+
+  // Reset landing point when shot changes
+  useEffect(() => {
+    setLandingPoint(null)
+    setTrajectoryProgress(null)
+    setTrajectoryMessage('')
+    setDetectionWarnings([])
+    setTrajectoryError(null)
+  }, [currentShot?.id])
+
+  // Cleanup EventSource on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+      }
+    }
+  }, [])
 
   // Track current video time for trajectory rendering and enforce clip boundaries
   useEffect(() => {
@@ -153,7 +180,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           break
         case 'Enter':
           e.preventDefault()
-          handleAccept()
+          if (landingPoint !== null && trajectoryProgress === null) {
+            handleAccept()
+          }
           break
         case 'Escape':
         case 'Backspace':
@@ -392,6 +421,91 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
   }, [])
 
+  const generateTrajectorySSE = useCallback((landingX: number, landingY: number) => {
+    // Cancel previous connection if any
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+    }
+
+    setTrajectoryProgress(0)
+    setTrajectoryMessage('Starting...')
+    setDetectionWarnings([])
+    setTrajectoryError(null)
+
+    const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot?.id}/generate?landing_x=${landingX}&landing_y=${landingY}`
+    const eventSource = new EventSource(url)
+    eventSourceRef.current = eventSource
+
+    eventSource.addEventListener('progress', (e) => {
+      const data = JSON.parse(e.data)
+      setTrajectoryProgress(data.progress)
+      setTrajectoryMessage(data.message || '')
+    })
+
+    eventSource.addEventListener('warning', (e) => {
+      const data = JSON.parse(e.data)
+      setDetectionWarnings(prev => [...prev, data.message])
+    })
+
+    eventSource.addEventListener('complete', (e) => {
+      const data = JSON.parse(e.data)
+      setTrajectory(data.trajectory)
+      setTrajectoryProgress(null)
+      setTrajectoryMessage('')
+      eventSource.close()
+      eventSourceRef.current = null
+    })
+
+    eventSource.addEventListener('error', (e) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data)
+        setTrajectoryError(data.error || 'Failed to generate trajectory')
+      } catch {
+        setTrajectoryError('Connection lost during trajectory generation')
+      }
+      setTrajectoryProgress(null)
+      eventSource.close()
+      eventSourceRef.current = null
+    })
+
+    eventSource.onerror = () => {
+      setTrajectoryError('Connection lost during trajectory generation')
+      setTrajectoryProgress(null)
+      eventSource.close()
+      eventSourceRef.current = null
+    }
+  }, [jobId, currentShot?.id])
+
+  const handleVideoClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!videoRef.current || loadingState === 'loading' || trajectoryProgress !== null) return
+
+    const rect = videoRef.current.getBoundingClientRect()
+    const x = (e.clientX - rect.left) / rect.width
+    const y = (e.clientY - rect.top) / rect.height
+
+    // Clamp to valid range
+    const clampedX = Math.max(0, Math.min(1, x))
+    const clampedY = Math.max(0, Math.min(1, y))
+
+    setLandingPoint({ x: clampedX, y: clampedY })
+    setTrajectoryError(null)
+    generateTrajectorySSE(clampedX, clampedY)
+  }, [loadingState, trajectoryProgress, generateTrajectorySSE])
+
+  const clearLandingPoint = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null
+    }
+
+    setLandingPoint(null)
+    setTrajectory(null)
+    setTrajectoryProgress(null)
+    setTrajectoryMessage('')
+    setDetectionWarnings([])
+    setTrajectoryError(null)
+  }, [])
+
   const handleVideoLoad = () => {
     setVideoLoaded(true)
   }
@@ -533,17 +647,17 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       <div className="review-actions">
         <button
           onClick={handleReject}
-          className="btn-secondary btn-reject"
-          disabled={loadingState === 'loading'}
-          title="Reject (Escape)"
+          className="btn-secondary btn-skip"
+          disabled={loadingState === 'loading' || trajectoryProgress !== null}
+          title="Skip Shot (Escape)"
         >
-          ✗ Reject
+          Skip Shot
         </button>
         <button
           onClick={handleAccept}
-          className="btn-primary btn-accept"
-          disabled={loadingState === 'loading'}
-          title="Accept (Enter)"
+          className="btn-primary btn-next"
+          disabled={loadingState === 'loading' || trajectoryProgress !== null || landingPoint === null}
+          title={landingPoint === null ? "Mark landing point first" : "Next (Enter)"}
         >
           {loadingState === 'loading' ? (
             <>
@@ -551,12 +665,16 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
               Saving...
             </>
           ) : (
-            '✓ Accept'
+            'Next →'
           )}
         </button>
       </div>
 
-      <div className={`video-container ${!videoLoaded ? 'video-loading' : ''}`}>
+      <div
+        className={`video-container ${!videoLoaded ? 'video-loading' : ''}`}
+        onClick={handleVideoClick}
+        style={{ cursor: landingPoint === null && trajectoryProgress === null ? 'crosshair' : 'default' }}
+      >
         {!videoLoaded && (
           <div className="video-loader">
             <div className="spinner-large" />
@@ -578,6 +696,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           currentTime={currentTime}
           showTracer={showTracer}
           disabled={false}
+          landingPoint={landingPoint}
           onTrajectoryUpdate={(points) => {
             // Save updated trajectory - only if we have a valid shot
             if (!currentShot) return
@@ -662,6 +781,58 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         </label>
       </div>
 
+      {/* Landing point section */}
+      <div className="landing-point-section">
+        {trajectoryProgress !== null ? (
+          <div className="trajectory-progress">
+            <div className="progress-header">
+              Generating tracer... {trajectoryProgress}%
+            </div>
+            <div className="progress-bar">
+              <div
+                className="progress-fill"
+                style={{ width: `${trajectoryProgress}%` }}
+              />
+            </div>
+            <div className="progress-message">{trajectoryMessage}</div>
+          </div>
+        ) : landingPoint ? (
+          <div className="landing-confirmed">
+            <span className="landing-icon">📍</span>
+            <span>Landing: ({landingPoint.x.toFixed(2)}, {landingPoint.y.toFixed(2)})</span>
+            <button
+              className="btn-clear"
+              onClick={clearLandingPoint}
+              title="Clear landing point"
+            >
+              Clear
+            </button>
+          </div>
+        ) : (
+          <div className="landing-prompt">
+            <span className="landing-icon">📍</span>
+            <span>Click on video to mark landing point</span>
+          </div>
+        )}
+
+        {trajectoryError && (
+          <div className="trajectory-error">
+            <span>⚠️ {trajectoryError}</span>
+          </div>
+        )}
+
+        {detectionWarnings.length > 0 && (
+          <div className="detection-warnings">
+            {detectionWarnings.map((warning, i) => (
+              <div key={i} className="warning-item">
+                <span className="warning-icon">⚠</span>
+                <span>{warning}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="confidence-info">
         <div className="confidence-badge" data-level={getConfidenceLevel(currentShot.confidence)}>
           {Math.round(currentShot.confidence * 100)}%
@@ -695,8 +866,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         <span><kbd>Space</kbd> Play/Pause</span>
         <span><kbd>←</kbd><kbd>→</kbd> Frame step</span>
         <span><kbd>[</kbd><kbd>]</kbd> Set in/out</span>
-        <span><kbd>Enter</kbd> Accept</span>
-        <span><kbd>Esc</kbd> Reject</span>
+        <span><kbd>Enter</kbd> Next</span>
+        <span><kbd>Esc</kbd> Skip</span>
       </div>
     </div>
   )
