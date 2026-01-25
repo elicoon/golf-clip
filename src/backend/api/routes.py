@@ -1285,6 +1285,11 @@ async def generate_trajectory_sse(
     shot_id: int,
     landing_x: float = Query(..., ge=0, le=1, description="Landing X coordinate (0-1)"),
     landing_y: float = Query(..., ge=0, le=1, description="Landing Y coordinate (0-1)"),
+    target_x: float = Query(..., ge=0, le=1, description="Target X coordinate (0-1)"),
+    target_y: float = Query(..., ge=0, le=1, description="Target Y coordinate (0-1)"),
+    starting_line: str = Query("center", description="Starting line: left, center, right"),
+    shot_shape: str = Query("straight", description="Shot shape: hook, draw, straight, fade, slice"),
+    shot_height: str = Query("medium", description="Shot height: low, medium, high"),
 ):
     """Generate trajectory with SSE progress updates.
 
@@ -1332,25 +1337,6 @@ async def generate_trajectory_sse(
     strike_time = shot.get("strike_time", 0.0)
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        # Queues for bridging sync callbacks to async generator
-        progress_queue: asyncio.Queue = asyncio.Queue()
-        warning_queue: asyncio.Queue = asyncio.Queue()
-
-        def progress_callback(percent: int, message: str):
-            # Scale progress from tracker (10-100) to overall (20-90)
-            # 0-10 = saving landing, 10-20 = origin detection, 20-90 = tracker, 90-100 = saving
-            scaled_percent = 20 + int((percent / 100) * 70)
-            try:
-                progress_queue.put_nowait({"progress": scaled_percent, "message": message})
-            except asyncio.QueueFull:
-                pass
-
-        def warning_callback(code: str, message: str):
-            try:
-                warning_queue.put_nowait({"code": code, "message": message})
-            except asyncio.QueueFull:
-                pass
-
         try:
             # Step 1: Save landing point
             yield sse_event("progress", {
@@ -1404,39 +1390,29 @@ async def generate_trajectory_sse(
                 "message": f"Ball origin detected at ({origin.x:.0f}, {origin.y:.0f})"
             })
 
-            # Step 3: Generate trajectory
+            # Step 3: Generate trajectory with full configuration
             yield sse_event("progress", {
                 "step": "generating",
                 "progress": 25,
                 "message": "Generating trajectory..."
             })
 
+            # Normalize origin
+            origin_normalized = (origin.x / frame_width, origin.y / frame_height)
+
             # Run trajectory generation in executor
             trajectory_result = await loop.run_in_executor(
                 None,
-                lambda: tracker.track_with_landing_point(
-                    video_path=video_path,
-                    origin=origin,
+                lambda: tracker.generate_configured_trajectory(
+                    origin=origin_normalized,
+                    target=(target_x, target_y),
+                    landing=(landing_x, landing_y),
+                    starting_line=starting_line,
+                    shot_shape=shot_shape,
+                    shot_height=shot_height,
                     strike_time=strike_time,
-                    landing_point=(landing_x, landing_y),
-                    frame_width=frame_width,
-                    frame_height=frame_height,
-                    progress_callback=progress_callback,
-                    warning_callback=warning_callback,
                 )
             )
-
-            # Drain queues and emit events
-            while not warning_queue.empty():
-                warning = warning_queue.get_nowait()
-                yield sse_event("warning", warning)
-
-            while not progress_queue.empty():
-                prog = progress_queue.get_nowait()
-                yield sse_event("progress", {
-                    "step": "generating",
-                    **prog
-                })
 
             if trajectory_result is None:
                 yield sse_event("error", {
