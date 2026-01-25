@@ -1629,6 +1629,7 @@ class ConstrainedBallTracker:
         shot_height: str,
         strike_time: float,
         flight_time: Optional[float] = None,
+        apex: Optional[Tuple[float, float]] = None,
     ) -> Optional[dict]:
         """Generate trajectory using Bezier curve with full configuration.
 
@@ -1641,10 +1642,21 @@ class ConstrainedBallTracker:
             shot_height: "low", "medium", or "high"
             strike_time: When ball was struck (seconds)
             flight_time: User-specified flight duration in seconds (overrides height-based default)
+            apex: Optional apex point (x, y) - if provided, generates apex-constrained trajectory
 
         Returns:
             Trajectory dict with points, apex_point, landing_point, etc.
         """
+        # If apex is provided, use apex-constrained trajectory
+        if apex:
+            return self._generate_apex_constrained_trajectory(
+                origin=origin,
+                apex=apex,
+                landing=landing,
+                strike_time=strike_time,
+                flight_time=flight_time or 3.0,
+            )
+
         origin_x, origin_y = origin
         target_x, target_y = target
         landing_x, landing_y = landing
@@ -1784,6 +1796,115 @@ class ConstrainedBallTracker:
             "shot_shape": shot_shape,
             "shot_height": shot_height,
             "flight_duration": flight_duration,
+        }
+
+    def _generate_apex_constrained_trajectory(
+        self,
+        origin: Tuple[float, float],
+        apex: Tuple[float, float],
+        landing: Tuple[float, float],
+        strike_time: float,
+        flight_time: float,
+    ) -> Optional[dict]:
+        """
+        Generate trajectory that passes through origin, apex, and landing.
+
+        Uses two quadratic Bezier segments:
+        - Segment 1: origin → apex (ascending)
+        - Segment 2: apex → landing (descending)
+        """
+        origin_x, origin_y = origin
+        apex_x, apex_y = apex
+        landing_x, landing_y = landing
+
+        # Apex timing (typically 40-50% of flight)
+        apex_time_ratio = 0.45
+        apex_time = flight_time * apex_time_ratio
+
+        # Control points for smooth curve
+        ctrl1_x = origin_x + (apex_x - origin_x) * 0.5
+        ctrl1_y = origin_y - (origin_y - apex_y) * 0.3
+
+        ctrl2_x = apex_x + (landing_x - apex_x) * 0.5
+        ctrl2_y = apex_y + (landing_y - apex_y) * 0.3
+
+        sample_rate = 60.0
+        points = []
+        apex_idx = 0
+        min_y = origin_y
+
+        # Ascending segment
+        ascending_duration = apex_time
+        num_ascending = int(ascending_duration * sample_rate)
+
+        for i in range(num_ascending):
+            t = i / num_ascending if num_ascending > 0 else 0
+
+            x = (1 - t) ** 2 * origin_x + 2 * (1 - t) * t * ctrl1_x + t ** 2 * apex_x
+            y = (1 - t) ** 2 * origin_y + 2 * (1 - t) * t * ctrl1_y + t ** 2 * apex_y
+
+            if y < min_y:
+                min_y = y
+                apex_idx = len(points)
+
+            points.append({
+                "timestamp": strike_time + (t * ascending_duration),
+                "x": max(0.0, min(1.0, x)),
+                "y": max(0.0, min(1.0, y)),
+                "confidence": 0.90,
+                "interpolated": True,
+            })
+
+        # Descending segment
+        descending_duration = flight_time - apex_time
+        num_descending = int(descending_duration * sample_rate)
+
+        for i in range(num_descending + 1):
+            t = i / num_descending if num_descending > 0 else 0
+
+            x = (1 - t) ** 2 * apex_x + 2 * (1 - t) * t * ctrl2_x + t ** 2 * landing_x
+            y = (1 - t) ** 2 * apex_y + 2 * (1 - t) * t * ctrl2_y + t ** 2 * landing_y
+
+            if y < min_y:
+                min_y = y
+                apex_idx = len(points)
+
+            points.append({
+                "timestamp": strike_time + apex_time + (t * descending_duration),
+                "x": max(0.0, min(1.0, x)),
+                "y": max(0.0, min(1.0, y)),
+                "confidence": 0.90,
+                "interpolated": True,
+            })
+
+        # Ensure exact endpoints
+        if points:
+            points[0]["x"], points[0]["y"] = origin_x, origin_y
+            points[-1]["x"], points[-1]["y"] = landing_x, landing_y
+
+        if len(points) < 2:
+            return None
+
+        logger.info(
+            f"Generated apex-constrained trajectory: {len(points)} points, "
+            f"apex=({apex_x:.3f}, {apex_y:.3f})"
+        )
+
+        return {
+            "points": points,
+            "apex_point": {
+                "timestamp": strike_time + apex_time,
+                "x": apex_x,
+                "y": apex_y,
+            },
+            "landing_point": {
+                "timestamp": strike_time + flight_time,
+                "x": landing_x,
+                "y": landing_y,
+            },
+            "confidence": 0.90,
+            "method": "apex_constrained",
+            "flight_duration": flight_time,
         }
 
     def visualize_cone(
