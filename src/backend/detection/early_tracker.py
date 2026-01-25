@@ -10,7 +10,7 @@ Designed to minimize false negatives - prefers finding something over finding no
 """
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -19,7 +19,6 @@ import numpy as np
 from loguru import logger
 
 from backend.detection.color_family import (
-    ColorFamily,
     ColorTemplate,
     compute_color_match_score,
     extract_color_template,

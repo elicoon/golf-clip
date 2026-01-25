@@ -1,9 +1,7 @@
 # src/backend/tests/test_early_tracker.py
 """Tests for EarlyBallTracker."""
 
-import math
 import pytest
-from unittest.mock import Mock, patch
 
 from backend.detection.early_tracker import (
     EarlyBallTracker,
