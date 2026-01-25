@@ -29,6 +29,9 @@ golf-clip/
 │   │   │   ├── visual.py     # YOLO ball tracking
 │   │   │   ├── origin.py     # Ball origin detection (shaft + clubhead)
 │   │   │   ├── tracker.py    # Constraint-based ball tracking
+│   │   │   ├── early_tracker.py  # Early ball motion detection (first 200ms)
+│   │   │   ├── color_family.py   # Color family classification for ball detection
+│   │   │   ├── search_expansion.py # Expanding search for ball candidates
 │   │   │   └── pipeline.py   # Combined detection pipeline
 │   │   ├── models/           # Database CRUD operations
 │   │   │   ├── job.py        # Job, Shot, Feedback operations
@@ -46,12 +49,13 @@ golf-clip/
 │       └── src/
 │           ├── App.tsx           # Main app with view routing
 │           ├── components/
-│           │   ├── VideoDropzone.tsx   # File input
-│           │   ├── ProcessingView.tsx  # Progress tracking
-│           │   ├── ClipReview.tsx      # Shot review + export
-│           │   ├── ExportComplete.tsx  # Feedback collection
-│           │   ├── Scrubber.tsx        # Timeline controls
-│           │   └── TrajectoryEditor.tsx # Shot tracer canvas overlay
+│           │   ├── VideoDropzone.tsx     # File input
+│           │   ├── ProcessingView.tsx    # Progress tracking
+│           │   ├── ClipReview.tsx        # Shot review + export + autoplay
+│           │   ├── ExportComplete.tsx    # Feedback collection
+│           │   ├── Scrubber.tsx          # Timeline controls
+│           │   ├── TrajectoryEditor.tsx  # Shot tracer canvas overlay
+│           │   └── PointStatusTracker.tsx # Four-step marking progress UI
 │           └── stores/
 │               └── appStore.ts   # Zustand state management
 └── PRD.md
@@ -305,13 +309,19 @@ The review flow uses click-to-mark for precise trajectory endpoints:
 - Safari fallback for canvas blur filter
 
 **ClipReview.tsx** additions:
-- Click-to-mark landing point on video (crosshair cursor)
+- Four-step click-to-mark flow: target → landing → apex → configure
 - SSE progress bar during trajectory generation
 - Detection warnings display for troubleshooting
 - "Show Tracer" checkbox to toggle trajectory visibility
 - "Render Shot Tracers" checkbox for export
 - "Skip Shot" / "Next →" buttons (replaced Accept/Reject)
-- Landing marker (✕) rendered via TrajectoryEditor
+- Markers rendered via TrajectoryEditor: target (⊕), landing (↓), apex (◆)
+- Autoplay: video seeks to clip start and plays after trajectory generation completes
+
+**PointStatusTracker.tsx** - Visual step progress indicator:
+- Shows all 4 steps with completion status (pending/done)
+- Current step highlighted with instructions
+- Compact horizontal layout fits in review UI
 
 ### Backend Modules
 
@@ -442,27 +452,36 @@ The tracer doesn't need to follow the actual ball pixel-by-pixel. It needs to:
 1. ✅ **Detect ball origin accurately** - Shaft + clubhead detection working
 2. ✅ **Generate smooth parabolic curve** - Physics model in `track_full_trajectory()`
 3. ✅ **Detect trajectory characteristics** - `_extract_launch_params()` analyzes first 200ms
-4. ✅ **Landing point marking** - Three-step UI: Target → Landing → Configure
+4. ✅ **Four-step marking UI** - Target → Landing → Apex (optional) → Configure
 5. ✅ **Professional rendering**:
    - Smooth quadratic Bezier curves
    - RED tracer line with multi-layer glow effect
    - Physics-based animation timing (research-backed)
-   - Apex marker at highest point
+   - Apex marker at highest point (gold diamond ◆)
    - Progressive "drawing" effect during playback
    - 60fps animation using requestAnimationFrame
+6. ✅ **Early ball detection** - Motion tracking in first 200ms post-impact:
+   - `early_tracker.py` - Constraint-based ball tracking
+   - `color_family.py` - Color family classification (white, yellow, orange, etc.)
+   - `search_expansion.py` - Expanding search patterns for candidate detection
+7. ✅ **PointStatusTracker component** - Visual progress indicator for marking steps
+8. ✅ **Autoplay after generation** - Video auto-plays with tracer after trajectory completes
 
-### Three-Step Marking Flow
+### Four-Step Marking Flow
 
-The review UI uses a guided three-step process:
+The review UI uses a guided four-step process with visual status tracking (`PointStatusTracker.tsx`):
 
-1. **Step 1: Mark Target** - User clicks where they were aiming (crosshair marker)
-2. **Step 2: Mark Landing** - User clicks where ball actually landed (arrow marker)
-3. **Step 3: Configure & Generate** - Select trajectory settings:
+1. **Step 1: Mark Target** - User clicks where they were aiming (⊕ crosshair marker)
+2. **Step 2: Mark Landing** - User clicks where ball actually landed (↓ arrow marker)
+3. **Step 3: Mark Apex** - User clicks highest point of ball flight (◆ gold diamond marker, optional - can skip)
+4. **Step 4: Configure & Generate** - Select trajectory settings:
    - Starting line: Left / Center / Right
    - Shot shape: Hook / Draw / Straight / Fade / Slice
    - Shot height: Low / Medium / High
    - Flight time: 1.0s - 6.0s slider
    - Click "Generate" to create trajectory
+
+**Autoplay**: After trajectory generation completes, the video automatically seeks to clip start and plays the shot with tracer overlay.
 
 ### Trajectory Animation Physics
 

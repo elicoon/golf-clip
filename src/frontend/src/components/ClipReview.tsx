@@ -484,6 +484,14 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       setTrajectoryMessage('')
       eventSource.close()
       eventSourceRef.current = null
+
+      // Autoplay: seek to clip start and play
+      if (videoRef.current && currentShot) {
+        videoRef.current.currentTime = currentShot.clip_start
+        videoRef.current.play().catch(() => {
+          // Autoplay may be blocked by browser policy, ignore error
+        })
+      }
     })
 
     eventSource.addEventListener('error', (e) => {
@@ -558,6 +566,14 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       setTrajectoryMessage('')
       eventSource.close()
       eventSourceRef.current = null
+
+      // Autoplay: seek to clip start and play
+      if (videoRef.current && currentShot) {
+        videoRef.current.currentTime = currentShot.clip_start
+        videoRef.current.play().catch(() => {
+          // Autoplay may be blocked by browser policy, ignore error
+        })
+      }
     })
 
     eventSource.addEventListener('error', (e) => {
