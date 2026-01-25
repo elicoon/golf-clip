@@ -180,7 +180,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           break
         case 'Enter':
           e.preventDefault()
-          handleAccept()
+          if (landingPoint !== null && trajectoryProgress === null) {
+            handleAccept()
+          }
           break
         case 'Escape':
         case 'Backspace':
@@ -645,17 +647,17 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       <div className="review-actions">
         <button
           onClick={handleReject}
-          className="btn-secondary btn-reject"
-          disabled={loadingState === 'loading'}
-          title="Reject (Escape)"
+          className="btn-secondary btn-skip"
+          disabled={loadingState === 'loading' || trajectoryProgress !== null}
+          title="Skip Shot (Escape)"
         >
-          ✗ Reject
+          Skip Shot
         </button>
         <button
           onClick={handleAccept}
-          className="btn-primary btn-accept"
-          disabled={loadingState === 'loading'}
-          title="Accept (Enter)"
+          className="btn-primary btn-next"
+          disabled={loadingState === 'loading' || trajectoryProgress !== null || landingPoint === null}
+          title={landingPoint === null ? "Mark landing point first" : "Next (Enter)"}
         >
           {loadingState === 'loading' ? (
             <>
@@ -663,7 +665,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
               Saving...
             </>
           ) : (
-            '✓ Accept'
+            'Next →'
           )}
         </button>
       </div>
@@ -864,8 +866,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         <span><kbd>Space</kbd> Play/Pause</span>
         <span><kbd>←</kbd><kbd>→</kbd> Frame step</span>
         <span><kbd>[</kbd><kbd>]</kbd> Set in/out</span>
-        <span><kbd>Enter</kbd> Accept</span>
-        <span><kbd>Esc</kbd> Reject</span>
+        <span><kbd>Enter</kbd> Next</span>
+        <span><kbd>Esc</kbd> Skip</span>
       </div>
     </div>
   )
