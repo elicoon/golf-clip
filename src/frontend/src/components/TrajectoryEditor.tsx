@@ -22,6 +22,7 @@ interface TrajectoryEditorProps {
   showTracer?: boolean
   landingPoint?: { x: number; y: number } | null
   targetPoint?: { x: number; y: number } | null
+  apexPoint?: { x: number; y: number } | null
   onCanvasClick?: (x: number, y: number) => void
 }
 
@@ -42,6 +43,7 @@ export function TrajectoryEditor({
   showTracer = true,
   landingPoint,
   targetPoint,
+  apexPoint,
   onCanvasClick,
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -274,6 +276,32 @@ export function TrajectoryEditor({
         ctx.restore()
       }
 
+      // Draw apex marker (gold diamond)
+      if (apexPoint) {
+        const markerX = apexPoint.x * canvasSize.width
+        const markerY = apexPoint.y * canvasSize.height
+        const size = 12
+
+        ctx.save()
+        ctx.shadowColor = 'rgba(255, 215, 0, 0.8)'
+        ctx.shadowBlur = 8
+        ctx.fillStyle = '#ffd700'
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 2
+
+        // Diamond shape
+        ctx.beginPath()
+        ctx.moveTo(markerX, markerY - size)
+        ctx.lineTo(markerX + size, markerY)
+        ctx.lineTo(markerX, markerY + size)
+        ctx.lineTo(markerX - size, markerY)
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+
+        ctx.restore()
+      }
+
       // Skip trajectory drawing if no points
       if (!localPoints.length) {
         animationFrameId = requestAnimationFrame(render)
@@ -408,7 +436,7 @@ export function TrajectoryEditor({
     return () => {
       cancelAnimationFrame(animationFrameId)
     }
-  }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, targetPoint, videoRef])
+  }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, targetPoint, apexPoint, videoRef])
 
   // Find closest point to a normalized position
   const findClosestPoint = useCallback((x: number, y: number): number => {
