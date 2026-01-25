@@ -193,6 +193,32 @@ class FeedbackType(str, Enum):
     FALSE_POSITIVE = "false_positive"
 
 
+class StartingLine(str, Enum):
+    """Starting line direction relative to target."""
+
+    LEFT = "left"
+    CENTER = "center"
+    RIGHT = "right"
+
+
+class ShotShape(str, Enum):
+    """Shot shape (curve direction)."""
+
+    HOOK = "hook"
+    DRAW = "draw"
+    STRAIGHT = "straight"
+    FADE = "fade"
+    SLICE = "slice"
+
+
+class ShotHeight(str, Enum):
+    """Shot height (apex level)."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class ShotFeedbackItem(BaseModel):
     """Feedback for a single shot."""
 
