@@ -69,12 +69,15 @@ class SearchExpansionStrategy:
 
         Args:
             expansion_level: 0-3 (tight to maximum)
-            elapsed_sec: Time since strike (for time-based expansion)
+            elapsed_sec: Time since strike (reserved for future time-based expansion)
             base_region: The tight constraint-based region (x1, y1, x2, y2)
 
         Returns:
             Expanded search region (x1, y1, x2, y2)
         """
+        # Note: elapsed_sec is passed through for API consistency with calculate_refined_search_corridor
+        # Future enhancement: could use it to slightly widen search at later times
+
         if expansion_level >= len(self.EXPANSION_LEVELS):
             expansion_level = len(self.EXPANSION_LEVELS) - 1
 
