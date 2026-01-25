@@ -41,6 +41,11 @@ class TestColorFamilyClassification:
         result = classify_ball_color(hue=60, saturation=180, value=180)
         assert result == ColorFamily.GREEN
 
+    def test_blue_ball(self):
+        """Blue ball: hue in 100-130 range."""
+        result = classify_ball_color(hue=115, saturation=180, value=180)
+        assert result == ColorFamily.BLUE
+
 
 class TestColorMatchScore:
     """Tests for compute_color_match_score function."""
@@ -125,3 +130,40 @@ class TestColorMatchScore:
             elapsed_sec=0.0,
         )
         assert score < 0.2
+
+
+class TestExtractColorTemplate:
+    """Tests for extract_color_template function."""
+
+    def test_extracts_from_valid_bgr_frame(self):
+        """Should extract template from valid BGR frame."""
+        # Create a 100x100 orange frame
+        frame = np.zeros((100, 100, 3), dtype=np.uint8)
+        # BGR orange: B=0, G=128, R=255
+        frame[:, :] = [0, 128, 255]
+
+        template = extract_color_template(frame, origin_x=50, origin_y=50, crop_size=40)
+
+        assert template is not None
+        assert template.family == ColorFamily.ORANGE
+
+    def test_returns_none_for_grayscale_frame(self):
+        """Should return None for non-BGR (grayscale) frame."""
+        frame = np.zeros((100, 100), dtype=np.uint8)  # 2D grayscale
+
+        template = extract_color_template(frame, origin_x=50, origin_y=50)
+
+        assert template is None
+
+    def test_handles_origin_near_edge(self):
+        """Should handle origin near frame edge gracefully."""
+        frame = np.zeros((100, 100, 3), dtype=np.uint8)
+        frame[:, :] = [255, 255, 255]  # White
+
+        # Origin at edge - crop region will be truncated
+        template = extract_color_template(frame, origin_x=5, origin_y=5, crop_size=40)
+
+        # Should still work with truncated region (if big enough) or return None
+        # Either is acceptable - the key is no crash
+        # If region is too small, it returns None; otherwise it extracts
+        assert template is None or template.family == ColorFamily.WHITE

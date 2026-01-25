@@ -92,6 +92,11 @@ def extract_color_template(
     Returns:
         ColorTemplate if successful, None if extraction fails
     """
+    # Add validation that frame is BGR (3 channels)
+    if len(frame.shape) != 3 or frame.shape[2] != 3:
+        logger.warning(f"Frame must be BGR with 3 channels, got shape {frame.shape}")
+        return None
+
     height, width = frame.shape[:2]
 
     # Calculate crop bounds with boundary checking
