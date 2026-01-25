@@ -1283,10 +1283,10 @@ async def update_shot_trajectory(
 async def generate_trajectory_sse(
     job_id: str,
     shot_id: int,
-    landing_x: float = Query(..., ge=0, le=1, description="Landing X coordinate (0-1)"),
-    landing_y: float = Query(..., ge=0, le=1, description="Landing Y coordinate (0-1)"),
-    target_x: float = Query(..., ge=0, le=1, description="Target X coordinate (0-1)"),
-    target_y: float = Query(..., ge=0, le=1, description="Target Y coordinate (0-1)"),
+    landing_x: Optional[float] = Query(None, ge=0, le=1, description="Landing X coordinate (0-1), optional"),
+    landing_y: Optional[float] = Query(None, ge=0, le=1, description="Landing Y coordinate (0-1), optional"),
+    target_x: Optional[float] = Query(None, ge=0, le=1, description="Target X coordinate (0-1), optional"),
+    target_y: Optional[float] = Query(None, ge=0, le=1, description="Target Y coordinate (0-1), optional"),
     starting_line: str = Query("center", description="Starting line: left, center, right"),
     shot_shape: str = Query("straight", description="Shot shape: hook, draw, straight, fade, slice"),
     shot_height: str = Query("medium", description="Shot height: low, medium, high"),
@@ -1341,14 +1341,20 @@ async def generate_trajectory_sse(
 
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
-            # Step 1: Save landing point
-            yield sse_event("progress", {
-                "step": "saving",
-                "progress": 5,
-                "message": "Saving landing point..."
-            })
-
-            await update_shot_landing(job_id, shot_id, landing_x, landing_y)
+            # Step 1: Save landing point (if provided)
+            if landing_x is not None and landing_y is not None:
+                yield sse_event("progress", {
+                    "step": "saving",
+                    "progress": 5,
+                    "message": "Saving landing point..."
+                })
+                await update_shot_landing(job_id, shot_id, landing_x, landing_y)
+            else:
+                yield sse_event("progress", {
+                    "step": "saving",
+                    "progress": 5,
+                    "message": "Using auto-generated trajectory..."
+                })
 
             # Step 2: Detect ball origin
             yield sse_event("progress", {
@@ -1403,6 +1409,32 @@ async def generate_trajectory_sse(
             # Normalize origin
             origin_normalized = (origin.x / frame_width, origin.y / frame_height)
 
+            # Compute default landing/target if not provided
+            # Default landing: ball flies to upper portion of frame based on shot direction
+            actual_landing_x = landing_x
+            actual_landing_y = landing_y
+            actual_target_x = target_x
+            actual_target_y = target_y
+
+            if actual_landing_x is None or actual_landing_y is None:
+                # Calculate default landing based on starting_line and shot_shape
+                # Base X: depends on starting line
+                base_x = {"left": 0.3, "center": 0.5, "right": 0.7}.get(starting_line, 0.5)
+                # Adjust for shot shape (draw goes right-to-left, fade goes left-to-right)
+                shape_offset = {"hook": -0.15, "draw": -0.08, "straight": 0, "fade": 0.08, "slice": 0.15}.get(shot_shape, 0)
+                actual_landing_x = max(0.1, min(0.9, base_x + shape_offset))
+                # Y: higher in frame (towards top) based on shot height
+                actual_landing_y = {"low": 0.25, "medium": 0.15, "high": 0.08}.get(shot_height, 0.15)
+                yield sse_event("warning", {
+                    "code": "auto_landing",
+                    "message": "Using auto-generated landing point"
+                })
+
+            if actual_target_x is None or actual_target_y is None:
+                # Default target: same X as landing but slightly different Y
+                actual_target_x = actual_landing_x
+                actual_target_y = actual_landing_y
+
             # Build apex tuple if provided
             apex = (apex_x, apex_y) if apex_x is not None and apex_y is not None else None
 
@@ -1411,8 +1443,8 @@ async def generate_trajectory_sse(
                 None,
                 lambda: tracker.generate_configured_trajectory(
                     origin=origin_normalized,
-                    target=(target_x, target_y),
-                    landing=(landing_x, landing_y),
+                    target=(actual_target_x, actual_target_y),
+                    landing=(actual_landing_x, actual_landing_y),
                     starting_line=starting_line,
                     shot_shape=shot_shape,
                     shot_height=shot_height,
