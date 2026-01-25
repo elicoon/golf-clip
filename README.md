@@ -220,6 +220,72 @@ export GOLFCLIP_AUDIO_SENSITIVITY=0.8
 
 ---
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                           FRONTEND                               │
+│                      React + TypeScript                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
+│  │ VideoDropzone│  │ProcessingView│  │     ClipReview       │   │
+│  │  (upload)    │  │  (progress)  │  │  ┌────────────────┐  │   │
+│  └──────────────┘  └──────────────┘  │  │TrajectoryEditor│  │   │
+│                                       │  │ (canvas overlay)│  │   │
+│                                       │  └────────────────┘  │   │
+│                                       └──────────────────────┘   │
+│                           │                                      │
+│                    ┌──────┴──────┐                               │
+│                    │Zustand Store│                               │
+│                    └──────┬──────┘                               │
+└───────────────────────────┼─────────────────────────────────────┘
+                            │ HTTP REST + SSE (Server-Sent Events)
+┌───────────────────────────┼─────────────────────────────────────┐
+│                      BACKEND (FastAPI)                           │
+│                           │                                      │
+│  ┌────────────────────────┴───────────────────────────────────┐ │
+│  │                      API Routes                             │ │
+│  │  POST /upload    POST /process    GET /shots                │ │
+│  │  GET /trajectory (SSE)            POST /export              │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                           │                                      │
+│         ┌─────────────────┼─────────────────┐                   │
+│         ▼                 ▼                 ▼                   │
+│  ┌─────────────┐  ┌───────────────┐  ┌────────────────────┐    │
+│  │   Audio     │  │    Origin     │  │    Trajectory      │    │
+│  │  Detection  │  │   Detection   │  │    Generation      │    │
+│  │  ─────────  │  │  ───────────  │  │  ───────────────   │    │
+│  │  librosa    │  │  YOLO + LSD   │  │  Physics model +   │    │
+│  │  transient  │  │  + color      │  │  Bezier curves     │    │
+│  │  analysis   │  │  analysis     │  │                    │    │
+│  └─────────────┘  └───────────────┘  └────────────────────┘    │
+│                           │                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                   SQLite Database                            │ │
+│  │   ┌──────┐  ┌───────┐  ┌──────────────┐  ┌─────────────┐   │ │
+│  │   │ jobs │  │ shots │  │ trajectories │  │  feedback   │   │ │
+│  │   └──────┘  └───────┘  └──────────────┘  └─────────────┘   │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      EXTERNAL TOOLS                              │
+│  ┌──────────┐  ┌──────────┐  ┌───────────┐                     │
+│  │  FFmpeg  │  │  OpenCV  │  │   YOLO    │                     │
+│  │  (video) │  │ (frames) │  │ (person)  │                     │
+│  └──────────┘  └──────────┘  └───────────┘                     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow
+
+1. **Upload**: Video file → Backend → Stored locally
+2. **Process**: Audio extraction → Transient detection → Ball origin detection
+3. **Review**: User marks target/landing → Physics trajectory generated
+4. **Export**: Clips trimmed via FFmpeg → Optional tracer overlay via OpenCV
+
+---
+
 ## Project Structure
 
 ```
@@ -247,7 +313,9 @@ golf-clip/
 ## Documentation
 
 - [CLAUDE.md](./CLAUDE.md) - Technical reference for AI assistants and developers
+- [CONTRIBUTING.md](./CONTRIBUTING.md) - Guide for contributors
 - [docs/FEATURES.md](./docs/FEATURES.md) - Detailed feature documentation
+- [docs/PRODUCT-WALKTHROUGH.md](./docs/PRODUCT-WALKTHROUGH.md) - Step-by-step UI guide with annotated diagrams
 - [PRD.md](./PRD.md) - Product requirements document
 
 ---
