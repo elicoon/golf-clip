@@ -120,3 +120,26 @@ class TestTrackWithLandingPoint:
 
         assert len(progress_calls) > 0
         assert any(p[0] > 0 for p in progress_calls)
+
+    def test_warning_callback_invoked_when_early_detection_fails(self):
+        """Warning callback should be called when early detections unavailable."""
+        tracker = ConstrainedBallTracker()
+        origin = OriginDetection(x=500, y=900, confidence=0.9, method="test")
+
+        warnings = []
+        def warning_cb(code, message):
+            warnings.append((code, message))
+
+        with patch.object(tracker, 'track_flight', return_value=[]):  # Return empty list
+            tracker.track_with_landing_point(
+                video_path=Path("/fake/video.mp4"),
+                origin=origin,
+                strike_time=10.0,
+                landing_point=(0.7, 0.85),
+                frame_width=1920,
+                frame_height=1080,
+                warning_callback=warning_cb,
+            )
+
+        assert len(warnings) > 0
+        assert any("early_ball_detection_failed" in w[0] for w in warnings)

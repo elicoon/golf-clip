@@ -250,6 +250,29 @@ class ConstrainedBallTracker:
     # Minimum brightness for a valid ball candidate
     MIN_BRIGHTNESS = 100
 
+    # Early detection settings (for track_with_landing_point)
+    EARLY_DETECTION_WINDOW_SEC = 0.2  # Window to detect early ball positions
+    MIN_EARLY_DETECTIONS = 3  # Minimum detections needed for launch params
+
+    # Default launch parameters (when early detection fails)
+    DEFAULT_LAUNCH_ANGLE = 18.0  # degrees
+    DEFAULT_LATERAL_ANGLE = 0.0  # degrees
+    DEFAULT_APEX_HEIGHT = 0.45  # normalized (0-1)
+    DEFAULT_APEX_TIME = 1.2  # seconds
+    DEFAULT_FLIGHT_DURATION = 3.0  # seconds
+
+    # Trajectory generation settings
+    TRAJECTORY_SAMPLE_RATE = 30.0  # points per second
+    TRAJECTORY_CONFIDENCE = 0.85  # confidence for generated points
+
+    # Flight duration bounds
+    MIN_FLIGHT_DURATION = 2.0  # seconds
+    MAX_FLIGHT_DURATION = 5.0  # seconds
+
+    # Apex height bounds
+    MIN_APEX_HEIGHT = 0.1  # normalized (0-1)
+    MAX_APEX_HEIGHT = 0.6  # normalized (0-1)
+
     def __init__(self, origin_detector: Optional[BallOriginDetector] = None):
         """Initialize the tracker.
 
@@ -1054,6 +1077,11 @@ class ConstrainedBallTracker:
         Returns:
             Trajectory dict with points constrained to hit landing point
         """
+        logger.info(
+            f"Generating trajectory with landing point: origin=({origin.x:.0f}, {origin.y:.0f}), "
+            f"landing=({landing_point[0]:.3f}, {landing_point[1]:.3f}), strike_time={strike_time:.2f}s"
+        )
+
         def emit_progress(percent: int, message: str):
             if progress_callback:
                 progress_callback(percent, message)
@@ -1071,8 +1099,8 @@ class ConstrainedBallTracker:
                 video_path,
                 origin,
                 strike_time,
-                end_time=strike_time + 0.2,
-                max_flight_duration=0.2,
+                end_time=strike_time + self.EARLY_DETECTION_WINDOW_SEC,
+                max_flight_duration=self.EARLY_DETECTION_WINDOW_SEC,
             )
         except Exception as e:
             emit_warning("early_ball_detection_failed", f"No ball detected in first 200ms: {e}")
@@ -1081,21 +1109,26 @@ class ConstrainedBallTracker:
         emit_progress(30, "Extracting launch parameters...")
 
         # Extract launch params from early detections or use defaults
-        if len(early_detections) >= 3:
+        if len(early_detections) >= self.MIN_EARLY_DETECTIONS:
+            logger.info(f"Using {len(early_detections)} early detections to extract launch parameters")
             launch_params = self._extract_launch_params(
                 early_detections, origin, frame_width, frame_height
             )
         else:
+            logger.info(
+                f"Only {len(early_detections)} early detections (need {self.MIN_EARLY_DETECTIONS}), "
+                "using default launch parameters"
+            )
             emit_warning(
                 "early_ball_detection_failed",
                 "No ball detected in first 200ms, using default launch angle"
             )
             launch_params = {
-                "launch_angle": 18.0,
-                "lateral_angle": 0.0,
-                "apex_height": 0.45,
-                "apex_time": 1.2,
-                "flight_duration": 3.0,
+                "launch_angle": self.DEFAULT_LAUNCH_ANGLE,
+                "lateral_angle": self.DEFAULT_LATERAL_ANGLE,
+                "apex_height": self.DEFAULT_APEX_HEIGHT,
+                "apex_time": self.DEFAULT_APEX_TIME,
+                "flight_duration": self.DEFAULT_FLIGHT_DURATION,
                 "shot_shape": "straight",
             }
 
@@ -1141,11 +1174,11 @@ class ConstrainedBallTracker:
         """
         if len(early_detections) < 2:
             return {
-                "launch_angle": 18.0,
-                "lateral_angle": 0.0,
-                "apex_height": 0.45,
-                "apex_time": 1.2,
-                "flight_duration": 3.0,
+                "launch_angle": self.DEFAULT_LAUNCH_ANGLE,
+                "lateral_angle": self.DEFAULT_LATERAL_ANGLE,
+                "apex_height": self.DEFAULT_APEX_HEIGHT,
+                "apex_time": self.DEFAULT_APEX_TIME,
+                "flight_duration": self.DEFAULT_FLIGHT_DURATION,
                 "shot_shape": "straight",
             }
 
@@ -1167,15 +1200,15 @@ class ConstrainedBallTracker:
                 # Faster rise = higher launch angle
                 launch_angle = min(35.0, max(10.0, 15.0 + vertical_speed / 100))
             else:
-                launch_angle = 18.0
+                launch_angle = self.DEFAULT_LAUNCH_ANGLE
 
             # Lateral angle from horizontal movement
             horizontal_speed = dx / time_diff if time_diff > 0 else 0
             lateral_angle = horizontal_speed / 50  # Rough mapping
             lateral_angle = min(15.0, max(-15.0, lateral_angle))
         else:
-            launch_angle = 18.0
-            lateral_angle = 0.0
+            launch_angle = self.DEFAULT_LAUNCH_ANGLE
+            lateral_angle = self.DEFAULT_LATERAL_ANGLE
 
         # Determine shot shape from lateral movement
         if lateral_angle < -2:
@@ -1188,9 +1221,9 @@ class ConstrainedBallTracker:
         return {
             "launch_angle": launch_angle,
             "lateral_angle": lateral_angle,
-            "apex_height": 0.45,
-            "apex_time": 1.2,
-            "flight_duration": 3.0,
+            "apex_height": self.DEFAULT_APEX_HEIGHT,
+            "apex_time": self.DEFAULT_APEX_TIME,
+            "flight_duration": self.DEFAULT_FLIGHT_DURATION,
             "shot_shape": shot_shape,
         }
 
@@ -1219,10 +1252,13 @@ class ConstrainedBallTracker:
         dy = landing_y - origin_y
         distance = np.sqrt(dx**2 + dy**2)
 
-        base_duration = launch_params.get("flight_duration", 3.0)
-        flight_duration = max(2.0, min(5.0, base_duration * (distance / 0.3)))
+        base_duration = launch_params.get("flight_duration", self.DEFAULT_FLIGHT_DURATION)
+        flight_duration = max(
+            self.MIN_FLIGHT_DURATION,
+            min(self.MAX_FLIGHT_DURATION, base_duration * (distance / 0.3))
+        )
 
-        apex_ratio = 0.4 + (launch_params.get("launch_angle", 18.0) / 90.0) * 0.2
+        apex_ratio = 0.4 + (launch_params.get("launch_angle", self.DEFAULT_LAUNCH_ANGLE) / 90.0) * 0.2
         apex_time = flight_duration * apex_ratio
 
         T = flight_duration
@@ -1235,13 +1271,12 @@ class ConstrainedBallTracker:
         else:
             apex_height = (origin_y - landing_y) / coefficient
 
-        apex_height = max(0.1, min(0.6, apex_height))
+        apex_height = max(self.MIN_APEX_HEIGHT, min(self.MAX_APEX_HEIGHT, apex_height))
 
         gravity = 2 * apex_height / (t_a * t_a)
         v_y0 = gravity * t_a
         v_x = dx / T
 
-        sample_rate = 30.0
         points = []
         apex_idx = 0
         min_y = origin_y
@@ -1262,10 +1297,10 @@ class ConstrainedBallTracker:
                 "timestamp": strike_time + t,
                 "x": max(0.0, min(1.0, screen_x)),
                 "y": max(0.0, min(1.0, screen_y)),
-                "confidence": 0.85,
+                "confidence": self.TRAJECTORY_CONFIDENCE,
                 "interpolated": True,
             })
-            t += 1.0 / sample_rate
+            t += 1.0 / self.TRAJECTORY_SAMPLE_RATE
 
         if points:
             points[-1]["x"] = landing_x
@@ -1296,10 +1331,10 @@ class ConstrainedBallTracker:
                 "x": landing_x,
                 "y": landing_y,
             },
-            "confidence": 0.85,
+            "confidence": self.TRAJECTORY_CONFIDENCE,
             "method": "constrained_landing",
-            "launch_angle": launch_params.get("launch_angle", 18.0),
-            "lateral_angle": launch_params.get("lateral_angle", 0.0),
+            "launch_angle": launch_params.get("launch_angle", self.DEFAULT_LAUNCH_ANGLE),
+            "lateral_angle": launch_params.get("lateral_angle", self.DEFAULT_LATERAL_ANGLE),
             "shot_shape": launch_params.get("shot_shape", "straight"),
             "flight_duration": T,
         }
