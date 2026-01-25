@@ -182,6 +182,7 @@ class JobCacheProxy:
 - `GET /api/trajectory/{job_id}/{shot_id}` - Get trajectory data for a shot (normalized 0-1 coords)
 - `PUT /api/trajectory/{job_id}/{shot_id}` - Update trajectory after manual edits
 - `GET /api/trajectories/{job_id}` - Get all trajectories for a job
+- `GET /api/trajectory/{job_id}/{shot_id}/generate?landing_x=&landing_y=` - SSE endpoint for trajectory generation with user-marked landing point (streams progress, warning, complete, error events)
 
 ## Detection Pipeline
 
@@ -240,9 +241,9 @@ If the detector finds 0 shots, check the logs for diagnostic messages:
 SQLite database at `~/.golfclip/golfclip.db` with schema versioning:
 
 ```sql
--- Schema v3 (current)
+-- Schema v4 (current)
 jobs (id, video_path, output_dir, status, progress, ...)
-shots (id, job_id FK, shot_number, strike_time, confidence, ...)
+shots (id, job_id FK, shot_number, strike_time, confidence, landing_x, landing_y, ...)
 shot_feedback (id, job_id FK, shot_id, feedback_type, notes, confidence_snapshot, ...)
 shot_trajectories (id, job_id FK, shot_id, points JSON, apex_point JSON, confidence, ...)
 ```
@@ -278,11 +279,21 @@ The shot tracer overlays ball flight trajectory on video clips during review and
 
 ### How It Works
 
-1. **Detection**: During `detect_shots()`, the pipeline captures ball positions via YOLO tracking
-2. **Storage**: Trajectory points are stored in `shot_trajectories` table with normalized coordinates (0-1)
-3. **Preview**: `TrajectoryEditor.tsx` renders trajectory on a canvas overlay synced to video playback
-4. **Edit**: Users can drag trajectory points to correct detection errors
-5. **Export**: Optionally render tracer overlay onto exported clips using OpenCV
+1. **Detection**: During `detect_shots()`, the pipeline detects ball origin via shaft + clubhead analysis
+2. **Landing Point Marking**: User clicks on video to mark where ball lands, triggering SSE trajectory generation
+3. **Physics Trajectory**: System generates parabolic arc constrained to hit origin and user-marked landing point
+4. **Preview**: `TrajectoryEditor.tsx` renders trajectory on a canvas overlay synced to video playback
+5. **Edit**: Users can drag trajectory points or re-mark landing point to adjust
+6. **Export**: Optionally render tracer overlay onto exported clips using OpenCV
+
+### Landing Point Workflow
+
+The review flow uses click-to-mark for precise trajectory endpoints:
+- User sees shot at impact frame with video playback controls
+- Click on video marks landing point (confirms as true positive)
+- SSE streams progress: `extracting_template` → `detecting_early` → `generating_physics` → `smoothing`
+- Detection warnings (shaft failed, early detection failed) shown to user
+- "Skip Shot" marks as false positive, "Next →" requires landing point marked
 
 ### Frontend Components
 
@@ -294,9 +305,13 @@ The shot tracer overlays ball flight trajectory on video clips during review and
 - Safari fallback for canvas blur filter
 
 **ClipReview.tsx** additions:
+- Click-to-mark landing point on video (crosshair cursor)
+- SSE progress bar during trajectory generation
+- Detection warnings display for troubleshooting
 - "Show Tracer" checkbox to toggle trajectory visibility
 - "Render Shot Tracers" checkbox for export
-- Loading spinner while trajectory fetches
+- "Skip Shot" / "Next →" buttons (replaced Accept/Reject)
+- Landing marker (✕) rendered via TrajectoryEditor
 
 ### Backend Modules
 
@@ -340,7 +355,7 @@ When exporting with tracer, you can customize appearance:
 - `show_apex_marker`: Circle at highest point
 - `show_landing_marker`: X marker at landing point
 
-## Constraint-Based Ball Tracking (WIP)
+## Constraint-Based Ball Tracking
 
 YOLO-based ball detection fails for golf balls in flight because:
 - Golf balls are small (~1% of frame width)
@@ -426,16 +441,8 @@ The tracer doesn't need to follow the actual ball pixel-by-pixel. It needs to:
 
 1. ~~**Detect ball origin accurately**~~ ✅ DONE - Shaft detection working
 2. ~~**Generate smooth parabolic curve**~~ ✅ DONE - Physics model in `track_full_trajectory()`
-3. **Detect trajectory characteristics from early frames** (TODO):
-   - Use first 6-10 frames to determine launch angle and direction
-   - Classify as high/medium/low, left/center/right
-   - Currently using fixed parameters; could adapt per-shot
-
-4. **Landing point estimation** (TODO):
-   - Use audio (thud sound) if available
-   - Otherwise estimate from launch angle + typical flight time
-   - Or detect where ball exits frame
-
+3. ~~**Detect trajectory characteristics from early frames**~~ ✅ DONE - `_extract_launch_params()` analyzes first 200ms
+4. ~~**Landing point marking**~~ ✅ DONE - User clicks video to mark landing, SSE streams progress
 5. **Professional rendering** (TODO - reference: Good Good, Grant Horvat, Bryan Bros):
    - Smooth Bezier curves, not raw points
    - White/bright tracer line with glow effect
