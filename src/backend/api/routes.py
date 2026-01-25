@@ -1291,6 +1291,8 @@ async def generate_trajectory_sse(
     shot_shape: str = Query("straight", description="Shot shape: hook, draw, straight, fade, slice"),
     shot_height: str = Query("medium", description="Shot height: low, medium, high"),
     flight_time: float = Query(None, ge=1.0, le=6.0, description="Flight time in seconds (1.0-6.0)"),
+    apex_x: Optional[float] = Query(None, ge=0, le=1, description="Apex X coordinate (0-1), optional"),
+    apex_y: Optional[float] = Query(None, ge=0, le=1, description="Apex Y coordinate (0-1), optional"),
 ):
     """Generate trajectory with SSE progress updates.
 
@@ -1401,6 +1403,9 @@ async def generate_trajectory_sse(
             # Normalize origin
             origin_normalized = (origin.x / frame_width, origin.y / frame_height)
 
+            # Build apex tuple if provided
+            apex = (apex_x, apex_y) if apex_x is not None and apex_y is not None else None
+
             # Run trajectory generation in executor
             trajectory_result = await loop.run_in_executor(
                 None,
@@ -1413,6 +1418,7 @@ async def generate_trajectory_sse(
                     shot_height=shot_height,
                     strike_time=strike_time,
                     flight_time=flight_time,
+                    apex=apex,
                 )
             )
 
