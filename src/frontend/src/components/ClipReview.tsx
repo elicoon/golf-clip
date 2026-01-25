@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
+import { PointStatusTracker } from './PointStatusTracker'
 
 interface ClipReviewProps {
   jobId: string
@@ -67,8 +68,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   // Target point marking state
   const [targetPoint, setTargetPoint] = useState<{x: number, y: number} | null>(null)
 
-  // Marking step: 'target' -> 'landing' -> 'configure'
-  type MarkingStep = 'target' | 'landing' | 'configure'
+  // Apex point marking state (optional)
+  const [apexPoint, setApexPoint] = useState<{x: number, y: number} | null>(null)
+
+  // Marking step: 'target' -> 'landing' -> 'apex' -> 'configure'
+  type MarkingStep = 'target' | 'landing' | 'apex' | 'configure'
   const [markingStep, setMarkingStep] = useState<MarkingStep>('target')
 
   // Trajectory configuration
@@ -110,6 +114,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   useEffect(() => {
     setTargetPoint(null)
     setLandingPoint(null)
+    setApexPoint(null)
     setMarkingStep('target')
     setStartingLine('center')
     setShotShape('straight')
@@ -525,6 +530,12 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       flight_time: flightTime.toString(),
     })
 
+    // Add apex if marked (optional)
+    if (apexPoint) {
+      params.append('apex_x', apexPoint.x.toString())
+      params.append('apex_y', apexPoint.y.toString())
+    }
+
     const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}/generate?${params}`
     const eventSource = new EventSource(url)
     eventSourceRef.current = eventSource
@@ -567,7 +578,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       eventSource.close()
       eventSourceRef.current = null
     }
-  }, [jobId, currentShot?.id, targetPoint, startingLine, shotShape, shotHeight, flightTime])
+  }, [jobId, currentShot?.id, targetPoint, apexPoint, startingLine, shotShape, shotHeight, flightTime])
 
   const handleCanvasClick = useCallback((x: number, y: number) => {
     if (loadingState === 'loading' || trajectoryProgress !== null) return
@@ -577,8 +588,10 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       setMarkingStep('landing')
     } else if (markingStep === 'landing') {
       setLandingPoint({ x, y })
+      setMarkingStep('apex')
+    } else if (markingStep === 'apex') {
+      setApexPoint({ x, y })
       setMarkingStep('configure')
-      // Don't auto-generate - user must click Generate button
     }
   }, [loadingState, trajectoryProgress, markingStep])
 
@@ -606,6 +619,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     setTargetPoint(null)
     setLandingPoint(null)
+    setApexPoint(null)
     setMarkingStep('target')
     setTrajectory(null)
     setTrajectoryProgress(null)
@@ -613,6 +627,27 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setDetectionWarnings([])
     setTrajectoryError(null)
   }, [])
+
+  const handleClearPoint = useCallback((point: 'target' | 'landing' | 'apex') => {
+    if (point === 'target') {
+      setTargetPoint(null)
+      setLandingPoint(null)
+      setApexPoint(null)
+      setMarkingStep('target')
+    } else if (point === 'landing') {
+      setLandingPoint(null)
+      setApexPoint(null)
+      setMarkingStep('landing')
+    } else if (point === 'apex') {
+      setApexPoint(null)
+      if (markingStep === 'configure') {
+        // Stay in configure - user can re-mark apex or skip
+      } else {
+        setMarkingStep('apex')
+      }
+    }
+    setTrajectory(null)
+  }, [markingStep])
 
   const handleVideoLoad = () => {
     setVideoLoaded(true)
@@ -795,13 +830,36 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
             </button>
           </>
         )}
-        {markingStep === 'configure' && (
+        {markingStep === 'apex' && (
           <>
             <span className="step-badge">Step 3</span>
+            <span>Click the highest point of ball flight (optional)</span>
+            <button
+              className="btn-skip-inline"
+              onClick={() => setMarkingStep('configure')}
+            >
+              Skip
+            </button>
+            <button className="btn-reset-inline" onClick={clearMarking}>
+              Reset
+            </button>
+          </>
+        )}
+        {markingStep === 'configure' && (
+          <>
+            <span className="step-badge">Step 4</span>
             <span>Select trajectory settings and click Generate</span>
           </>
         )}
       </div>
+
+      <PointStatusTracker
+        targetPoint={targetPoint}
+        landingPoint={landingPoint}
+        apexPoint={apexPoint}
+        markingStep={markingStep}
+        onClearPoint={handleClearPoint}
+      />
 
       {/* Trajectory configuration section - ABOVE player - always visible */}
       <div className="trajectory-config-above-player">
@@ -890,7 +948,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
       <div
         className={`video-container ${!videoLoaded ? 'video-loading' : ''}`}
-        style={{ cursor: markingStep !== 'configure' ? 'crosshair' : 'default' }}
+        style={{ cursor: ['target', 'landing', 'apex'].includes(markingStep) ? 'crosshair' : 'default' }}
       >
         {!videoLoaded && (
           <div className="video-loader">
@@ -915,6 +973,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           disabled={trajectoryProgress !== null}
           landingPoint={landingPoint}
           targetPoint={targetPoint}
+          apexPoint={apexPoint}
           onCanvasClick={handleCanvasClick}
           onTrajectoryUpdate={(points) => {
             if (!currentShot) return
