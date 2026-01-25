@@ -388,6 +388,289 @@ class ConstrainedBallTracker:
         finally:
             cap.release()
 
+    def track_hybrid_trajectory(
+        self,
+        video_path: Path,
+        origin: OriginDetection,
+        strike_time: float,
+        frame_width: int,
+        frame_height: int,
+    ) -> Optional[dict]:
+        """Track ball using hybrid approach: detect early frames + physics.
+
+        This is the recommended method for trajectory generation:
+        1. Detect ball in first ~10 frames using motion detection
+        2. Extract launch parameters (angle, direction) from early detections
+        3. Generate physics trajectory using extracted parameters
+
+        This gives better trajectories than pure physics (fixed params) or
+        pure detection (fails when ball becomes too small).
+
+        Args:
+            video_path: Path to video file
+            origin: Ball origin detection from origin.py
+            strike_time: When the ball was struck (seconds)
+            frame_width: Video frame width in pixels
+            frame_height: Video frame height in pixels
+
+        Returns:
+            Dict with trajectory data, or None if generation fails
+        """
+        # Step 1: Detect early ball positions (first 200ms)
+        early_detections = self.track_flight(
+            video_path,
+            origin,
+            strike_time,
+            end_time=strike_time + 0.2,  # First 200ms only
+            max_flight_duration=0.2,
+        )
+
+        logger.info(f"Hybrid tracking: found {len(early_detections)} early detections")
+
+        # Step 2: Extract launch parameters from early detections
+        launch_params = self._extract_launch_params(
+            early_detections, origin, frame_width, frame_height
+        )
+
+        logger.info(
+            f"Extracted launch params: angle={launch_params['launch_angle']:.1f}°, "
+            f"lateral={launch_params['lateral_angle']:.1f}°, "
+            f"shape={launch_params['shot_shape']}, "
+            f"apex={launch_params['apex_height']:.2f}"
+        )
+
+        # Step 3: Generate physics trajectory using extracted parameters
+        origin_normalized = (origin.x / frame_width, origin.y / frame_height)
+
+        return self._generate_physics_trajectory(
+            origin_normalized,
+            strike_time,
+            launch_params,
+        )
+
+    def _extract_launch_params(
+        self,
+        early_detections: List[TrajectoryPoint],
+        origin: OriginDetection,
+        frame_width: int,
+        frame_height: int,
+    ) -> dict:
+        """Extract launch parameters from early ball detections.
+
+        Analyzes the first few detected ball positions to determine:
+        - Launch angle (how steeply the ball rises)
+        - Lateral angle (draw/fade direction)
+        - Estimated apex height
+        - Shot shape classification
+
+        Args:
+            early_detections: Ball positions from first ~200ms
+            origin: Ball origin position
+            frame_width: Frame width for normalization
+            frame_height: Frame height for normalization
+
+        Returns:
+            Dict with launch parameters
+        """
+        # Default parameters (used when detection is poor)
+        defaults = {
+            "launch_angle": 18.0,  # degrees - moderate iron shot
+            "lateral_angle": 0.0,  # straight
+            "apex_height": 0.45,  # normalized screen height
+            "apex_time": 1.2,  # seconds
+            "flight_duration": 3.0,  # seconds
+            "shot_shape": "straight",
+        }
+
+        if len(early_detections) < 3:
+            logger.debug("Not enough early detections, using defaults")
+            return defaults
+
+        # Normalize origin
+        origin_x = origin.x / frame_width
+        origin_y = origin.y / frame_height
+
+        # Get average movement direction from early detections
+        total_dx = 0.0
+        total_dy = 0.0
+        count = 0
+
+        for det in early_detections:
+            # Normalize detection position
+            det_x = det.x / frame_width
+            det_y = det.y / frame_height
+
+            # Calculate displacement from origin
+            dx = det_x - origin_x
+            dy = origin_y - det_y  # Invert because screen y increases downward
+
+            if dy > 0:  # Ball is above origin (rising)
+                total_dx += dx
+                total_dy += dy
+                count += 1
+
+        if count < 2:
+            logger.debug("Not enough valid rising detections, using defaults")
+            return defaults
+
+        avg_dx = total_dx / count
+        avg_dy = total_dy / count
+
+        # Calculate launch angle from vertical movement
+        # Higher dy relative to time = steeper launch angle
+        # Typical range: 10° (driver) to 45° (wedge)
+        # Map avg_dy to angle: 0.05 dy in 200ms = ~15°, 0.15 dy = ~35°
+        vertical_speed = avg_dy / 0.2  # normalized units per second
+        launch_angle = min(45.0, max(8.0, vertical_speed * 100))
+
+        # Calculate lateral angle from horizontal movement
+        # Positive dx = fade (right), negative = draw (left)
+        lateral_speed = avg_dx / 0.2
+        lateral_angle = np.degrees(np.arctan2(lateral_speed, vertical_speed))
+        lateral_angle = max(-15.0, min(15.0, lateral_angle))
+
+        # Classify shot shape
+        if abs(lateral_angle) < 2.0:
+            shot_shape = "straight"
+        elif lateral_angle < 0:
+            shot_shape = "draw"
+        else:
+            shot_shape = "fade"
+
+        # Estimate apex height based on launch angle
+        # Higher launch = higher apex (but not linearly)
+        # 10° → 0.30 apex, 20° → 0.45 apex, 35° → 0.55 apex
+        apex_height = 0.20 + (launch_angle / 45.0) * 0.40
+        apex_height = max(0.25, min(0.60, apex_height))
+
+        # Estimate apex time based on launch angle
+        # Higher launch = later apex (more time going up)
+        apex_time = 0.8 + (launch_angle / 45.0) * 0.8
+
+        # Estimate flight duration
+        # Higher launch typically = shorter distance = shorter flight
+        flight_duration = 4.0 - (launch_angle / 45.0) * 1.5
+        flight_duration = max(2.5, min(5.0, flight_duration))
+
+        return {
+            "launch_angle": launch_angle,
+            "lateral_angle": lateral_angle,
+            "apex_height": apex_height,
+            "apex_time": apex_time,
+            "flight_duration": flight_duration,
+            "shot_shape": shot_shape,
+        }
+
+    def _generate_physics_trajectory(
+        self,
+        origin_point: Tuple[float, float],
+        strike_time: float,
+        params: dict,
+    ) -> Optional[dict]:
+        """Generate physics-based trajectory using given parameters.
+
+        Args:
+            origin_point: Ball origin in normalized coords (0-1)
+            strike_time: When ball was struck
+            params: Launch parameters from _extract_launch_params
+
+        Returns:
+            Dict with trajectory data
+        """
+        origin_x, origin_y = origin_point
+
+        apex_height = params["apex_height"]
+        apex_time = params["apex_time"]
+        flight_duration = params["flight_duration"]
+        lateral_angle = params["lateral_angle"]
+
+        # Calculate lateral drift from lateral angle
+        # Convert angle to screen displacement over flight
+        lateral_drift = np.tan(np.radians(lateral_angle)) * apex_height * 0.5
+
+        # Physics: compute gravity and initial velocity from desired apex
+        gravity = 2 * apex_height / (apex_time ** 2)
+        v_y0 = gravity * apex_time
+
+        # Lateral velocity (constant drift)
+        v_x = lateral_drift / flight_duration
+
+        # Generate trajectory points
+        sample_rate = 30.0
+        points = []
+        timestamps = []
+        apex_idx = 0
+        min_y = origin_y
+
+        t = 0.0
+        while t <= flight_duration:
+            y_offset = v_y0 * t - 0.5 * gravity * t * t
+            x_offset = v_x * t
+
+            screen_x = origin_x + x_offset
+            screen_y = origin_y - y_offset
+
+            if screen_y < min_y:
+                min_y = screen_y
+                apex_idx = len(points)
+
+            if t > apex_time and screen_y >= origin_y:
+                points.append({
+                    "timestamp": strike_time + t,
+                    "x": max(0.0, min(1.0, screen_x)),
+                    "y": min(1.0, origin_y),
+                    "confidence": 0.85,
+                    "interpolated": True,
+                })
+                timestamps.append(t)
+                break
+
+            points.append({
+                "timestamp": strike_time + t,
+                "x": max(0.0, min(1.0, screen_x)),
+                "y": max(0.0, min(1.0, screen_y)),
+                "confidence": 0.85,
+                "interpolated": True,
+            })
+            timestamps.append(t)
+            t += 1.0 / sample_rate
+
+        if len(points) < 2:
+            logger.warning("Failed to generate trajectory points")
+            return None
+
+        apex_point = {
+            "timestamp": points[apex_idx]["timestamp"],
+            "x": points[apex_idx]["x"],
+            "y": points[apex_idx]["y"],
+        }
+
+        landing_point = {
+            "timestamp": points[-1]["timestamp"],
+            "x": points[-1]["x"],
+            "y": points[-1]["y"],
+        }
+
+        actual_duration = timestamps[-1] if timestamps else flight_duration
+
+        logger.info(
+            f"Generated hybrid trajectory: {len(points)} points, "
+            f"origin=({origin_x:.3f}, {origin_y:.3f}), "
+            f"apex_y={min_y:.3f}, duration={actual_duration:.2f}s"
+        )
+
+        return {
+            "points": points,
+            "apex_point": apex_point,
+            "landing_point": landing_point,
+            "confidence": 0.80,
+            "method": "hybrid",
+            "launch_angle": params["launch_angle"],
+            "lateral_angle": params["lateral_angle"],
+            "shot_shape": params["shot_shape"],
+            "flight_duration": actual_duration,
+        }
+
     def track_full_trajectory(
         self,
         video_path: Path,
@@ -397,12 +680,10 @@ class ConstrainedBallTracker:
         frame_height: int,
         audio_path: Optional[str] = None,
     ) -> Optional[dict]:
-        """Generate complete trajectory starting from detected origin.
+        """Generate complete trajectory using fixed physics parameters.
 
-        This method generates a realistic golf ball trajectory arc directly
-        in 2D screen coordinates. The early motion detection is unreliable
-        for fast-moving golf balls, so we use a standard trajectory shape
-        calibrated to look correct for down-the-line camera angles.
+        This is a fallback method when hybrid tracking is not available.
+        For better results, use track_hybrid_trajectory instead.
 
         Args:
             video_path: Path to video file
@@ -417,12 +698,11 @@ class ConstrainedBallTracker:
         """
         origin_x, origin_y = origin_point
 
-        # Trajectory parameters calibrated for typical golf shots
-        # These create a visually appealing arc for down-the-line camera view
-        flight_duration = 3.0  # seconds - typical driver flight time
-        apex_height = 0.50  # normalized - how high ball rises from origin
-        apex_time = 1.1  # when apex occurs (seconds from strike)
-        lateral_drift = -0.08  # negative = slight draw (left), typical for most golfers
+        # Fixed trajectory parameters (defaults when no detection available)
+        flight_duration = 3.0
+        apex_height = 0.50
+        apex_time = 1.1
+        lateral_drift = -0.08  # slight draw
 
         # Physics: compute gravity and initial velocity from desired apex
         # apex_height = v_y0 * apex_time - 0.5 * g * apex_time^2
@@ -566,10 +846,10 @@ class ConstrainedBallTracker:
             )
 
             if template is None:
-                logger.warning("Template extraction failed, using physics fallback")
-                return self.track_full_trajectory(
+                logger.warning("Template extraction failed, using hybrid fallback")
+                return self.track_hybrid_trajectory(
                     video_path,
-                    (origin.x / frame_width, origin.y / frame_height),
+                    origin,
                     strike_time,
                     frame_width,
                     frame_height,
@@ -755,11 +1035,11 @@ class ConstrainedBallTracker:
                     "gap_count": trajectory.gap_count,
                 }
             else:
-                # Fall back to physics
-                logger.info(f"Only {detections_found} detections, using physics fallback")
-                return self.track_full_trajectory(
+                # Fall back to hybrid (early detection + physics)
+                logger.info(f"Only {detections_found} detections, using hybrid fallback")
+                return self.track_hybrid_trajectory(
                     video_path,
-                    (origin.x / frame_width, origin.y / frame_height),
+                    origin,
                     strike_time,
                     frame_width,
                     frame_height,
