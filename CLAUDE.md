@@ -277,6 +277,10 @@ curl http://localhost:8420/api/feedback/stats
 3. **Pattern Analysis**: Categorize FP reasons from notes
 4. **Active Learning**: Prioritize uncertain detections for review
 
+### Feature Backlog
+1. **Multi-video upload**: Allow users to upload multiple videos at once
+2. **Parallel processing**: Process uploaded videos in parallel instead of sequentially
+
 ## Shot Tracer Feature (Phase 2)
 
 The shot tracer overlays ball flight trajectory on video clips during review and export.
