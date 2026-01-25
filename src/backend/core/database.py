@@ -13,7 +13,7 @@ from loguru import logger
 DB_PATH = Path.home() / ".golfclip" / "golfclip.db"
 
 # Current schema version - increment when making schema changes
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Global connection pool (single connection for SQLite)
 _db_connection: Optional[aiosqlite.Connection] = None
@@ -71,6 +71,8 @@ async def _apply_migrations(current_version: int) -> None:
         await _migrate_v2()
     if current_version < 3:
         await _migrate_v3()
+    if current_version < 4:
+        await _migrate_v4()
 
 
 async def _migrate_v1() -> None:
@@ -202,6 +204,25 @@ async def _migrate_v3() -> None:
     )
 
     logger.info("Migration v3 applied successfully")
+
+
+async def _migrate_v4() -> None:
+    """Add landing point columns to shots table for user-marked ball landing."""
+    logger.info("Applying migration v4: Landing point columns")
+
+    await _db_connection.executescript(
+        """
+        ALTER TABLE shots ADD COLUMN landing_x REAL;
+        ALTER TABLE shots ADD COLUMN landing_y REAL;
+        """
+    )
+
+    await _db_connection.execute(
+        "INSERT OR IGNORE INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
+        (4, datetime.utcnow().isoformat(), "Landing point columns for user-marked ball landing"),
+    )
+
+    logger.info("Migration v4 applied successfully")
 
 
 async def close_db() -> None:
