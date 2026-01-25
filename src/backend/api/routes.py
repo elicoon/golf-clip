@@ -1295,13 +1295,62 @@ async def generate_trajectory_sse(
     - event: error - Fatal errors
     """
     from backend.models.job import get_job, update_shot_landing
+    from backend.models.trajectory import create_trajectory, get_trajectory as get_traj
+    from backend.detection.tracker import ConstrainedBallTracker
+    from backend.detection.origin import BallOriginDetector
 
     # Verify job exists
-    job = await get_job(job_id, include_shots=False)
+    job = await get_job(job_id, include_shots=True)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
+    # Verify video file exists
+    video_path = Path(job["video_path"])
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
+
+    # Find the shot
+    shot = None
+    for s in job.get("shots", []):
+        if s.get("shot_number") == shot_id or s.get("id") == shot_id:
+            shot = s
+            break
+
+    if not shot:
+        raise HTTPException(status_code=404, detail=f"Shot {shot_id} not found in job {job_id}")
+
+    # Get video dimensions
+    try:
+        video_info = get_video_info(str(video_path))
+        frame_width = video_info.get("width", 1920)
+        frame_height = video_info.get("height", 1080)
+    except Exception as e:
+        logger.warning(f"Could not get video dimensions, using defaults: {e}")
+        frame_width = 1920
+        frame_height = 1080
+
+    strike_time = shot.get("strike_time", 0.0)
+
     async def event_generator() -> AsyncGenerator[str, None]:
+        # Queues for bridging sync callbacks to async generator
+        progress_queue: asyncio.Queue = asyncio.Queue()
+        warning_queue: asyncio.Queue = asyncio.Queue()
+
+        def progress_callback(percent: int, message: str):
+            # Scale progress from tracker (10-100) to overall (20-90)
+            # 0-10 = saving landing, 10-20 = origin detection, 20-90 = tracker, 90-100 = saving
+            scaled_percent = 20 + int((percent / 100) * 70)
+            try:
+                progress_queue.put_nowait({"progress": scaled_percent, "message": message})
+            except asyncio.QueueFull:
+                pass
+
+        def warning_callback(code: str, message: str):
+            try:
+                warning_queue.put_nowait({"code": code, "message": message})
+            except asyncio.QueueFull:
+                pass
+
         try:
             # Step 1: Save landing point
             yield sse_event("progress", {
@@ -1312,21 +1361,132 @@ async def generate_trajectory_sse(
 
             await update_shot_landing(job_id, shot_id, landing_x, landing_y)
 
-            # Step 2: Placeholder for trajectory generation (Task 5)
+            # Step 2: Detect ball origin
+            yield sse_event("progress", {
+                "step": "origin",
+                "progress": 10,
+                "message": "Detecting ball origin..."
+            })
+
+            origin_detector = BallOriginDetector()
+            tracker = ConstrainedBallTracker(origin_detector=origin_detector)
+
+            # Run origin detection in executor (CPU-bound)
+            loop = asyncio.get_event_loop()
+            origin = await loop.run_in_executor(
+                None,
+                lambda: origin_detector.detect_origin(video_path, strike_time)
+            )
+
+            if origin is None:
+                # Emit warning but continue with fallback origin
+                yield sse_event("warning", {
+                    "code": "origin_detection_failed",
+                    "message": "Could not detect ball origin, using fallback position"
+                })
+                # Use a fallback origin (center-bottom of frame)
+                from backend.detection.origin import OriginDetection
+                origin = OriginDetection(
+                    x=frame_width * 0.5,
+                    y=frame_height * 0.85,
+                    confidence=0.3,
+                    method="fallback"
+                )
+            elif origin.confidence < 0.6:
+                yield sse_event("warning", {
+                    "code": "low_origin_confidence",
+                    "message": f"Ball origin detection confidence is low ({origin.confidence:.0%})"
+                })
+
+            yield sse_event("progress", {
+                "step": "origin",
+                "progress": 20,
+                "message": f"Ball origin detected at ({origin.x:.0f}, {origin.y:.0f})"
+            })
+
+            # Step 3: Generate trajectory
             yield sse_event("progress", {
                 "step": "generating",
-                "progress": 50,
+                "progress": 25,
                 "message": "Generating trajectory..."
             })
 
-            # For now, return a placeholder complete event
-            yield sse_event("complete", {
-                "trajectory": None,
+            # Run trajectory generation in executor
+            trajectory_result = await loop.run_in_executor(
+                None,
+                lambda: tracker.track_with_landing_point(
+                    video_path=video_path,
+                    origin=origin,
+                    strike_time=strike_time,
+                    landing_point=(landing_x, landing_y),
+                    frame_width=frame_width,
+                    frame_height=frame_height,
+                    progress_callback=progress_callback,
+                    warning_callback=warning_callback,
+                )
+            )
+
+            # Drain queues and emit events
+            while not warning_queue.empty():
+                warning = warning_queue.get_nowait()
+                yield sse_event("warning", warning)
+
+            while not progress_queue.empty():
+                prog = progress_queue.get_nowait()
+                yield sse_event("progress", {
+                    "step": "generating",
+                    **prog
+                })
+
+            if trajectory_result is None:
+                yield sse_event("error", {
+                    "error": "Failed to generate trajectory",
+                    "progress": 0
+                })
+                return
+
+            # Step 4: Save trajectory to database
+            yield sse_event("progress", {
+                "step": "saving",
+                "progress": 92,
+                "message": "Saving trajectory..."
+            })
+
+            trajectory_points = trajectory_result.get("points", [])
+            apex_point = trajectory_result.get("apex_point")
+            flight_duration = trajectory_result.get("flight_duration")
+            launch_angle = trajectory_result.get("launch_angle")
+            confidence = trajectory_result.get("confidence", 0.85)
+
+            await create_trajectory(
+                job_id=job_id,
+                shot_id=shot_id,
+                trajectory_points=trajectory_points,
+                confidence=confidence,
+                apex_point=apex_point,
+                launch_angle=launch_angle,
+                flight_duration=flight_duration,
+                frame_width=frame_width,
+                frame_height=frame_height,
+            )
+
+            # Fetch saved trajectory for response
+            saved_trajectory = await get_traj(job_id, shot_id)
+
+            yield sse_event("progress", {
+                "step": "complete",
                 "progress": 100,
-                "message": "Trajectory generation complete (placeholder)"
+                "message": "Trajectory generation complete"
+            })
+
+            yield sse_event("complete", {
+                "trajectory": saved_trajectory,
+                "progress": 100,
+                "message": "Trajectory generation complete"
             })
 
         except Exception as e:
+            logger.exception(f"Error generating trajectory for job={job_id} shot={shot_id}")
             yield sse_event("error", {
                 "error": str(e),
                 "progress": 0
