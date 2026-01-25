@@ -56,6 +56,16 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [trajectoryLoading, setTrajectoryLoading] = useState(false)
   const [exportWithTracer, setExportWithTracer] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
+
+  // Landing point marking state
+  // Note: Some of these will be used in Task 7 (SSE integration) and Task 8 (UI display)
+  const [landingPoint, setLandingPoint] = useState<{x: number, y: number} | null>(null)
+  const [trajectoryProgress, setTrajectoryProgress] = useState<number | null>(null)
+  const [_trajectoryMessage, setTrajectoryMessage] = useState<string>('')
+  const [_detectionWarnings, setDetectionWarnings] = useState<string[]>([])
+  const [_trajectoryError, setTrajectoryError] = useState<string | null>(null)
+  const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null)
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -83,6 +93,15 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       setTrajectory(null)
     }
   }, [currentShot?.id, jobId])
+
+  // Reset landing point when shot changes
+  useEffect(() => {
+    setLandingPoint(null)
+    setTrajectoryProgress(null)
+    setTrajectoryMessage('')
+    setDetectionWarnings([])
+    setTrajectoryError(null)
+  }, [currentShot?.id])
 
   // Track current video time for trajectory rendering and enforce clip boundaries
   useEffect(() => {
@@ -392,6 +411,40 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
   }, [])
 
+  const handleVideoClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!videoRef.current || loadingState === 'loading' || trajectoryProgress !== null) return
+
+    const rect = videoRef.current.getBoundingClientRect()
+    const x = (e.clientX - rect.left) / rect.width
+    const y = (e.clientY - rect.top) / rect.height
+
+    // Clamp to valid range
+    const clampedX = Math.max(0, Math.min(1, x))
+    const clampedY = Math.max(0, Math.min(1, y))
+
+    setLandingPoint({ x: clampedX, y: clampedY })
+    setTrajectoryError(null)
+    // generateTrajectorySSE will be added in Task 7
+  }, [loadingState, trajectoryProgress])
+
+  // Will be used in Task 8 for clear button - exported to window for now to satisfy TS
+  const clearLandingPoint = useCallback(() => {
+    if (eventSourceRef) {
+      eventSourceRef.close()
+      setEventSourceRef(null)
+    }
+
+    setLandingPoint(null)
+    setTrajectory(null)
+    setTrajectoryProgress(null)
+    setTrajectoryMessage('')
+    setDetectionWarnings([])
+    setTrajectoryError(null)
+  }, [eventSourceRef])
+
+  // Temporary: reference to satisfy TypeScript until Task 8 adds the UI button
+  void clearLandingPoint
+
   const handleVideoLoad = () => {
     setVideoLoaded(true)
   }
@@ -556,7 +609,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         </button>
       </div>
 
-      <div className={`video-container ${!videoLoaded ? 'video-loading' : ''}`}>
+      <div
+        className={`video-container ${!videoLoaded ? 'video-loading' : ''}`}
+        onClick={handleVideoClick}
+        style={{ cursor: landingPoint === null && trajectoryProgress === null ? 'crosshair' : 'default' }}
+      >
         {!videoLoaded && (
           <div className="video-loader">
             <div className="spinner-large" />
