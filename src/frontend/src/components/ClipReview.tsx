@@ -58,12 +58,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [currentTime, setCurrentTime] = useState(0)
 
   // Landing point marking state
-  // Note: Some of these will be used in Task 7 (SSE integration) and Task 8 (UI display)
   const [landingPoint, setLandingPoint] = useState<{x: number, y: number} | null>(null)
   const [trajectoryProgress, setTrajectoryProgress] = useState<number | null>(null)
-  const [_trajectoryMessage, setTrajectoryMessage] = useState<string>('')
-  const [_detectionWarnings, setDetectionWarnings] = useState<string[]>([])
-  const [_trajectoryError, setTrajectoryError] = useState<string | null>(null)
+  const [trajectoryMessage, setTrajectoryMessage] = useState<string>('')
+  const [detectionWarnings, setDetectionWarnings] = useState<string[]>([])
+  const [trajectoryError, setTrajectoryError] = useState<string | null>(null)
   const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null)
 
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -102,6 +101,15 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setDetectionWarnings([])
     setTrajectoryError(null)
   }, [currentShot?.id])
+
+  // Cleanup EventSource on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef) {
+        eventSourceRef.close()
+      }
+    }
+  }, [eventSourceRef])
 
   // Track current video time for trajectory rendering and enforce clip boundaries
   useEffect(() => {
@@ -411,6 +419,61 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
   }, [])
 
+  const generateTrajectorySSE = useCallback((landingX: number, landingY: number) => {
+    // Cancel previous connection if any
+    if (eventSourceRef) {
+      eventSourceRef.close()
+    }
+
+    setTrajectoryProgress(0)
+    setTrajectoryMessage('Starting...')
+    setDetectionWarnings([])
+    setTrajectoryError(null)
+
+    const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot?.id}/generate?landing_x=${landingX}&landing_y=${landingY}`
+    const eventSource = new EventSource(url)
+    setEventSourceRef(eventSource)
+
+    eventSource.addEventListener('progress', (e) => {
+      const data = JSON.parse(e.data)
+      setTrajectoryProgress(data.progress)
+      setTrajectoryMessage(data.message || '')
+    })
+
+    eventSource.addEventListener('warning', (e) => {
+      const data = JSON.parse(e.data)
+      setDetectionWarnings(prev => [...prev, data.message])
+    })
+
+    eventSource.addEventListener('complete', (e) => {
+      const data = JSON.parse(e.data)
+      setTrajectory(data.trajectory)
+      setTrajectoryProgress(null)
+      setTrajectoryMessage('')
+      eventSource.close()
+      setEventSourceRef(null)
+    })
+
+    eventSource.addEventListener('error', (e) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data)
+        setTrajectoryError(data.error || 'Failed to generate trajectory')
+      } catch {
+        setTrajectoryError('Connection lost during trajectory generation')
+      }
+      setTrajectoryProgress(null)
+      eventSource.close()
+      setEventSourceRef(null)
+    })
+
+    eventSource.onerror = () => {
+      setTrajectoryError('Connection lost during trajectory generation')
+      setTrajectoryProgress(null)
+      eventSource.close()
+      setEventSourceRef(null)
+    }
+  }, [jobId, currentShot?.id, eventSourceRef])
+
   const handleVideoClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!videoRef.current || loadingState === 'loading' || trajectoryProgress !== null) return
 
@@ -424,10 +487,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     setLandingPoint({ x: clampedX, y: clampedY })
     setTrajectoryError(null)
-    // generateTrajectorySSE will be added in Task 7
-  }, [loadingState, trajectoryProgress])
+    generateTrajectorySSE(clampedX, clampedY)
+  }, [loadingState, trajectoryProgress, generateTrajectorySSE])
 
-  // Will be used in Task 8 for clear button - exported to window for now to satisfy TS
   const clearLandingPoint = useCallback(() => {
     if (eventSourceRef) {
       eventSourceRef.close()
@@ -441,9 +503,6 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setDetectionWarnings([])
     setTrajectoryError(null)
   }, [eventSourceRef])
-
-  // Temporary: reference to satisfy TypeScript until Task 8 adds the UI button
-  void clearLandingPoint
 
   const handleVideoLoad = () => {
     setVideoLoaded(true)
@@ -717,6 +776,58 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           />
           Render Shot Tracers
         </label>
+      </div>
+
+      {/* Landing point section */}
+      <div className="landing-point-section">
+        {trajectoryProgress !== null ? (
+          <div className="trajectory-progress">
+            <div className="progress-header">
+              Generating tracer... {trajectoryProgress}%
+            </div>
+            <div className="progress-bar">
+              <div
+                className="progress-fill"
+                style={{ width: `${trajectoryProgress}%` }}
+              />
+            </div>
+            <div className="progress-message">{trajectoryMessage}</div>
+          </div>
+        ) : landingPoint ? (
+          <div className="landing-confirmed">
+            <span className="landing-icon">📍</span>
+            <span>Landing: ({landingPoint.x.toFixed(2)}, {landingPoint.y.toFixed(2)})</span>
+            <button
+              className="btn-clear"
+              onClick={clearLandingPoint}
+              title="Clear landing point"
+            >
+              Clear
+            </button>
+          </div>
+        ) : (
+          <div className="landing-prompt">
+            <span className="landing-icon">📍</span>
+            <span>Click on video to mark landing point</span>
+          </div>
+        )}
+
+        {trajectoryError && (
+          <div className="trajectory-error">
+            <span>⚠️ {trajectoryError}</span>
+          </div>
+        )}
+
+        {detectionWarnings.length > 0 && (
+          <div className="detection-warnings">
+            {detectionWarnings.map((warning, i) => (
+              <div key={i} className="warning-item">
+                <span className="warning-icon">⚠</span>
+                <span>{warning}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="confidence-info">
