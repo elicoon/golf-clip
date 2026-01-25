@@ -111,3 +111,73 @@ def test_landing_columns_default_to_null():
                 loop.run_until_complete(db_module.close_db())
             finally:
                 loop.close()
+
+
+def test_update_shot_landing():
+    """Test update_shot_landing saves landing coordinates."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_db = Path(tmpdir) / "test.db"
+
+        with patch("backend.core.database.DB_PATH", test_db):
+            import backend.core.database as db_module
+            db_module._db_connection = None
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(db_module.init_db())
+
+                async def test_update():
+                    from backend.models.job import update_shot_landing, create_job, create_shots, get_shots_for_job
+
+                    # Create test job and shot
+                    await create_job("test-job-landing", "/test.mp4", "/out", True, None)
+                    await create_shots("test-job-landing", [
+                        {"id": 1, "strike_time": 10.0, "clip_start": 8.0, "clip_end": 15.0, "confidence": 0.9}
+                    ])
+
+                    # Update landing point
+                    result = await update_shot_landing("test-job-landing", 1, 0.65, 0.82)
+                    assert result is True
+
+                    # Verify landing point saved
+                    shots = await get_shots_for_job("test-job-landing")
+                    assert len(shots) == 1
+                    assert shots[0]["landing_x"] == 0.65
+                    assert shots[0]["landing_y"] == 0.82
+
+                    # Update to new values
+                    await update_shot_landing("test-job-landing", 1, 0.70, 0.85)
+                    shots = await get_shots_for_job("test-job-landing")
+                    assert shots[0]["landing_x"] == 0.70
+                    assert shots[0]["landing_y"] == 0.85
+
+                loop.run_until_complete(test_update())
+                loop.run_until_complete(db_module.close_db())
+            finally:
+                loop.close()
+
+
+def test_update_shot_landing_nonexistent():
+    """Test update_shot_landing returns False for nonexistent shot."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_db = Path(tmpdir) / "test.db"
+
+        with patch("backend.core.database.DB_PATH", test_db):
+            import backend.core.database as db_module
+            db_module._db_connection = None
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(db_module.init_db())
+
+                async def test_nonexistent():
+                    from backend.models.job import update_shot_landing
+                    result = await update_shot_landing("nonexistent-job", 1, 0.5, 0.5)
+                    assert result is False
+
+                loop.run_until_complete(test_nonexistent())
+                loop.run_until_complete(db_module.close_db())
+            finally:
+                loop.close()

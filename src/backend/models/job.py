@@ -44,6 +44,8 @@ def shot_row_to_dict(row: aiosqlite.Row) -> dict[str, Any]:
         "audio_confidence": row["audio_confidence"],
         "visual_confidence": row["visual_confidence"],
         "confidence_reasons": deserialize_json(row["confidence_reasons_json"]) or [],
+        "landing_x": row["landing_x"],
+        "landing_y": row["landing_y"],
     }
 
 
@@ -319,7 +321,7 @@ async def get_shots_for_job(job_id: str) -> list[dict[str, Any]]:
 _VALID_SHOT_COLUMNS = {
     "shot_number", "strike_time", "landing_time", "clip_start", "clip_end",
     "confidence", "shot_type", "audio_confidence", "visual_confidence",
-    "confidence_reasons_json",
+    "confidence_reasons_json", "landing_x", "landing_y",
 }
 
 
@@ -366,6 +368,34 @@ async def update_shot(job_id: str, shot_id: int, **updates: Any) -> bool:
     query = f"UPDATE shots SET {', '.join(set_clauses)} WHERE job_id = ? AND shot_number = ?"
 
     cursor = await db.execute(query, values)
+    await db.commit()
+
+    return cursor.rowcount > 0
+
+
+async def update_shot_landing(
+    job_id: str,
+    shot_id: int,
+    landing_x: float,
+    landing_y: float,
+) -> bool:
+    """Update the landing point for a shot.
+
+    Args:
+        job_id: The job ID the shot belongs to.
+        shot_id: The shot number to update.
+        landing_x: Normalized x-coordinate (0-1) of landing position.
+        landing_y: Normalized y-coordinate (0-1) of landing position.
+
+    Returns:
+        True if the shot was updated, False if not found.
+    """
+    db = await get_db()
+
+    cursor = await db.execute(
+        "UPDATE shots SET landing_x = ?, landing_y = ? WHERE job_id = ? AND shot_number = ?",
+        (landing_x, landing_y, job_id, shot_id),
+    )
     await db.commit()
 
     return cursor.rowcount > 0
