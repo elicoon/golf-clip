@@ -21,6 +21,8 @@ interface TrajectoryEditorProps {
   disabled?: boolean
   showTracer?: boolean
   landingPoint?: { x: number; y: number } | null
+  targetPoint?: { x: number; y: number } | null
+  onCanvasClick?: (x: number, y: number) => void
 }
 
 // Check if canvas filter is supported (Safari < 15.4 doesn't support it)
@@ -39,6 +41,8 @@ export function TrajectoryEditor({
   disabled = false,
   showTracer = true,
   landingPoint,
+  targetPoint: _targetPoint,  // Reserved for future target marker rendering
+  onCanvasClick,
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
@@ -231,10 +235,12 @@ export function TrajectoryEditor({
     const closestIdx = findClosestPoint(x, y)
 
     if (closestIdx >= 0) {
+      // Dragging an existing trajectory point
       setDraggingPoint(closestIdx)
-      // Capture pointer for reliable drag handling
       canvas.setPointerCapture(e.pointerId)
+      e.stopPropagation()  // Only stop propagation when we're handling it
     }
+    // If no point found, let the event bubble up to parent (for landing/target marking)
   }, [disabled, findClosestPoint])
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
@@ -278,6 +284,27 @@ export function TrajectoryEditor({
     setHoveredPoint(null)
   }, [])
 
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (disabled || !canvasRef.current || !onCanvasClick) return
+
+    // Only fire if not dragging a point
+    if (draggingPoint !== null) return
+
+    const canvas = canvasRef.current
+    const rect = canvas.getBoundingClientRect()
+    const x = (e.clientX - rect.left) / rect.width
+    const y = (e.clientY - rect.top) / rect.height
+
+    // Check if clicking near an existing trajectory point
+    const closestIdx = findClosestPoint(x, y)
+    if (closestIdx >= 0) return  // Don't trigger if near a draggable point
+
+    onCanvasClick(
+      Math.max(0, Math.min(1, x)),
+      Math.max(0, Math.min(1, y))
+    )
+  }, [disabled, onCanvasClick, draggingPoint, findClosestPoint])
+
   if (!showTracer) return null
 
   return (
@@ -286,6 +313,7 @@ export function TrajectoryEditor({
       width={canvasSize.width}
       height={canvasSize.height}
       className="trajectory-canvas"
+      onClick={handleClick}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
