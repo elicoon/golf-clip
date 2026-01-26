@@ -596,7 +596,9 @@ async def export_origin_feedback(environment: Optional[str] = None) -> dict:
 
     Returns:
         Dict with:
-        - feedback: List of feedback records
+        - exported_at: ISO timestamp of export
+        - total_records: Number of records exported
+        - records: List of feedback records
         - stats: Aggregate statistics
     """
     db = await get_db()
@@ -612,13 +614,13 @@ async def export_origin_feedback(environment: Optional[str] = None) -> dict:
     async with db.execute(query, params) as cursor:
         rows = await cursor.fetchall()
 
-    feedback_list = []
+    records_list = []
     error_distances = []
     by_method: dict[str, dict] = {}
 
     for row in rows:
         feedback = _origin_feedback_row_to_dict(row)
-        feedback_list.append(feedback)
+        records_list.append(feedback)
 
         # Collect stats
         if feedback["error"] and feedback["error"]["distance"] is not None:
@@ -633,7 +635,7 @@ async def export_origin_feedback(environment: Optional[str] = None) -> dict:
 
     # Compute aggregate stats
     stats = {
-        "total": len(feedback_list),
+        "total": len(records_list),
         "mean_error_distance": sum(error_distances) / len(error_distances) if error_distances else None,
         "max_error_distance": max(error_distances) if error_distances else None,
         "min_error_distance": min(error_distances) if error_distances else None,
@@ -648,7 +650,9 @@ async def export_origin_feedback(environment: Optional[str] = None) -> dict:
         }
 
     return {
-        "feedback": feedback_list,
+        "exported_at": datetime.utcnow().isoformat(),
+        "total_records": len(records_list),
+        "records": records_list,
         "stats": stats,
     }
 
@@ -668,11 +672,10 @@ async def get_origin_feedback_stats() -> dict:
 
     if total == 0:
         return {
-            "total_corrections": 0,
+            "total_feedback": 0,
+            "correction_rate": 0.0,
             "mean_error_distance": None,
-            "median_error_distance": None,
             "by_method": {},
-            "by_confidence_bucket": {},
         }
 
     # Mean error distance
@@ -694,45 +697,19 @@ async def get_origin_feedback_stats() -> dict:
     ) as cursor:
         rows = await cursor.fetchall()
 
+    # Schema expects by_method as dict[str, int] (just counts)
     by_method = {
-        (row["auto_method"] or "none"): {
-            "count": row["count"],
-            "mean_error": row["mean_error"],
-        }
+        (row["auto_method"] or "none"): row["count"]
         for row in rows
     }
 
-    # Stats by confidence bucket
-    async with db.execute(
-        """
-        SELECT
-            CASE
-                WHEN auto_confidence IS NULL THEN 'no_detection'
-                WHEN auto_confidence < 0.5 THEN 'low'
-                WHEN auto_confidence < 0.8 THEN 'medium'
-                ELSE 'high'
-            END as confidence_bucket,
-            COUNT(*) as count,
-            AVG(error_distance) as mean_error
-        FROM origin_feedback
-        GROUP BY confidence_bucket
-        """
-    ) as cursor:
-        rows = await cursor.fetchall()
-
-    by_confidence = {
-        row["confidence_bucket"]: {
-            "count": row["count"],
-            "mean_error": row["mean_error"],
-        }
-        for row in rows
-    }
-
+    # correction_rate is 1.0 since every record in origin_feedback is a user correction
+    # (table only contains records where user provided manual origin)
     return {
-        "total_corrections": total,
+        "total_feedback": total,
+        "correction_rate": 1.0,
         "mean_error_distance": mean_error,
         "by_method": by_method,
-        "by_confidence_bucket": by_confidence,
     }
 
 

@@ -422,7 +422,7 @@ async def test_schema_version_is_6():
 
         version = await get_schema_version()
         assert version == SCHEMA_VERSION
-        assert version == 6
+        assert version == 7
 
 
 if __name__ == "__main__":
