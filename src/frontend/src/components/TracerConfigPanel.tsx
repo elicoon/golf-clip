@@ -13,8 +13,10 @@ interface TracerConfigPanelProps {
   onChange: (config: TracerConfig) => void
   onGenerate: () => void
   onMarkApex: () => void
+  onMarkOrigin: () => void
   hasChanges: boolean
   apexMarked: boolean
+  originMarked: boolean
   isGenerating: boolean
   isCollapsed: boolean
   onToggleCollapse: () => void
@@ -36,8 +38,10 @@ export function TracerConfigPanel({
   onChange,
   onGenerate,
   onMarkApex,
+  onMarkOrigin,
   hasChanges,
   apexMarked,
+  originMarked,
   isGenerating,
   isCollapsed,
   onToggleCollapse,
@@ -199,6 +203,21 @@ export function TracerConfigPanel({
               />
               <span className="flight-time-value">{config.flightTime.toFixed(1)}s</span>
             </div>
+          </div>
+
+          {/* Origin Point (if auto-detected is wrong) */}
+          <div className={`config-row ${isUntried('origin') ? 'untried' : ''}`}>
+            <label>Origin Point</label>
+            <button
+              type="button"
+              className={`btn-option btn-origin ${originMarked ? 'marked' : ''}`}
+              onClick={onMarkOrigin}
+              disabled={isGenerating}
+              title={originMarked ? 'Click to re-mark where ball starts' : 'Click to mark where ball starts on video'}
+            >
+              {originMarked ? 'Re-mark Origin' : 'Mark on Video'}
+            </button>
+            <span className="optional-hint">(if auto wrong)</span>
           </div>
 
           {/* Apex Point (Optional) */}

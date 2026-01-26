@@ -22,9 +22,11 @@ interface TrajectoryEditorProps {
   showTracer?: boolean
   landingPoint?: { x: number; y: number } | null
   apexPoint?: { x: number; y: number } | null
+  originPoint?: { x: number; y: number } | null
   onCanvasClick?: (x: number, y: number) => void
   markingStep?: 'confirming_shot' | 'marking_landing' | 'generating' | 'reviewing'
   isMarkingApex?: boolean
+  isMarkingOrigin?: boolean
 }
 
 // Custom cursor SVG for landing point marker placement
@@ -36,6 +38,12 @@ const landingCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" hei
 // Apex cursor: diamond shape (highest point marker)
 const apexCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
   <polygon points="16,4 28,16 16,28 4,16" fill="#FFD700" stroke="black" stroke-width="1"/>
+</svg>`
+
+// Origin cursor: circle with dot (starting point marker)
+const originCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <circle cx="16" cy="16" r="10" fill="none" stroke="#00FF00" stroke-width="2"/>
+  <circle cx="16" cy="16" r="3" fill="#00FF00"/>
 </svg>`
 
 // Convert SVG to data URI for cursor
@@ -63,9 +71,11 @@ export function TrajectoryEditor({
   showTracer = true,
   landingPoint,
   apexPoint,
+  originPoint,
   onCanvasClick,
   markingStep = 'reviewing',
   isMarkingApex = false,
+  isMarkingOrigin = false,
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
@@ -287,6 +297,33 @@ export function TrajectoryEditor({
         ctx.restore()
       }
 
+      // Draw user-marked origin point (green circle with dot)
+      if (originPoint) {
+        const originX = originPoint.x * canvasSize.width
+        const originY = originPoint.y * canvasSize.height
+        const outerRadius = 12
+        const innerRadius = 4
+
+        ctx.save()
+        ctx.shadowColor = 'rgba(0, 255, 0, 0.8)'
+        ctx.shadowBlur = 8
+        ctx.strokeStyle = '#00FF00'
+        ctx.fillStyle = '#00FF00'
+        ctx.lineWidth = 2
+
+        // Outer circle
+        ctx.beginPath()
+        ctx.arc(originX, originY, outerRadius, 0, Math.PI * 2)
+        ctx.stroke()
+
+        // Inner dot
+        ctx.beginPath()
+        ctx.arc(originX, originY, innerRadius, 0, Math.PI * 2)
+        ctx.fill()
+
+        ctx.restore()
+      }
+
       // Skip trajectory drawing if no points
       if (!localPoints.length) {
         animationFrameId = requestAnimationFrame(render)
@@ -469,6 +506,10 @@ export function TrajectoryEditor({
 
   // Get cursor based on marking step or mode
   const getCursor = () => {
+    // Origin marking takes priority when active
+    if (isMarkingOrigin) {
+      return svgToCursor(originCursorSvg, 16, 16)  // Hotspot at center of circle
+    }
     // Apex marking takes priority when active
     if (isMarkingApex) {
       return svgToCursor(apexCursorSvg, 16, 16)  // Hotspot at center of diamond
