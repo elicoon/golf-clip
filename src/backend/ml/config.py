@@ -1,5 +1,6 @@
 """ML configuration loading and saving."""
 
+import copy
 import json
 from datetime import datetime
 from pathlib import Path
@@ -44,7 +45,7 @@ def load_ml_config() -> dict[str, Any]:
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Failed to load ML config: {e}, using defaults")
 
-    return DEFAULT_CONFIG.copy()
+    return copy.deepcopy(DEFAULT_CONFIG)
 
 
 def save_ml_config(config: dict[str, Any]) -> None:
