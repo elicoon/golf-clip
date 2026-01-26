@@ -31,6 +31,10 @@ from backend.api.schemas import (
     ProgressEvent,
     ShotFeedbackRequest,
     ShotFeedbackResponse,
+    TracerFeedbackExportResponse,
+    TracerFeedbackRequest,
+    TracerFeedbackResponse,
+    TracerFeedbackStats,
     TrajectoryData,
     TrajectoryPoint,
     TrajectoryUpdateRequest,
@@ -58,6 +62,9 @@ from backend.models.job import (
     update_shot,
 )
 from backend.models.trajectory import (
+    create_tracer_feedback,
+    export_tracer_feedback,
+    get_tracer_feedback_for_job,
     get_trajectory,
     get_trajectories_for_job,
     update_trajectory as update_trajectory_db,
@@ -1621,4 +1628,118 @@ async def generate_trajectory_sse(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
         }
+    )
+
+
+# =============================================================================
+# Tracer Feedback Endpoints (ML Training Data Collection)
+# NOTE: Specific paths (/tracer-feedback/stats, /tracer-feedback/export) MUST
+# come before parameterized paths (/tracer-feedback/{job_id}) for correct routing.
+# =============================================================================
+
+
+@router.get("/tracer-feedback/stats", response_model=TracerFeedbackStats)
+async def get_tracer_feedback_stats():
+    """Get aggregate statistics on tracer feedback.
+
+    Returns auto-accepted rate, counts by feedback type, and common adjustments.
+    """
+    # Export all feedback to compute stats
+    export_data = await export_tracer_feedback()
+    feedback_list = export_data.get("feedback", [])
+    stats_by_type = export_data.get("stats", {}).get("by_type", {})
+
+    # Count by type
+    auto_accepted = stats_by_type.get("tracer_auto_accepted", 0)
+    configured = stats_by_type.get("tracer_configured", 0)
+    reluctant_accept = stats_by_type.get("tracer_reluctant_accept", 0)
+    skip = stats_by_type.get("tracer_skip", 0)
+    rejected = stats_by_type.get("tracer_rejected", 0)
+    total = len(feedback_list)
+
+    # Compute auto-accepted rate
+    auto_accepted_rate = 0.0
+    if total > 0:
+        auto_accepted_rate = auto_accepted / total
+
+    # Compute common adjustments from configured feedback
+    common_adjustments: dict[str, dict[str, int]] = {}
+    for record in feedback_list:
+        deltas = record.get("deltas")
+        if deltas:
+            for param, change in deltas.items():
+                if param not in common_adjustments:
+                    common_adjustments[param] = {}
+                # Represent the change as "auto->final" or just track that it changed
+                auto_val = change.get("auto")
+                final_val = change.get("final")
+                key = f"{auto_val}->{final_val}"
+                common_adjustments[param][key] = common_adjustments[param].get(key, 0) + 1
+
+    return TracerFeedbackStats(
+        total_feedback=total,
+        auto_accepted=auto_accepted,
+        configured=configured,
+        reluctant_accept=reluctant_accept,
+        skip=skip,
+        rejected=rejected,
+        auto_accepted_rate=auto_accepted_rate,
+        common_adjustments=common_adjustments,
+    )
+
+
+@router.get("/tracer-feedback/export", response_model=TracerFeedbackExportResponse)
+async def export_tracer_feedback_data(environment: Optional[str] = None):
+    """Export tracer feedback for ML training.
+
+    Args:
+        environment: Optional filter by environment ('prod', 'dev', etc.)
+
+    Returns:
+        All tracer feedback records with computed deltas between auto and final params.
+    """
+    export_data = await export_tracer_feedback(environment=environment)
+
+    return TracerFeedbackExportResponse(
+        feedback=export_data.get("feedback", []),
+        stats=export_data.get("stats", {}),
+    )
+
+
+@router.post("/tracer-feedback/{job_id}", response_model=TracerFeedbackResponse)
+async def submit_tracer_feedback(job_id: str, request: TracerFeedbackRequest):
+    """Submit feedback on tracer/trajectory quality for a shot.
+
+    This data is used to improve auto-generated trajectory parameters over time.
+    """
+    # Verify job exists
+    job = _get_cached_job(job_id) or await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    # Create feedback record
+    feedback_record = await create_tracer_feedback(
+        job_id=job_id,
+        shot_id=request.shot_id,
+        feedback_type=request.feedback_type.value,
+        auto_params=request.auto_params,
+        final_params=request.final_params,
+        origin_point=request.origin_point,
+        landing_point=request.landing_point,
+        apex_point=request.apex_point,
+        environment=get_environment(),
+    )
+
+    return TracerFeedbackResponse(
+        id=feedback_record["id"],
+        job_id=feedback_record["job_id"],
+        shot_id=feedback_record["shot_id"],
+        feedback_type=feedback_record["feedback_type"],
+        auto_params=feedback_record["auto_params"],
+        final_params=feedback_record["final_params"],
+        origin_point=feedback_record["origin_point"],
+        landing_point=feedback_record["landing_point"],
+        apex_point=feedback_record["apex_point"],
+        created_at=feedback_record["created_at"],
+        environment=feedback_record["environment"],
     )

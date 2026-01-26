@@ -338,3 +338,108 @@ class BatchUploadResponse(BaseModel):
         default_factory=list,
         description="List of files that failed to upload"
     )
+
+
+# ============================================================================
+# Tracer Feedback Schemas (ML Training Data)
+# ============================================================================
+
+
+class TracerFeedbackType(str, Enum):
+    """Type of feedback on tracer/trajectory quality."""
+
+    TRACER_AUTO_ACCEPTED = "tracer_auto_accepted"
+    TRACER_CONFIGURED = "tracer_configured"
+    TRACER_RELUCTANT_ACCEPT = "tracer_reluctant_accept"
+    TRACER_SKIP = "tracer_skip"
+    TRACER_REJECTED = "tracer_rejected"
+
+
+class TracerFeedbackRequest(BaseModel):
+    """Request to submit tracer feedback for a shot."""
+
+    shot_id: int = Field(..., description="ID of the shot this feedback is for")
+    feedback_type: TracerFeedbackType = Field(
+        ...,
+        description="Type of feedback: auto_accepted, configured, reluctant_accept, skip, rejected"
+    )
+    auto_params: Optional[dict[str, Any]] = Field(
+        None,
+        description="Auto-generated trajectory parameters (starting_line, shot_shape, etc.)"
+    )
+    final_params: Optional[dict[str, Any]] = Field(
+        None,
+        description="User's final configured parameters (null if auto-accepted)"
+    )
+    origin_point: dict[str, float] = Field(
+        ...,
+        description="Ball origin point {x, y} in normalized coordinates (0-1)"
+    )
+    landing_point: dict[str, float] = Field(
+        ...,
+        description="User-marked landing point {x, y} in normalized coordinates (0-1)"
+    )
+    apex_point: Optional[dict[str, float]] = Field(
+        None,
+        description="Optional apex point {x, y} in normalized coordinates (0-1)"
+    )
+
+
+class TracerFeedbackResponse(BaseModel):
+    """Response after submitting tracer feedback."""
+
+    id: int = Field(..., description="Feedback record ID")
+    job_id: str = Field(..., description="Job ID this feedback belongs to")
+    shot_id: int = Field(..., description="Shot ID this feedback is for")
+    feedback_type: str = Field(..., description="Type of feedback submitted")
+    auto_params: Optional[dict[str, Any]] = Field(
+        None, description="Auto-generated trajectory parameters"
+    )
+    final_params: Optional[dict[str, Any]] = Field(
+        None, description="User's final configured parameters"
+    )
+    origin_point: Optional[dict[str, float]] = Field(
+        None, description="Ball origin point"
+    )
+    landing_point: Optional[dict[str, float]] = Field(
+        None, description="User-marked landing point"
+    )
+    apex_point: Optional[dict[str, float]] = Field(
+        None, description="Optional apex point"
+    )
+    created_at: str = Field(..., description="ISO 8601 timestamp when feedback was created")
+    environment: str = Field("prod", description="Environment tag: 'prod' or 'dev'")
+
+
+class TracerFeedbackStats(BaseModel):
+    """Aggregate statistics on tracer feedback."""
+
+    total_feedback: int = Field(..., description="Total number of feedback records")
+    auto_accepted: int = Field(..., description="Count of tracer_auto_accepted feedback")
+    configured: int = Field(..., description="Count of tracer_configured feedback")
+    reluctant_accept: int = Field(..., description="Count of tracer_reluctant_accept feedback")
+    skip: int = Field(0, description="Count of tracer_skip feedback")
+    rejected: int = Field(..., description="Count of tracer_rejected feedback")
+    auto_accepted_rate: float = Field(
+        ...,
+        ge=0,
+        le=1,
+        description="Rate of auto-accepted tracers (auto_accepted / total), 0 if no data"
+    )
+    common_adjustments: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Common parameter adjustments, e.g., {'shot_height': {'+1': 45, '-1': 12}}"
+    )
+
+
+class TracerFeedbackExportResponse(BaseModel):
+    """Response for exporting tracer feedback data."""
+
+    feedback: list[dict[str, Any]] = Field(
+        ...,
+        description="List of feedback records with computed deltas"
+    )
+    stats: dict[str, Any] = Field(
+        ...,
+        description="Aggregate statistics including total and by_type counts"
+    )
