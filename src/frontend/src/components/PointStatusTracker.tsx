@@ -99,7 +99,18 @@ function StatusItem({
         }
       }}
     >
-      <div className="status-icon">
+      <div
+        className="status-icon"
+        aria-label={
+          status === 'complete'
+            ? `${label} completed`
+            : status === 'generating'
+            ? `${label} in progress`
+            : status === 'active'
+            ? `${label} active`
+            : `${label} pending`
+        }
+      >
         {status === 'complete' ? '✓' : status === 'generating' ? <span className="spinner-small" /> : icon}
       </div>
       <div className="status-label">

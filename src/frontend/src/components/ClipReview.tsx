@@ -122,6 +122,14 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   // Track generation ID to prevent stale EventSource callbacks from updating state
   const generationIdRef = useRef(0)
+  // Track if component is mounted to prevent setState on unmounted component
+  const isMountedRef = useRef(true)
+  // Handler refs to avoid stale closures in keyboard event handler
+  const handleAcceptRef = useRef<() => void>(() => {})
+  const handleRejectRef = useRef<() => void>(() => {})
+  // State refs to avoid stale closures in keyboard handler conditions
+  const reviewStepRef = useRef<ReviewStep>('marking_landing')
+  const trajectoryRef = useRef<TrajectoryData | null>(null)
 
   // Filter to shots needing review (confidence < 70%)
   const shotsNeedingReview = shots.filter((s) => s.confidence < 0.7)
@@ -175,9 +183,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setHasConfiguredTracer(false)
   }, [currentShot?.id])
 
-  // Cleanup EventSource on unmount
+  // Cleanup EventSource on unmount and track mounted state
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
+      isMountedRef.current = false
       if (eventSourceRef.current) {
         eventSourceRef.current.close()
       }
@@ -295,14 +305,14 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           break
         case 'Enter':
           e.preventDefault()
-          if (reviewStep === 'reviewing' && trajectory) {
-            handleAccept()
+          if (reviewStepRef.current === 'reviewing' && trajectoryRef.current) {
+            handleAcceptRef.current()
           }
           break
         case 'Escape':
         case 'Backspace':
           e.preventDefault()
-          handleReject()
+          handleRejectRef.current()
           break
         case '[':
           // Set start to current time
@@ -341,9 +351,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  // Note: We intentionally use a minimal dependency array here.
-  // The handlers (handleAccept, handleReject, etc.) are called at event time
-  // and reference the current component scope, so they get the latest state.
+  // Handlers use refs to avoid stale closures; only re-subscribe on shot navigation changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentShotIndex, shotsNeedingReview.length])
 
@@ -513,6 +521,14 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       await exportClips()
     }
   }
+
+  // Keep handler and state refs updated to avoid stale closures in keyboard handler
+  useEffect(() => {
+    handleAcceptRef.current = handleAccept
+    handleRejectRef.current = handleReject
+    reviewStepRef.current = reviewStep
+    trajectoryRef.current = trajectory
+  })
 
   const exportClips = async () => {
     setLoadingState('loading')
@@ -746,23 +762,26 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     eventSourceRef.current = eventSource
 
     eventSource.addEventListener('progress', (e) => {
-      // Ignore stale callbacks from previous generations
-      if (generationIdRef.current !== currentGenId) return
+      // Ignore stale callbacks from previous generations or unmounted component
+      if (generationIdRef.current !== currentGenId || !isMountedRef.current) return
       const data = JSON.parse(e.data)
       setTrajectoryProgress(data.progress)
       setTrajectoryMessage(data.message || '')
     })
 
     eventSource.addEventListener('warning', (e) => {
-      // Ignore stale callbacks from previous generations
-      if (generationIdRef.current !== currentGenId) return
+      // Ignore stale callbacks from previous generations or unmounted component
+      if (generationIdRef.current !== currentGenId || !isMountedRef.current) return
       const data = JSON.parse(e.data)
       setDetectionWarnings(prev => [...prev, data.message])
     })
 
     eventSource.addEventListener('complete', (e) => {
-      // Ignore stale callbacks from previous generations
-      if (generationIdRef.current !== currentGenId) return
+      // Ignore stale callbacks from previous generations or unmounted component
+      if (generationIdRef.current !== currentGenId || !isMountedRef.current) {
+        eventSource.close()
+        return
+      }
       const data = JSON.parse(e.data)
       setTrajectory(data.trajectory)
       setTrajectoryProgress(null)
@@ -796,8 +815,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     })
 
     eventSource.addEventListener('error', (e) => {
-      // Ignore stale callbacks from previous generations
-      if (generationIdRef.current !== currentGenId) return
+      // Ignore stale callbacks from previous generations or unmounted component
+      if (generationIdRef.current !== currentGenId || !isMountedRef.current) {
+        eventSource.close()
+        return
+      }
       try {
         const data = JSON.parse((e as MessageEvent).data)
         setTrajectoryError(data.error || 'Failed to generate trajectory')
@@ -811,8 +833,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     })
 
     eventSource.onerror = () => {
-      // Ignore stale callbacks from previous generations
-      if (generationIdRef.current !== currentGenId) return
+      // Ignore stale callbacks from previous generations or unmounted component
+      if (generationIdRef.current !== currentGenId || !isMountedRef.current) {
+        eventSource.close()
+        return
+      }
       setTrajectoryError('Connection lost during trajectory generation')
       setTrajectoryProgress(null)
       setReviewStep('marking_landing')

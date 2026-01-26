@@ -324,6 +324,9 @@ async def _migrate_v7() -> None:
 
         CREATE INDEX IF NOT EXISTS idx_origin_feedback_job ON origin_feedback(job_id);
         CREATE INDEX IF NOT EXISTS idx_origin_feedback_error ON origin_feedback(error_distance);
+
+        -- Add missing index from v6 for tracer_feedback environment filtering
+        CREATE INDEX IF NOT EXISTS idx_tracer_feedback_environment ON tracer_feedback(environment);
         """
     )
 

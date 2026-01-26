@@ -111,6 +111,7 @@ export function TracerConfigPanel({
         onClick={onToggleCollapse}
         role="button"
         tabIndex={0}
+        aria-expanded={!isCollapsed}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
@@ -128,7 +129,7 @@ export function TracerConfigPanel({
         <div className="config-body">
           {/* Feedback message banner */}
           {feedbackMessage && (
-            <div className="config-feedback-message">
+            <div className="config-feedback-message" role="status" aria-live="polite">
               {feedbackMessage}
             </div>
           )}

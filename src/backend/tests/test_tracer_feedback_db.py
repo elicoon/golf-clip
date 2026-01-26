@@ -415,14 +415,14 @@ async def test_export_tracer_feedback_stats():
 
 
 @pytest.mark.asyncio
-async def test_schema_version_is_6():
-    """Test that schema version is now 6 after migration."""
+async def test_schema_version_is_current():
+    """Test that schema version matches SCHEMA_VERSION constant."""
     with patch("backend.core.database.DB_PATH", TEST_DB_PATH):
         from backend.core.database import get_schema_version, SCHEMA_VERSION
 
         version = await get_schema_version()
         assert version == SCHEMA_VERSION
-        assert version == 7
+        assert version >= 7  # Future-proof: assert minimum version
 
 
 if __name__ == "__main__":

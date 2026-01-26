@@ -33,6 +33,9 @@ from backend.api.schemas import (
     ProgressEvent,
     ShotFeedbackRequest,
     ShotFeedbackResponse,
+    ShotHeight,
+    ShotShape,
+    StartingLine,
     TracerFeedbackExportResponse,
     TracerFeedbackRequest,
     TracerFeedbackResponse,
@@ -127,6 +130,60 @@ async def _emit_progress(job_id: str, step: str, progress: float, details: Optio
 
 # Directory for uploaded videos
 _UPLOAD_DIR = Path(tempfile.gettempdir()) / "golfclip_uploads"
+
+# Allowed base directories for video access (security: prevent path traversal)
+# Users can access files in: upload dir, home directory, and common video folders
+_ALLOWED_VIDEO_DIRS = [
+    _UPLOAD_DIR,
+    Path.home(),  # User's home directory
+    Path("/tmp"),  # Temp directory for testing
+]
+
+
+def _is_path_allowed(path: Path) -> bool:
+    """Check if a path is within allowed directories to prevent path traversal attacks.
+
+    Args:
+        path: The path to validate (will be resolved to absolute)
+
+    Returns:
+        True if the path is within an allowed directory, False otherwise.
+    """
+    try:
+        resolved = path.resolve()
+        for allowed_dir in _ALLOWED_VIDEO_DIRS:
+            try:
+                resolved.relative_to(allowed_dir.resolve())
+                return True
+            except ValueError:
+                continue
+        return False
+    except (OSError, RuntimeError):
+        return False
+
+
+def _validate_video_path(path: Path) -> Path:
+    """Validate and resolve a video path, raising HTTPException if invalid.
+
+    Args:
+        path: The path to validate
+
+    Returns:
+        The resolved absolute path
+
+    Raises:
+        HTTPException: If path is outside allowed directories or doesn't exist
+    """
+    resolved = path.resolve()
+
+    if not _is_path_allowed(resolved):
+        logger.warning(f"Path traversal attempt blocked: {path}")
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: path is outside allowed directories"
+        )
+
+    return resolved
 
 
 @router.post("/upload")
@@ -245,17 +302,17 @@ async def upload_videos_batch(files: List[UploadFile] = File(...)):
 @router.post("/process", response_model=ProcessVideoResponse)
 async def process_video(request: ProcessVideoRequest, background_tasks: BackgroundTasks):
     """Start processing a video file to detect shots."""
-    video_path = Path(request.video_path)
+    video_path = _validate_video_path(Path(request.video_path))
 
     if not video_path.exists():
-        raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
+        raise HTTPException(status_code=404, detail="Video file not found")
 
     # Get video info
     try:
         info = get_video_info(video_path)
     except Exception as e:
         logger.exception(f"Failed to read video metadata: {video_path}")
-        raise HTTPException(status_code=400, detail=f"Could not read video: {e}")
+        raise HTTPException(status_code=400, detail="Could not read video file")
 
     # Create job in database
     job_id = str(uuid.uuid4())
@@ -862,7 +919,7 @@ async def get_export_status(export_job_id: str):
 @router.get("/video-info")
 async def get_video_info_endpoint(path: str):
     """Get metadata for a video file."""
-    video_path = Path(path)
+    video_path = _validate_video_path(Path(path))
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found")
 
@@ -871,7 +928,7 @@ async def get_video_info_endpoint(path: str):
         return VideoInfo(path=str(video_path), **info)
     except Exception as e:
         logger.exception(f"Failed to get video info: {video_path}")
-        raise HTTPException(status_code=400, detail=f"Could not read video: {e}")
+        raise HTTPException(status_code=400, detail="Could not read video file")
 
 
 @router.get("/video")
@@ -881,7 +938,7 @@ async def stream_video(path: str, request: Request, download: bool = False):
     Supports HTTP Range requests for seeking.
     Set download=true to trigger browser download instead of playback.
     """
-    video_path = Path(path)
+    video_path = _validate_video_path(Path(path))
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found")
 
@@ -1380,10 +1437,10 @@ async def generate_trajectory_sse(
     landing_y: Optional[float] = Query(None, ge=0, le=1, description="Landing Y coordinate (0-1), optional"),
     target_x: Optional[float] = Query(None, ge=0, le=1, description="Target X coordinate (0-1), optional"),
     target_y: Optional[float] = Query(None, ge=0, le=1, description="Target Y coordinate (0-1), optional"),
-    starting_line: str = Query("center", description="Starting line: left, center, right"),
-    shot_shape: str = Query("straight", description="Shot shape: hook, draw, straight, fade, slice"),
-    shot_height: str = Query("medium", description="Shot height: low, medium, high"),
-    flight_time: float = Query(None, ge=1.0, le=10.0, description="Flight time in seconds (1.0-10.0)"),
+    starting_line: StartingLine = Query(StartingLine.CENTER, description="Starting line direction"),
+    shot_shape: ShotShape = Query(ShotShape.STRAIGHT, description="Shot shape (curve direction)"),
+    shot_height: ShotHeight = Query(ShotHeight.MEDIUM, description="Shot height (apex level)"),
+    flight_time: Optional[float] = Query(None, ge=1.0, le=10.0, description="Flight time in seconds (1.0-10.0)"),
     apex_x: Optional[float] = Query(None, ge=0, le=1, description="Apex X coordinate (0-1), optional"),
     apex_y: Optional[float] = Query(None, ge=0, le=1, description="Apex Y coordinate (0-1), optional"),
     origin_x: Optional[float] = Query(None, ge=0, le=1, description="Manual origin X coordinate (0-1), optional - overrides auto-detection"),
@@ -1594,12 +1651,12 @@ async def generate_trajectory_sse(
             if actual_landing_x is None or actual_landing_y is None:
                 # Calculate default landing based on starting_line and shot_shape
                 # Base X: depends on starting line
-                base_x = {"left": 0.3, "center": 0.5, "right": 0.7}.get(starting_line, 0.5)
+                base_x = {"left": 0.3, "center": 0.5, "right": 0.7}.get(starting_line.value, 0.5)
                 # Adjust for shot shape (draw goes right-to-left, fade goes left-to-right)
-                shape_offset = {"hook": -0.15, "draw": -0.08, "straight": 0, "fade": 0.08, "slice": 0.15}.get(shot_shape, 0)
+                shape_offset = {"hook": -0.15, "draw": -0.08, "straight": 0, "fade": 0.08, "slice": 0.15}.get(shot_shape.value, 0)
                 actual_landing_x = max(0.1, min(0.9, base_x + shape_offset))
                 # Y: higher in frame (towards top) based on shot height
-                actual_landing_y = {"low": 0.25, "medium": 0.15, "high": 0.08}.get(shot_height, 0.15)
+                actual_landing_y = {"low": 0.25, "medium": 0.15, "high": 0.08}.get(shot_height.value, 0.15)
                 yield sse_event("warning", {
                     "code": "auto_landing",
                     "message": "Using auto-generated landing point"
@@ -1620,9 +1677,9 @@ async def generate_trajectory_sse(
                     origin=origin_normalized,
                     target=(actual_target_x, actual_target_y),
                     landing=(actual_landing_x, actual_landing_y),
-                    starting_line=starting_line,
-                    shot_shape=shot_shape,
-                    shot_height=shot_height,
+                    starting_line=starting_line.value,
+                    shot_shape=shot_shape.value,
+                    shot_height=shot_height.value,
                     strike_time=strike_time,
                     flight_time=flight_time,
                     apex=apex,
