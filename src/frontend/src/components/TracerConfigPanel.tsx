@@ -18,6 +18,13 @@ interface TracerConfigPanelProps {
   isGenerating: boolean
   isCollapsed: boolean
   onToggleCollapse: () => void
+  // Feedback-related props for inline UI
+  feedbackMessage?: string
+  triedInputs?: Set<string>
+  showFallbackActions?: boolean
+  onAcceptAnyway?: () => void
+  onSkipShot?: () => void
+  onAcceptNoTracer?: () => void
 }
 
 type HeightOption = 'low' | 'medium' | 'high'
@@ -34,7 +41,16 @@ export function TracerConfigPanel({
   isGenerating,
   isCollapsed,
   onToggleCollapse,
+  feedbackMessage,
+  triedInputs,
+  showFallbackActions,
+  onAcceptAnyway,
+  onSkipShot,
+  onAcceptNoTracer,
 }: TracerConfigPanelProps) {
+  // Helper to check if an option has been tried
+  const isUntried = (option: string) => triedInputs && !triedInputs.has(option)
+
   const handleHeightChange = useCallback(
     (height: HeightOption) => {
       onChange({ ...config, height })
@@ -106,8 +122,15 @@ export function TracerConfigPanel({
 
       {!isCollapsed && (
         <div className="config-body">
+          {/* Feedback message banner */}
+          {feedbackMessage && (
+            <div className="config-feedback-message">
+              {feedbackMessage}
+            </div>
+          )}
+
           {/* Shot Height */}
-          <div className="config-row">
+          <div className={`config-row ${isUntried('height') ? 'untried' : ''}`}>
             <label>Shot Height</label>
             <div className="button-group">
               {heightOptions.map((opt) => (
@@ -125,7 +148,7 @@ export function TracerConfigPanel({
           </div>
 
           {/* Shot Shape */}
-          <div className="config-row">
+          <div className={`config-row ${isUntried('shape') ? 'untried' : ''}`}>
             <label>Shot Shape</label>
             <div className="button-group">
               {shapeOptions.map((opt) => (
@@ -143,7 +166,7 @@ export function TracerConfigPanel({
           </div>
 
           {/* Starting Line */}
-          <div className="config-row">
+          <div className={`config-row ${isUntried('startingLine') ? 'untried' : ''}`}>
             <label>Starting Line</label>
             <div className="button-group">
               {lineOptions.map((opt) => (
@@ -161,7 +184,7 @@ export function TracerConfigPanel({
           </div>
 
           {/* Flight Time */}
-          <div className="config-row">
+          <div className={`config-row ${isUntried('flightTime') ? 'untried' : ''}`}>
             <label>Flight Time</label>
             <div className="slider-group">
               <input
@@ -179,7 +202,7 @@ export function TracerConfigPanel({
           </div>
 
           {/* Apex Point (Optional) */}
-          <div className="config-row">
+          <div className={`config-row ${isUntried('apex') ? 'untried' : ''}`}>
             <label>Apex Point</label>
             <button
               type="button"
@@ -214,6 +237,39 @@ export function TracerConfigPanel({
               )}
             </button>
           </div>
+
+          {/* Fallback actions when user can't get tracer right */}
+          {showFallbackActions && (
+            <div className="config-fallback-actions">
+              <p className="fallback-message">Still not right? You can:</p>
+              <div className="fallback-buttons">
+                <button
+                  type="button"
+                  className="btn-secondary btn-small"
+                  onClick={onAcceptAnyway}
+                  disabled={isGenerating}
+                >
+                  Accept Anyway
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary btn-small"
+                  onClick={onSkipShot}
+                  disabled={isGenerating}
+                >
+                  Skip Shot
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary btn-small"
+                  onClick={onAcceptNoTracer}
+                  disabled={isGenerating}
+                >
+                  No Tracer
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
