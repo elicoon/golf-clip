@@ -327,11 +327,35 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
   }, [currentShot, updateShot])
 
+  // Submit true positive feedback when user proceeds with the shot
+  const submitTruePositiveFeedback = async () => {
+    if (!currentShot) return
+
+    try {
+      await fetch(`http://127.0.0.1:8420/api/feedback/${jobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feedback: [{
+            shot_id: currentShot.id,
+            feedback_type: 'true_positive',
+          }]
+        }),
+      })
+    } catch (error) {
+      // Don't block the UI on feedback errors - just log
+      console.error('Failed to submit feedback:', error)
+    }
+  }
+
   const handleAccept = async () => {
     if (!currentShot || loadingState === 'loading') return
 
     setLoadingState('loading')
     setErrorMessage(null)
+
+    // Submit true positive feedback (fire-and-forget)
+    submitTruePositiveFeedback()
 
     try {
       // Mark as approved (confidence = 1.0)
@@ -378,6 +402,23 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
   const handleReject = async () => {
     if (!currentShot || loadingState === 'loading') return
+
+    // Submit false positive feedback
+    try {
+      await fetch(`http://127.0.0.1:8420/api/feedback/${jobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feedback: [{
+            shot_id: currentShot.id,
+            feedback_type: 'false_positive',
+          }]
+        }),
+      })
+    } catch (error) {
+      // Don't block the UI on feedback errors - just log
+      console.error('Failed to submit feedback:', error)
+    }
 
     // Skip this shot (don't include in export)
     updateShot(currentShot.id, { confidence: 0 })
