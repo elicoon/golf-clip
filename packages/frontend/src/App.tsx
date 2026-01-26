@@ -4,6 +4,7 @@ import { ProcessingView } from './components/ProcessingView'
 import { ClipReview } from './components/ClipReview'
 import { ExportComplete } from './components/ExportComplete'
 import { useAppStore } from './stores/appStore'
+import { apiUrl } from './config'
 
 type AppView = 'home' | 'processing' | 'review' | 'complete'
 
@@ -49,7 +50,7 @@ function App() {
     updateQueueItem(queueIndex, { status: 'processing' })
 
     try {
-      const response = await fetch('http://127.0.0.1:8420/api/process', {
+      const response = await fetch(apiUrl('/api/process'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ video_path: videoPath }),

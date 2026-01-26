@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { apiUrl } from '../config'
 
 interface UploadedFile {
   filename: string
@@ -146,7 +147,7 @@ export function VideoDropzone({ onVideosSelected, onVideoSelected }: VideoDropzo
         i === index ? { ...state, status: 'uploading' } : state
       ))
 
-      xhr.open('POST', 'http://127.0.0.1:8420/api/upload')
+      xhr.open('POST', apiUrl('/api/upload'))
       xhr.send(formData)
     })
   }

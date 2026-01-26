@@ -3,6 +3,7 @@ import { useAppStore } from '../stores/appStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { PointStatusTracker } from './PointStatusTracker'
+import { apiUrl } from '../config'
 
 interface ClipReviewProps {
   jobId: string
@@ -115,7 +116,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   useEffect(() => {
     if (currentShot) {
       setTrajectoryLoading(true)
-      fetch(`http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}`)
+      fetch(apiUrl(`/api/trajectory/${jobId}/${currentShot.id}`))
         .then(res => res.ok ? res.json() : null)
         .then(data => setTrajectory(data))
         .catch(() => setTrajectory(null))
@@ -340,7 +341,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       console.log('After updateShot, store state:', useAppStore.getState().shots.map(s => ({ id: s.id, confidence: s.confidence })))
 
       // Send update to server
-      const response = await fetch(`http://127.0.0.1:8420/api/shots/${jobId}/update`, {
+      const response = await fetch(apiUrl(`/api/shots/${jobId}/update`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify([
@@ -412,7 +413,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       const outputDir = videoPath.replace(/\.[^.]+$/, '_clips')
 
       // Start export job
-      const response = await fetch('http://127.0.0.1:8420/api/export', {
+      const response = await fetch(apiUrl('/api/export'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -461,7 +462,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const response = await fetch(`http://127.0.0.1:8420/api/export/${exportJobId}/status`)
+        const response = await fetch(apiUrl(`/api/export/${exportJobId}/status`))
 
         if (!response.ok) {
           throw new Error('Failed to get export status')
@@ -623,7 +624,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       params.append('apex_y', apexPoint.y.toString())
     }
 
-    const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}/generate?${params}`
+    const url = apiUrl(`/api/trajectory/${jobId}/${currentShot.id}/generate?${params}`)
     const eventSource = new EventSource(url)
     eventSourceRef.current = eventSource
 
@@ -1128,7 +1129,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           >
             <video
               ref={videoRef}
-              src={`http://127.0.0.1:8420/api/video?path=${encodeURIComponent(videoPath)}`}
+              src={apiUrl(`/api/video?path=${encodeURIComponent(videoPath)}`)}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
               onLoadedData={handleVideoLoad}
@@ -1148,7 +1149,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
               markingStep={markingStep}
               onTrajectoryUpdate={(points) => {
                 if (!currentShot) return
-                fetch(`http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}`, {
+                fetch(apiUrl(`/api/trajectory/${jobId}/${currentShot.id}`), {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ points }),

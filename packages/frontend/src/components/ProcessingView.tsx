@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAppStore } from '../stores/appStore'
+import { config } from '../config'
 
 interface ProcessingViewProps {
   jobId: string
@@ -33,7 +34,7 @@ const PROCESSING_STEPS = [
 ]
 
 const MAX_SSE_RETRIES = 3
-const BASE_URL = 'http://127.0.0.1:8420'
+const BASE_URL = config.apiBaseUrl
 const SSE_THROTTLE_MS = 100
 
 export function ProcessingView({ jobId, onComplete, onCancel }: ProcessingViewProps & { onCancel?: () => void }) {

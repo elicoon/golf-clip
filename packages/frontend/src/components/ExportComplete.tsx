@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useAppStore } from '../stores/appStore'
+import { apiUrl } from '../config'
 
 interface ExportCompleteProps {
   jobId: string
@@ -87,7 +88,7 @@ export function ExportComplete({ jobId, exportedClips, onReset }: ExportComplete
 
         // Fetch the file with download flag
         const response = await fetch(
-          `http://127.0.0.1:8420/api/video?path=${encodeURIComponent(path)}&download=true`
+          apiUrl(`/api/video?path=${encodeURIComponent(path)}&download=true`)
         )
 
         if (!response.ok) {
@@ -162,7 +163,7 @@ export function ExportComplete({ jobId, exportedClips, onReset }: ExportComplete
     setError(null)
 
     try {
-      const response = await fetch(`http://127.0.0.1:8420/api/feedback/${jobId}`, {
+      const response = await fetch(apiUrl(`/api/feedback/${jobId}`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ feedback: feedbackItems }),
