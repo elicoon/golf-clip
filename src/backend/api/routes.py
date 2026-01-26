@@ -727,8 +727,11 @@ async def run_export_job(export_job_id: str):
         clips = export_job["clips"]
         total_clips = len(clips)
 
-        # Create ClipExporter for tracer rendering if needed
-        clip_exporter = ClipExporter(video_path) if export_job.get("render_tracer") else None
+        # Check if any clip needs tracer rendering (for lazy initialization)
+        any_clip_needs_tracer = any(clip.get("render_tracer", True) for clip in clips)
+
+        # Create ClipExporter for tracer rendering if any clip needs it
+        clip_exporter = ClipExporter(video_path) if any_clip_needs_tracer else None
 
         for i, clip in enumerate(clips):
             export_job["current_clip"] = clip["shot_id"]
@@ -740,7 +743,10 @@ async def run_export_job(export_job_id: str):
             try:
                 loop = asyncio.get_event_loop()
 
-                if export_job.get("render_tracer"):
+                # Check per-shot render_tracer flag (defaults to True for backwards compatibility)
+                should_render_tracer = clip.get("render_tracer", True)
+
+                if should_render_tracer:
                     # Get trajectory for this shot
                     trajectory = await get_trajectory(export_job["job_id"], clip["shot_id"])
 
@@ -783,7 +789,8 @@ async def run_export_job(export_job_id: str):
                         export_job["exported_count"] = len(export_job["exported"])
                         logger.info(f"Exported clip {clip['shot_id']} to {output_path}")
                 else:
-                    # Normal export without tracer
+                    # User explicitly disabled tracer for this shot - export without tracer
+                    logger.info(f"Exporting clip {clip['shot_id']} without tracer (render_tracer=False)")
                     await loop.run_in_executor(
                         None,
                         extract_clip,

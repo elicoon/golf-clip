@@ -48,6 +48,10 @@ class ClipBoundary(BaseModel):
     start_time: float
     end_time: float
     approved: bool = False
+    render_tracer: bool = Field(
+        True,
+        description="Whether to render shot tracer overlay for this clip (default: True)"
+    )
 
 
 class JobError(BaseModel):
