@@ -186,8 +186,9 @@ export function TracerConfigPanel({
               className={`btn-option btn-apex ${apexMarked ? 'marked' : ''}`}
               onClick={onMarkApex}
               disabled={isGenerating}
+              title={apexMarked ? 'Click to re-mark apex point' : 'Click to mark apex point on video'}
             >
-              {apexMarked ? 'Apex Marked' : 'Mark on Video'}
+              {apexMarked ? 'Re-mark Apex' : 'Mark on Video'}
             </button>
             <span className="optional-hint">(optional)</span>
           </div>
