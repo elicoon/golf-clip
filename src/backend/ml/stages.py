@@ -16,6 +16,7 @@ FEATURE_KEY_MAP = {
     "spectral_flatness": "flatness",
     "frequency_centroid": "centroid",
     "onset_strength": "prominence",  # Using onset_strength as prominence proxy
+    "rise_time": "rise",
     "decay_ratio": "decay",
     "zero_crossing_rate": "zcr",
 }

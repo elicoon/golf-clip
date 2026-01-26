@@ -457,6 +457,7 @@ class AudioStrikeDetector:
             "spectral_flatness": float(flatness),
             "onset_strength": float(height_ratio),
             "frequency_centroid": float(centroid),
+            "rise_time": float(rise_score),
             "decay_ratio": float(decay_ratio),
             "zero_crossing_rate": float(zcr),
         }
