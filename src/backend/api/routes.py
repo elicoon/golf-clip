@@ -1381,6 +1381,8 @@ async def generate_trajectory_sse(
     flight_time: float = Query(None, ge=1.0, le=6.0, description="Flight time in seconds (1.0-6.0)"),
     apex_x: Optional[float] = Query(None, ge=0, le=1, description="Apex X coordinate (0-1), optional"),
     apex_y: Optional[float] = Query(None, ge=0, le=1, description="Apex Y coordinate (0-1), optional"),
+    origin_x: Optional[float] = Query(None, ge=0, le=1, description="Manual origin X coordinate (0-1), optional - overrides auto-detection"),
+    origin_y: Optional[float] = Query(None, ge=0, le=1, description="Manual origin Y coordinate (0-1), optional - overrides auto-detection"),
 ):
     """Generate trajectory with SSE progress updates.
 
@@ -1444,48 +1446,70 @@ async def generate_trajectory_sse(
                     "message": "Using auto-generated trajectory..."
                 })
 
-            # Step 2: Detect ball origin
-            yield sse_event("progress", {
-                "step": "origin",
-                "progress": 10,
-                "message": "Detecting ball origin..."
-            })
+            # Step 2: Detect ball origin (or use user-provided origin)
+            from backend.detection.origin import OriginDetection
 
+            # Create tracker (needed for trajectory generation)
             origin_detector = BallOriginDetector()
             tracker = ConstrainedBallTracker(origin_detector=origin_detector)
-
-            # Run origin detection in executor (CPU-bound)
             loop = asyncio.get_event_loop()
-            origin = await loop.run_in_executor(
-                None,
-                lambda: origin_detector.detect_origin(video_path, strike_time)
-            )
 
-            if origin is None:
-                # Emit warning but continue with fallback origin
-                yield sse_event("warning", {
-                    "code": "origin_detection_failed",
-                    "message": "Could not detect ball origin, using fallback position"
+            # Check if user provided manual origin point
+            if origin_x is not None and origin_y is not None:
+                yield sse_event("progress", {
+                    "step": "origin",
+                    "progress": 10,
+                    "message": "Using manually marked origin point..."
                 })
-                # Use a fallback origin (center-bottom of frame)
-                from backend.detection.origin import OriginDetection
+                # Convert from normalized (0-1) to pixel coordinates
                 origin = OriginDetection(
-                    x=frame_width * 0.5,
-                    y=frame_height * 0.85,
-                    confidence=0.3,
-                    method="fallback"
+                    x=origin_x * frame_width,
+                    y=origin_y * frame_height,
+                    confidence=1.0,
+                    method="manual"
                 )
-            elif origin.confidence < 0.6:
-                yield sse_event("warning", {
-                    "code": "low_origin_confidence",
-                    "message": f"Ball origin detection confidence is low ({origin.confidence:.0%})"
+                yield sse_event("progress", {
+                    "step": "origin",
+                    "progress": 20,
+                    "message": f"Using manual origin at ({origin.x:.0f}, {origin.y:.0f})"
+                })
+            else:
+                yield sse_event("progress", {
+                    "step": "origin",
+                    "progress": 10,
+                    "message": "Detecting ball origin..."
                 })
 
-            yield sse_event("progress", {
-                "step": "origin",
-                "progress": 20,
-                "message": f"Ball origin detected at ({origin.x:.0f}, {origin.y:.0f})"
-            })
+                # Run origin detection in executor (CPU-bound)
+                origin = await loop.run_in_executor(
+                    None,
+                    lambda: origin_detector.detect_origin(video_path, strike_time)
+                )
+
+                if origin is None:
+                    # Emit warning but continue with fallback origin
+                    yield sse_event("warning", {
+                        "code": "origin_detection_failed",
+                        "message": "Could not detect ball origin, using fallback position"
+                    })
+                    # Use a fallback origin (center-bottom of frame)
+                    origin = OriginDetection(
+                        x=frame_width * 0.5,
+                        y=frame_height * 0.85,
+                        confidence=0.3,
+                        method="fallback"
+                    )
+                elif origin.confidence < 0.6:
+                    yield sse_event("warning", {
+                        "code": "low_origin_confidence",
+                        "message": f"Ball origin detection confidence is low ({origin.confidence:.0%})"
+                    })
+
+                yield sse_event("progress", {
+                    "step": "origin",
+                    "progress": 20,
+                    "message": f"Ball origin detected at ({origin.x:.0f}, {origin.y:.0f})"
+                })
 
             # Step 3: Generate trajectory with full configuration
             yield sse_event("progress", {
