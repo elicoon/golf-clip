@@ -1,8 +1,9 @@
 """Tests for ML stage implementations."""
 
+import numpy as np
 import pytest
 
-from backend.ml.stages import analyze_threshold
+from backend.ml.stages import analyze_threshold, analyze_weights
 
 
 class TestThresholdTuning:
@@ -68,3 +69,57 @@ class TestThresholdTuning:
         assert result["current_fp_rate"] == 1.0
         # Should recommend a threshold that filters the FPs
         assert result["recommended_threshold"] >= 0.75  # At or above highest FP score
+
+
+class TestWeightOptimization:
+    """Tests for Stage 2: Feature weight optimization."""
+
+    def test_learns_discriminative_weights(self):
+        """Should learn weights that separate TP from FP."""
+        # Create feedback where decay_ratio clearly separates TP from FP
+        feedback = []
+
+        # True positives have high decay ratio (ball strikes decay fast)
+        for _ in range(30):
+            feedback.append({
+                "feedback_type": "true_positive",
+                "detection_features": {
+                    "peak_height": 0.7 + np.random.normal(0, 0.1),
+                    "decay_ratio": 0.8 + np.random.normal(0, 0.05),  # High decay
+                    "spectral_flatness": 0.3 + np.random.normal(0, 0.05),
+                    "frequency_centroid": 3500 + np.random.normal(0, 200),
+                    "zero_crossing_rate": 0.25 + np.random.normal(0, 0.05),
+                }
+            })
+
+        # False positives have low decay ratio (sustained sounds)
+        for _ in range(20):
+            feedback.append({
+                "feedback_type": "false_positive",
+                "detection_features": {
+                    "peak_height": 0.6 + np.random.normal(0, 0.1),
+                    "decay_ratio": 0.3 + np.random.normal(0, 0.05),  # Low decay
+                    "spectral_flatness": 0.3 + np.random.normal(0, 0.05),
+                    "frequency_centroid": 3500 + np.random.normal(0, 200),
+                    "zero_crossing_rate": 0.25 + np.random.normal(0, 0.05),
+                }
+            })
+
+        result = analyze_weights(feedback)
+
+        assert result["samples_analyzed"] == 50
+        assert "learned_weights" in result
+        # Decay ratio should have higher weight since it's discriminative
+        weights = result["learned_weights"]
+        assert weights["decay"] > weights["flatness"]  # decay is more important
+
+    def test_handles_insufficient_samples(self):
+        """Should return None weights with insufficient samples."""
+        feedback = [
+            {"feedback_type": "true_positive", "detection_features": {"peak_height": 0.8}},
+        ] * 5
+
+        result = analyze_weights(feedback)
+
+        assert result["learned_weights"] is None
+        assert "error" in result
