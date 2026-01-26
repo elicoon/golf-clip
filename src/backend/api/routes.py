@@ -39,6 +39,7 @@ from backend.api.schemas import (
     VideoInfo,
 )
 from backend.core.config import settings
+from backend.core.environment import get_environment
 from backend.core.video import extract_clip, get_video_info
 from backend.processing.clips import ClipExporter
 from backend.detection.pipeline import ShotDetectionPipeline
@@ -1157,6 +1158,7 @@ async def submit_feedback(job_id: str, request: ShotFeedbackRequest):
             audio_confidence_snapshot=shot.get("audio_confidence"),
             visual_confidence_snapshot=shot.get("visual_confidence"),
             detection_features=shot.get("confidence_reasons"),
+            environment=get_environment(),
         )
 
         created_feedback.append(ShotFeedbackResponse(

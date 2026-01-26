@@ -455,9 +455,10 @@ class TestFeedbackStats:
 class TestFeedbackEnvironment:
     """Tests for environment tagging in feedback."""
 
-    def test_feedback_defaults_to_prod(self, client: TestClient):
-        """Feedback should default to 'prod' environment."""
-        job_id = "test-feedback-env-001"
+    def test_feedback_uses_dev_when_debug_enabled(self, client: TestClient):
+        """Feedback should use 'dev' environment when debug mode is on."""
+        # By default, settings.debug=True, so environment should be 'dev'
+        job_id = "test-feedback-env-debug"
         job = _create_job_in_db(job_id)
         jobs[job_id] = job
 
@@ -467,12 +468,56 @@ class TestFeedbackEnvironment:
         )
         assert response.status_code == 200
 
-        # Get the feedback and check environment
-        get_response = client.get(f"/api/feedback/{job_id}")
-        assert get_response.status_code == 200
-        feedback = get_response.json()
-        assert len(feedback) == 1
-        assert feedback[0]["environment"] == "prod"
+        # The response should show 'dev' environment
+        data = response.json()
+        assert data[0]["environment"] == "dev"
+
+    def test_feedback_uses_prod_when_debug_disabled(self, client: TestClient):
+        """Feedback should use 'prod' environment when debug mode is off."""
+        from unittest.mock import patch, MagicMock
+
+        job_id = "test-feedback-env-001"
+        job = _create_job_in_db(job_id)
+        jobs[job_id] = job
+
+        # Mock settings.debug to False to get 'prod' environment
+        mock_settings = MagicMock()
+        mock_settings.debug = False
+        with patch("backend.core.environment.settings", mock_settings):
+            response = client.post(
+                f"/api/feedback/{job_id}",
+                json={"feedback": [{"shot_id": 1, "feedback_type": "true_positive"}]}
+            )
+            assert response.status_code == 200
+
+            # Get the feedback and check environment
+            get_response = client.get(f"/api/feedback/{job_id}")
+            assert get_response.status_code == 200
+            feedback = get_response.json()
+            assert len(feedback) == 1
+            assert feedback[0]["environment"] == "prod"
+
+    def test_feedback_uses_dev_with_env_var_override(self, client: TestClient):
+        """Feedback should use 'dev' when GOLFCLIP_ENV=dev is set."""
+        import os
+        from unittest.mock import patch, MagicMock
+
+        job_id = "test-feedback-env-var"
+        job = _create_job_in_db(job_id)
+        jobs[job_id] = job
+
+        # Even if debug=False, GOLFCLIP_ENV=dev should override to 'dev'
+        mock_settings = MagicMock()
+        mock_settings.debug = False
+        with patch.dict(os.environ, {"GOLFCLIP_ENV": "dev"}):
+            with patch("backend.core.environment.settings", mock_settings):
+                response = client.post(
+                    f"/api/feedback/{job_id}",
+                    json={"feedback": [{"shot_id": 1, "feedback_type": "true_positive"}]}
+                )
+                assert response.status_code == 200
+                data = response.json()
+                assert data[0]["environment"] == "dev"
 
     def test_feedback_environment_in_response(self, client: TestClient):
         """Feedback submission response should include environment."""
@@ -488,7 +533,8 @@ class TestFeedbackEnvironment:
         data = response.json()
         assert len(data) == 1
         assert "environment" in data[0]
-        assert data[0]["environment"] == "prod"
+        # With debug=True (default), should be 'dev'
+        assert data[0]["environment"] == "dev"
 
     def test_feedback_export_includes_environment(self, client: TestClient):
         """Exported feedback should include environment field."""
@@ -509,7 +555,8 @@ class TestFeedbackEnvironment:
         for record in data["records"]:
             if record["job_id"] == job_id:
                 assert "environment" in record
-                assert record["environment"] == "prod"
+                # With debug=True (default), should be 'dev'
+                assert record["environment"] == "dev"
                 break
         else:
             pytest.fail("Feedback record not found in export")
