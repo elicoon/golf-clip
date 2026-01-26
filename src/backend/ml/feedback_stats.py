@@ -100,7 +100,13 @@ async def get_weekly_trend(weeks: int = 4, env_filter: str = "prod") -> list[dic
     now = datetime.utcnow()
 
     for f in all_feedback:
-        created = datetime.fromisoformat(f["created_at"].replace("Z", "+00:00").replace("+00:00", ""))
+        # Strip timezone suffix for naive datetime comparison
+        created_str = f["created_at"]
+        if created_str.endswith("Z"):
+            created_str = created_str[:-1]
+        elif "+" in created_str:
+            created_str = created_str.split("+")[0]
+        created = datetime.fromisoformat(created_str)
         days_ago = (now - created).days
         week_num = days_ago // 7
 

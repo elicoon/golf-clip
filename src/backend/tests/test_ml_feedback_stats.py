@@ -84,3 +84,40 @@ class TestAvailableStages:
         assert stages["stage_1"]["available"] is True
         assert stages["stage_2"]["available"] is True
         assert stages["stage_3"]["available"] is True
+
+
+class TestWeeklyTrend:
+    """Tests for weekly trend analysis."""
+
+    @pytest.mark.asyncio
+    async def test_trend_with_data(self):
+        """Should calculate weekly FP rates correctly."""
+        from datetime import datetime, timedelta
+
+        now = datetime.utcnow()
+
+        # Create feedback from this week
+        mock_feedback = [
+            {"feedback_type": "true_positive", "environment": "prod", "created_at": now.isoformat()},
+            {"feedback_type": "true_positive", "environment": "prod", "created_at": now.isoformat()},
+            {"feedback_type": "false_positive", "environment": "prod", "created_at": now.isoformat()},
+        ]
+
+        with patch("backend.ml.feedback_stats.get_all_feedback", new_callable=AsyncMock) as mock:
+            mock.return_value = mock_feedback
+            trend = await get_weekly_trend(weeks=1)
+
+        assert len(trend) == 1
+        assert trend[0]["total"] == 3
+        assert trend[0]["tp"] == 2
+        assert trend[0]["fp"] == 1
+
+    @pytest.mark.asyncio
+    async def test_trend_empty(self):
+        """Should handle no feedback gracefully."""
+        with patch("backend.ml.feedback_stats.get_all_feedback", new_callable=AsyncMock) as mock:
+            mock.return_value = []
+            trend = await get_weekly_trend(weeks=2)
+
+        assert len(trend) == 2
+        assert all(week["total"] == 0 for week in trend)
