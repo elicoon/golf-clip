@@ -1,7 +1,6 @@
 """Tests for ML stage implementations."""
 
 import pytest
-import numpy as np
 
 from backend.ml.stages import analyze_threshold
 
@@ -52,3 +51,20 @@ class TestThresholdTuning:
 
         # No FPs to filter, don't raise threshold unnecessarily
         assert result["recommended_threshold"] <= 0.70
+
+    def test_handles_all_fp(self):
+        """Should recommend highest threshold when all are false positives."""
+        feedback = [
+            {"feedback_type": "false_positive", "confidence_snapshot": 0.75},
+            {"feedback_type": "false_positive", "confidence_snapshot": 0.72},
+            {"feedback_type": "false_positive", "confidence_snapshot": 0.68},
+        ]
+
+        result = analyze_threshold(feedback, current_threshold=0.70)
+
+        # With all FPs, algorithm should try to filter them all
+        # Since there are no TPs, TP retention constraint (>=95%) is trivially met
+        assert result["samples_analyzed"] == 3
+        assert result["current_fp_rate"] == 1.0
+        # Should recommend a threshold that filters the FPs
+        assert result["recommended_threshold"] >= 0.75  # At or above highest FP score
