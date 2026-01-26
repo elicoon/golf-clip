@@ -355,7 +355,7 @@ async def test_database_stats():
         # Get stats
         stats = await get_database_stats()
 
-        assert stats["schema_version"] == 4
+        assert stats["schema_version"] == 5
         assert stats["total_jobs"] == 2
         assert stats["total_shots"] == 1
         assert "complete" in stats["jobs_by_status"]
@@ -370,7 +370,7 @@ async def test_schema_version():
 
         version = await get_schema_version()
         assert version == SCHEMA_VERSION
-        assert version == 4
+        assert version == 5
 
 
 if __name__ == "__main__":

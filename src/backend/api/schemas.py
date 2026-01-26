@@ -245,6 +245,7 @@ class ShotFeedbackResponse(BaseModel):
     audio_confidence_snapshot: Optional[float]
     visual_confidence_snapshot: Optional[float]
     created_at: str
+    environment: str = Field("prod", description="Environment tag: 'prod' or 'dev'")
 
 
 class FeedbackStats(BaseModel):

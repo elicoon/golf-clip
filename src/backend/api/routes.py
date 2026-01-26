@@ -1169,6 +1169,7 @@ async def submit_feedback(job_id: str, request: ShotFeedbackRequest):
             audio_confidence_snapshot=feedback_record["audio_confidence_snapshot"],
             visual_confidence_snapshot=feedback_record["visual_confidence_snapshot"],
             created_at=feedback_record["created_at"],
+            environment=feedback_record["environment"],
         ))
 
     return created_feedback
@@ -1195,6 +1196,7 @@ async def get_job_feedback(job_id: str):
             audio_confidence_snapshot=record["audio_confidence_snapshot"],
             visual_confidence_snapshot=record["visual_confidence_snapshot"],
             created_at=record["created_at"],
+            environment=record["environment"],
         )
         for record in feedback_records
     ]

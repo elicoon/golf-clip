@@ -13,7 +13,7 @@ from loguru import logger
 DB_PATH = Path.home() / ".golfclip" / "golfclip.db"
 
 # Current schema version - increment when making schema changes
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Global connection pool (single connection for SQLite)
 _db_connection: Optional[aiosqlite.Connection] = None
@@ -73,6 +73,8 @@ async def _apply_migrations(current_version: int) -> None:
         await _migrate_v3()
     if current_version < 4:
         await _migrate_v4()
+    if current_version < 5:
+        await _migrate_v5()
 
 
 async def _migrate_v1() -> None:
@@ -223,6 +225,25 @@ async def _migrate_v4() -> None:
     )
 
     logger.info("Migration v4 applied successfully")
+
+
+async def _migrate_v5() -> None:
+    """Add environment column to shot_feedback for dev/prod tagging."""
+    logger.info("Applying migration v5: Add environment column to shot_feedback")
+
+    await _db_connection.execute(
+        "ALTER TABLE shot_feedback ADD COLUMN environment TEXT DEFAULT 'prod'"
+    )
+    await _db_connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_feedback_environment ON shot_feedback(environment)"
+    )
+
+    await _db_connection.execute(
+        "INSERT OR IGNORE INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
+        (5, datetime.utcnow().isoformat(), "Add environment column to shot_feedback"),
+    )
+
+    logger.info("Migration v5 applied successfully")
 
 
 async def close_db() -> None:

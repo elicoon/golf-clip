@@ -452,6 +452,69 @@ class TestFeedbackStats:
         assert isinstance(data["precision"], float)
 
 
+class TestFeedbackEnvironment:
+    """Tests for environment tagging in feedback."""
+
+    def test_feedback_defaults_to_prod(self, client: TestClient):
+        """Feedback should default to 'prod' environment."""
+        job_id = "test-feedback-env-001"
+        job = _create_job_in_db(job_id)
+        jobs[job_id] = job
+
+        response = client.post(
+            f"/api/feedback/{job_id}",
+            json={"feedback": [{"shot_id": 1, "feedback_type": "true_positive"}]}
+        )
+        assert response.status_code == 200
+
+        # Get the feedback and check environment
+        get_response = client.get(f"/api/feedback/{job_id}")
+        assert get_response.status_code == 200
+        feedback = get_response.json()
+        assert len(feedback) == 1
+        assert feedback[0]["environment"] == "prod"
+
+    def test_feedback_environment_in_response(self, client: TestClient):
+        """Feedback submission response should include environment."""
+        job_id = "test-feedback-env-002"
+        job = _create_job_in_db(job_id)
+        jobs[job_id] = job
+
+        response = client.post(
+            f"/api/feedback/{job_id}",
+            json={"feedback": [{"shot_id": 1, "feedback_type": "true_positive"}]}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert "environment" in data[0]
+        assert data[0]["environment"] == "prod"
+
+    def test_feedback_export_includes_environment(self, client: TestClient):
+        """Exported feedback should include environment field."""
+        job_id = "test-feedback-env-003"
+        job = _create_job_in_db(job_id)
+        jobs[job_id] = job
+
+        client.post(
+            f"/api/feedback/{job_id}",
+            json={"feedback": [{"shot_id": 1, "feedback_type": "true_positive"}]}
+        )
+
+        response = client.get("/api/feedback/export")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_records"] >= 1
+        # Find our record
+        for record in data["records"]:
+            if record["job_id"] == job_id:
+                assert "environment" in record
+                assert record["environment"] == "prod"
+                break
+        else:
+            pytest.fail("Feedback record not found in export")
+
+
 class TestFeedbackDataIntegrity:
     """Test that feedback correctly snapshots detection features."""
 
