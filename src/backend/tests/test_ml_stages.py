@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from backend.ml.stages import analyze_threshold, analyze_weights
+from backend.ml.stages import analyze_calibration, analyze_threshold, analyze_weights
 
 
 class TestThresholdTuning:
@@ -123,3 +123,53 @@ class TestWeightOptimization:
 
         assert result["learned_weights"] is None
         assert "error" in result
+
+
+class TestConfidenceRecalibration:
+    """Tests for Stage 3: Confidence recalibration."""
+
+    def test_calibrates_overconfident_scores(self):
+        """Should reduce confidence when FP rate is high at that level."""
+        feedback = []
+
+        # At confidence 0.70-0.75, lots of false positives
+        for _ in range(40):
+            feedback.append({
+                "feedback_type": "false_positive",
+                "confidence_snapshot": 0.72,
+            })
+        for _ in range(10):
+            feedback.append({
+                "feedback_type": "true_positive",
+                "confidence_snapshot": 0.73,
+            })
+
+        # At confidence 0.85+, all true positives
+        for _ in range(50):
+            feedback.append({
+                "feedback_type": "true_positive",
+                "confidence_snapshot": 0.87,
+            })
+
+        # More samples to meet minimum
+        for _ in range(100):
+            feedback.append({
+                "feedback_type": "true_positive",
+                "confidence_snapshot": 0.80,
+            })
+
+        result = analyze_calibration(feedback)
+
+        assert result["calibration_map"] is not None
+        # 0.72 should map to lower calibrated confidence
+        assert result["calibration_map"]["0.72"] < 0.72
+
+    def test_handles_insufficient_samples(self):
+        """Should return None calibration with insufficient samples."""
+        feedback = [
+            {"feedback_type": "true_positive", "confidence_snapshot": 0.8}
+        ] * 50
+
+        result = analyze_calibration(feedback)
+
+        assert result["calibration_map"] is None

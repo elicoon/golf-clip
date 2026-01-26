@@ -3,6 +3,7 @@
 from typing import Any
 
 import numpy as np
+from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
@@ -194,4 +195,70 @@ def analyze_weights(
             name: round(float(coefs[i]), 3)
             for i, name in enumerate(FEATURE_KEY_MAP.values())
         },
+    }
+
+
+def analyze_calibration(
+    feedback: list[dict[str, Any]],
+    min_samples: int = 200,
+) -> dict[str, Any]:
+    """Stage 3: Learn confidence calibration using isotonic regression.
+
+    Maps raw confidence scores to calibrated probabilities based on
+    actual TP rate at each confidence level.
+
+    Args:
+        feedback: List of feedback records with confidence_snapshot.
+        min_samples: Minimum samples required for calibration.
+
+    Returns:
+        Analysis results with calibration mapping.
+    """
+    # Filter to samples with confidence
+    valid_feedback = [
+        f for f in feedback
+        if f.get("confidence_snapshot") is not None
+    ]
+
+    if len(valid_feedback) < min_samples:
+        return {
+            "samples_analyzed": len(valid_feedback),
+            "calibration_map": None,
+            "error": f"Insufficient samples: {len(valid_feedback)} < {min_samples} required",
+        }
+
+    # Build arrays
+    confidences = np.array([f["confidence_snapshot"] for f in valid_feedback])
+    labels = np.array([1 if f["feedback_type"] == "true_positive" else 0 for f in valid_feedback])
+
+    # Fit isotonic regression
+    iso_reg = IsotonicRegression(out_of_bounds="clip")
+    iso_reg.fit(confidences, labels)
+
+    # Build calibration map for common confidence values
+    calibration_map = {}
+    for conf in np.arange(0.50, 0.96, 0.01):
+        calibrated = iso_reg.predict([conf])[0]
+        calibration_map[f"{conf:.2f}"] = round(float(calibrated), 3)
+
+    # Calculate reliability metrics
+    # Bin confidences and compare predicted vs actual
+    bins = np.arange(0.5, 1.0, 0.1)
+    bin_counts = []
+    bin_accuracies = []
+
+    for i in range(len(bins) - 1):
+        mask = (confidences >= bins[i]) & (confidences < bins[i + 1])
+        if mask.sum() > 0:
+            bin_counts.append(int(mask.sum()))
+            bin_accuracies.append(float(labels[mask].mean()))
+        else:
+            bin_counts.append(0)
+            bin_accuracies.append(0)
+
+    return {
+        "samples_analyzed": len(valid_feedback),
+        "calibration_map": calibration_map,
+        "bin_counts": bin_counts,
+        "bin_accuracies": bin_accuracies,
     }
