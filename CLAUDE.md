@@ -281,6 +281,51 @@ curl http://localhost:8420/api/feedback/stats
 1. **Multi-video upload**: Allow users to upload multiple videos at once
 2. **Parallel processing**: Process uploaded videos in parallel instead of sequentially
 
+## ML Improvement Pipeline
+
+The feedback collected during review trains ML models to reduce false positives.
+
+### CLI Commands
+
+```bash
+# View feedback stats and available stages
+python -m backend.ml.feedback_stats
+python -m backend.ml.feedback_stats --trend  # Show weekly FP rate trend
+
+# Run analysis (dry run by default)
+python -m backend.ml.analyze analyze --stage 1  # Threshold tuning
+python -m backend.ml.analyze analyze --stage 2  # Weight optimization
+python -m backend.ml.analyze analyze --stage 3  # Confidence recalibration
+
+# Apply changes
+python -m backend.ml.analyze analyze --stage 1 --apply
+
+# Rollback to previous config
+python -m backend.ml.analyze rollback
+```
+
+### Stage Requirements
+
+| Stage | Min Samples | What It Does |
+|-------|-------------|--------------|
+| 1 | 10 | Finds optimal confidence threshold |
+| 2 | 50 | Learns feature weights via logistic regression |
+| 3 | 200 | Calibrates confidence scores via isotonic regression |
+
+### Config File
+
+ML parameters are stored in `~/.golfclip/ml_config.json`:
+
+```json
+{
+  "version": 1,
+  "confidence_threshold": 0.76,
+  "feature_weights": {"height": 0.20, "decay": 0.25, ...},
+  "calibration_model": {"0.70": 0.65, ...},
+  "update_history": [...]
+}
+```
+
 ## Shot Tracer Feature (Phase 2)
 
 The shot tracer overlays ball flight trajectory on video clips during review and export.
