@@ -27,6 +27,8 @@ async def run_analysis(
     Returns:
         Analysis results.
     """
+    logger.info(f"Starting ML analysis: stage={stage}, env={env_filter}, dry_run={dry_run}")
+
     await init_db()
 
     # Get feedback data
@@ -37,86 +39,100 @@ async def run_analysis(
         all_feedback = [f for f in all_feedback if f.get("environment", "prod") == env_filter]
 
     print(f"\nAnalyzing {len(all_feedback)} feedback samples ({env_filter} environment)")
+    logger.info(f"Loaded {len(all_feedback)} feedback samples for analysis")
 
     config = load_ml_config()
 
-    if stage == 1:
-        result = analyze_threshold(all_feedback, current_threshold=config["confidence_threshold"])
+    try:
+        if stage == 1:
+            result = analyze_threshold(all_feedback, current_threshold=config["confidence_threshold"])
 
-        print(f"\n=== Stage 1: Threshold Tuning ===")
-        print(f"Samples analyzed: {result['samples_analyzed']}")
-        print(f"Current threshold: {result['current_threshold']}")
-        print(f"Recommended threshold: {result['recommended_threshold']}")
-        print(f"\nProjected impact:")
-        print(f"  FP rate: {result['current_fp_rate']:.1%} → {result['projected_fp_rate']:.1%}")
-        print(f"  TP retention: {result['projected_tp_retention']:.1%}")
+            print(f"\n=== Stage 1: Threshold Tuning ===")
+            print(f"Samples analyzed: {result['samples_analyzed']}")
+            print(f"Current threshold: {result['current_threshold']}")
+            print(f"Recommended threshold: {result['recommended_threshold']}")
+            print(f"\nProjected impact:")
+            print(f"  FP rate: {result['current_fp_rate']:.1%} → {result['projected_fp_rate']:.1%}")
+            print(f"  TP retention: {result['projected_tp_retention']:.1%}")
 
-        if not dry_run and result["recommended_threshold"] != config["confidence_threshold"]:
-            old_threshold = config["confidence_threshold"]
-            config["confidence_threshold"] = result["recommended_threshold"]
-            config["update_history"].append({
-                "stage": 1,
-                "change": {"confidence_threshold": {"old": old_threshold, "new": result["recommended_threshold"]}},
-                "samples_used": result["samples_analyzed"],
-            })
-            save_ml_config(config)
-            print(f"\n✓ Applied: confidence_threshold updated to {result['recommended_threshold']}")
-        elif dry_run:
-            print(f"\nTo apply: python -m backend.ml.analyze analyze --stage 1 --apply")
-
-    elif stage == 2:
-        result = analyze_weights(all_feedback)
-
-        print(f"\n=== Stage 2: Weight Optimization ===")
-        print(f"Samples analyzed: {result['samples_analyzed']}")
-
-        if result["learned_weights"]:
-            print(f"Model accuracy: {result['model_accuracy']:.1%}")
-            print(f"\nLearned weights:")
-            for name, weight in result["learned_weights"].items():
-                current = config["feature_weights"].get(name, "N/A")
-                print(f"  {name}: {current} → {weight}")
-
-            if not dry_run:
-                old_weights = config["feature_weights"].copy()
-                config["feature_weights"] = result["learned_weights"]
+            if not dry_run and result["recommended_threshold"] != config["confidence_threshold"]:
+                old_threshold = config["confidence_threshold"]
+                config["confidence_threshold"] = result["recommended_threshold"]
                 config["update_history"].append({
-                    "stage": 2,
-                    "change": {"feature_weights": {"old": old_weights, "new": result["learned_weights"]}},
+                    "stage": 1,
+                    "change": {"confidence_threshold": {"old": old_threshold, "new": result["recommended_threshold"]}},
                     "samples_used": result["samples_analyzed"],
                 })
                 save_ml_config(config)
-                print(f"\n✓ Applied: feature_weights updated")
+                logger.info(f"Applied confidence_threshold: {old_threshold} -> {result['recommended_threshold']}")
+                print(f"\n✓ Applied: confidence_threshold updated to {result['recommended_threshold']}")
             elif dry_run:
-                print(f"\nTo apply: python -m backend.ml.analyze analyze --stage 2 --apply")
+                print(f"\nTo apply: python -m backend.ml.analyze analyze --stage 1 --apply")
+
+        elif stage == 2:
+            result = analyze_weights(all_feedback)
+
+            print(f"\n=== Stage 2: Weight Optimization ===")
+            print(f"Samples analyzed: {result['samples_analyzed']}")
+
+            if result["learned_weights"]:
+                print(f"Model accuracy: {result['model_accuracy']:.1%}")
+                print(f"\nLearned weights:")
+                for name, weight in result["learned_weights"].items():
+                    current = config["feature_weights"].get(name, "N/A")
+                    print(f"  {name}: {current} → {weight}")
+
+                if not dry_run:
+                    old_weights = config["feature_weights"].copy()
+                    config["feature_weights"] = result["learned_weights"]
+                    config["update_history"].append({
+                        "stage": 2,
+                        "change": {"feature_weights": {"old": old_weights, "new": result["learned_weights"]}},
+                        "samples_used": result["samples_analyzed"],
+                    })
+                    save_ml_config(config)
+                    logger.info(f"Applied feature_weights update")
+                    print(f"\n✓ Applied: feature_weights updated")
+                elif dry_run:
+                    print(f"\nTo apply: python -m backend.ml.analyze analyze --stage 2 --apply")
+            else:
+                print(f"Error: {result.get('error', 'Unknown error')}")
+
+        elif stage == 3:
+            result = analyze_calibration(all_feedback)
+
+            print(f"\n=== Stage 3: Confidence Recalibration ===")
+            print(f"Samples analyzed: {result['samples_analyzed']}")
+
+            if result["calibration_map"]:
+                print(f"\nSample calibrations:")
+                for conf in ["0.60", "0.70", "0.80", "0.90"]:
+                    if conf in result["calibration_map"]:
+                        print(f"  Raw {conf} → Calibrated {result['calibration_map'][conf]}")
+
+                if not dry_run:
+                    config["calibration_model"] = result["calibration_map"]
+                    config["update_history"].append({
+                        "stage": 3,
+                        "change": {"calibration_model": "updated"},
+                        "samples_used": result["samples_analyzed"],
+                    })
+                    save_ml_config(config)
+                    logger.info(f"Applied calibration_model update")
+                    print(f"\n✓ Applied: calibration_model updated")
+                elif dry_run:
+                    print(f"\nTo apply: python -m backend.ml.analyze analyze --stage 3 --apply")
+            else:
+                print(f"Error: {result.get('error', 'Unknown error')}")
+
         else:
-            print(f"Error: {result.get('error', 'Unknown error')}")
+            logger.error(f"Invalid stage: {stage}")
+            return {"error": f"Invalid stage: {stage}"}
 
-    elif stage == 3:
-        result = analyze_calibration(all_feedback)
-
-        print(f"\n=== Stage 3: Confidence Recalibration ===")
-        print(f"Samples analyzed: {result['samples_analyzed']}")
-
-        if result["calibration_map"]:
-            print(f"\nSample calibrations:")
-            for conf in ["0.60", "0.70", "0.80", "0.90"]:
-                if conf in result["calibration_map"]:
-                    print(f"  Raw {conf} → Calibrated {result['calibration_map'][conf]}")
-
-            if not dry_run:
-                config["calibration_model"] = result["calibration_map"]
-                config["update_history"].append({
-                    "stage": 3,
-                    "change": {"calibration_model": "updated"},
-                    "samples_used": result["samples_analyzed"],
-                })
-                save_ml_config(config)
-                print(f"\n✓ Applied: calibration_model updated")
-            elif dry_run:
-                print(f"\nTo apply: python -m backend.ml.analyze analyze --stage 3 --apply")
-        else:
-            print(f"Error: {result.get('error', 'Unknown error')}")
+    except Exception as e:
+        logger.error(f"Analysis failed: {e}")
+        print(f"\nError: Analysis failed - {e}")
+        return {"error": str(e)}
 
     return result
 
