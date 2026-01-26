@@ -80,10 +80,10 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [reviewStep, setReviewStep] = useState<ReviewStep>('confirming_shot')
 
   // Trajectory configuration defaults (used for auto-generation)
-  const [startingLine] = useState<'left' | 'center' | 'right'>('center')
-  const [shotShape] = useState<'hook' | 'draw' | 'straight' | 'fade' | 'slice'>('straight')
-  const [shotHeight] = useState<'low' | 'medium' | 'high'>('medium')
-  const [flightTime] = useState<number>(3.0)
+  const STARTING_LINE = 'center' as const
+  const SHOT_SHAPE = 'straight' as const
+  const SHOT_HEIGHT = 'medium' as const
+  const FLIGHT_TIME = 3.0
 
   // Zoom state
   const [zoomLevel, setZoomLevel] = useState(1)
@@ -348,9 +348,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     try {
       // Mark as approved (confidence = 1.0)
-      console.log('Accepting shot', currentShot.id, '- setting confidence to 1.0')
       updateShot(currentShot.id, { confidence: 1.0 })
-      console.log('After updateShot, store state:', useAppStore.getState().shots.map(s => ({ id: s.id, confidence: s.confidence })))
 
       // Send update to server
       const response = await fetch(`http://127.0.0.1:8420/api/shots/${jobId}/update`, {
@@ -428,7 +426,6 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     try {
       // Get fresh state from store (shots variable may be stale from render cycle)
       const currentShots = useAppStore.getState().shots
-      console.log('Export - all shots:', currentShots.map(s => ({ id: s.id, confidence: s.confidence })))
       const approvedClips = currentShots
         .filter((s) => s.confidence >= 0.7)
         .map((s) => ({
@@ -437,7 +434,6 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           end_time: s.clip_end,
           approved: true,
         }))
-      console.log('Export - approved clips:', approvedClips)
 
       const outputDir = videoPath.replace(/\.[^.]+$/, '_clips')
 
@@ -628,10 +624,10 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setEarlyDetectionStats(null)
 
     const params = new URLSearchParams({
-      starting_line: startingLine,
-      shot_shape: shotShape,
-      shot_height: shotHeight,
-      flight_time: flightTime.toString(),
+      starting_line: STARTING_LINE,
+      shot_shape: SHOT_SHAPE,
+      shot_height: SHOT_HEIGHT,
+      flight_time: FLIGHT_TIME.toString(),
       landing_x: landingPoint.x.toString(),
       landing_y: landingPoint.y.toString(),
     })
@@ -703,7 +699,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       eventSource.close()
       eventSourceRef.current = null
     }
-  }, [jobId, currentShot?.id, landingPoint, startingLine, shotShape, shotHeight, flightTime])
+  }, [jobId, currentShot?.id, landingPoint])
 
   // Auto-trigger trajectory generation when landing is marked
   useEffect(() => {

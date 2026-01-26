@@ -390,26 +390,9 @@ export function TrajectoryEditor({
     }
   }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, videoRef])
 
-  // Find closest point to a normalized position
-  // NOTE: Temporarily disabled - dragging feature moved to backlog
-  // Keeping the function definition for future use when dragging is re-enabled
-  // const findClosestPoint = useCallback((x: number, y: number): number => {
-  //   const visiblePoints = localPoints.filter(p => p.timestamp <= currentTime)
-  //   let closestIdx = -1
-  //   let closestDist = Infinity
-  //
-  //   for (let i = 0; i < visiblePoints.length; i++) {
-  //     const pt = visiblePoints[i]
-  //     const dist = Math.sqrt((pt.x - x) ** 2 + (pt.y - y) ** 2)
-  //     if (dist < 0.03 && dist < closestDist) { // 3% threshold
-  //       closestDist = dist
-  //       closestIdx = localPoints.indexOf(pt)
-  //     }
-  //   }
-  //   return closestIdx
-  // }, [localPoints, currentTime])
-  void currentTime  // suppress unused warning - kept for future drag feature
-  void onTrajectoryUpdate  // suppress unused warning - kept for API compatibility
+  // Suppress unused parameter warnings - kept for API compatibility
+  void currentTime
+  void onTrajectoryUpdate
 
   // Pointer handlers - dragging disabled for now to allow marker placement
   // TODO: Add tracer point dragging to backlog as optional feature
