@@ -73,7 +73,6 @@ export function PointStatusTracker({
         status={apexStatus}
         icon="◇"
         point={apexPoint}
-        isOptional
         onClear={() => onClearPoint('apex')}
         onClick={() => onSelectStep('apex')}
       />
@@ -96,7 +95,6 @@ interface StatusItemProps {
   status: StatusState
   icon: string
   point?: { x: number; y: number } | null
-  isOptional?: boolean
   isAction?: boolean
   onClear?: () => void
   onClick?: () => void
@@ -107,7 +105,6 @@ function StatusItem({
   status,
   icon,
   point,
-  isOptional,
   isAction,
   onClear,
   onClick,
@@ -129,7 +126,6 @@ function StatusItem({
       <div className="status-icon">{status === 'complete' ? '✓' : icon}</div>
       <div className="status-label">
         {label}
-        {isOptional && <span className="optional-tag">optional</span>}
       </div>
       {point && onClear && !isAction && (
         <button

@@ -50,11 +50,17 @@ def classify_ball_color(hue: int, saturation: int, value: int) -> ColorFamily:
         ColorFamily enum value
     """
     # White ball: low saturation, high value
-    if saturation < 30 and value > 150:
+    # Expanded thresholds to catch more white balls in varied lighting
+    if saturation < 50 and value > 140:
         return ColorFamily.WHITE
 
     # Gray/silver ball: low saturation, medium value - treat as white family
-    if saturation < 40 and 80 < value <= 150:
+    # Also catches white balls in shadows or motion blur
+    if saturation < 60 and 70 < value <= 140:
+        return ColorFamily.WHITE
+
+    # Very bright pixels (overexposed) - likely white ball highlights
+    if value > 220 and saturation < 80:
         return ColorFamily.WHITE
 
     # Colored balls: classify by hue (OpenCV uses 0-180 range)
@@ -170,32 +176,56 @@ def compute_color_match_score(
     h, s, v = pixel_hsv
 
     # Adaptive tolerance - widens as ball gets farther
-    time_factor = 1.0 + elapsed_sec * 0.5  # 1.0 → 1.25 over 0.5s
+    # More aggressive widening for early frames where detection is critical
+    time_factor = 1.0 + elapsed_sec * 0.8  # 1.0 → 1.4 over 0.5s
 
     # Base tolerances
-    hue_tolerance = 20 * time_factor
-    sat_tolerance = 100 * time_factor  # 40% of 255
-    val_tolerance = 127 * time_factor  # 50% of 255
+    hue_tolerance = 25 * time_factor
+    sat_tolerance = 120 * time_factor  # ~47% of 255
+    val_tolerance = 140 * time_factor  # ~55% of 255
 
-    # Special handling for white balls
+    # Special handling for white balls - MUCH more permissive
     if template.family == ColorFamily.WHITE:
-        # White balls: low saturation, variable value
-        # Can get darker (shadows) but shouldn't get more saturated
+        # White balls in flight can appear:
+        # - Very bright (overexposed)
+        # - Slightly gray (motion blur)
+        # - Slightly tinted (sky reflection)
+        # - Darker (shadows)
 
-        # Reject if too saturated (can't be white)
-        max_sat = 50 * time_factor
+        # More permissive saturation threshold for white balls
+        # Motion blur can add slight color tint
+        max_sat = 80 * time_factor
         if s > max_sat:
-            return 0.0
+            # Still give partial score for slightly saturated pixels
+            # (could be sky reflection or motion blur)
+            sat_penalty = (s - max_sat) / 100
+            if sat_penalty > 0.5:
+                return 0.0
+            return max(0.0, 0.3 - sat_penalty)
 
-        # Score based on value similarity
+        # Score based on value similarity with wider tolerance
         val_diff = abs(v - template.value)
-        score = max(0.0, 1.0 - (val_diff / val_tolerance))
 
-        # Bonus for low saturation
+        # Very bright pixels (v > 200) get bonus - likely the ball highlight
+        if v > 200:
+            score = 0.9
+        elif v > 150:
+            # Good brightness range for white ball
+            score = max(0.0, 1.0 - (val_diff / (val_tolerance * 1.2)))
+        else:
+            # Darker - could be shadowed ball or false positive
+            score = max(0.0, 0.8 - (val_diff / val_tolerance))
+
+        # Bonus for low saturation (more "white")
         sat_score = max(0.0, 1.0 - (s / max_sat))
-        score = 0.7 * score + 0.3 * sat_score
+        score = 0.6 * score + 0.4 * sat_score
 
-        return score
+        # Minimum score floor for anything reasonably bright and unsaturated
+        # This helps catch white balls that don't perfectly match template
+        if v > 130 and s < 60:
+            score = max(score, 0.5)
+
+        return min(1.0, score)
 
     # Colored balls: match on hue primarily
     # Hue wraps around at 180, so handle that

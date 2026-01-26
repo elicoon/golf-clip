@@ -24,15 +24,46 @@ interface TrajectoryEditorProps {
   targetPoint?: { x: number; y: number } | null
   apexPoint?: { x: number; y: number } | null
   onCanvasClick?: (x: number, y: number) => void
+  markingStep?: 'target' | 'landing' | 'apex' | 'configure'
+}
+
+// Custom cursor SVGs for marker placement
+// Target cursor: crosshair with circle (⊕)
+const targetCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <circle cx="16" cy="16" r="10" fill="none" stroke="white" stroke-width="2"/>
+  <line x1="16" y1="2" x2="16" y2="10" stroke="white" stroke-width="2"/>
+  <line x1="16" y1="22" x2="16" y2="30" stroke="white" stroke-width="2"/>
+  <line x1="2" y1="16" x2="10" y2="16" stroke="white" stroke-width="2"/>
+  <line x1="22" y1="16" x2="30" y2="16" stroke="white" stroke-width="2"/>
+  <circle cx="16" cy="16" r="10" fill="none" stroke="black" stroke-width="1" stroke-opacity="0.5"/>
+</svg>`
+
+// Landing cursor: downward arrow (↓)
+const landingCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <polygon points="16,28 8,16 12,16 12,4 20,4 20,16 24,16" fill="white" stroke="black" stroke-width="1"/>
+</svg>`
+
+// Apex cursor: diamond (◇)
+const apexCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <polygon points="16,2 30,16 16,30 2,16" fill="#ffd700" stroke="white" stroke-width="2"/>
+  <polygon points="16,2 30,16 16,30 2,16" fill="none" stroke="black" stroke-width="1" stroke-opacity="0.3"/>
+</svg>`
+
+// Convert SVG to data URI for cursor
+const svgToCursor = (svg: string, hotspotX: number = 16, hotspotY: number = 16): string => {
+  const encoded = encodeURIComponent(svg)
+  return `url("data:image/svg+xml,${encoded}") ${hotspotX} ${hotspotY}, crosshair`
 }
 
 // Check if canvas filter is supported (Safari < 15.4 doesn't support it)
-const supportsFilter = (() => {
+// Note: This variable is intentionally unused but kept for future Safari compatibility
+const _supportsFilter = (() => {
   if (typeof document === 'undefined') return false
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
   return ctx && 'filter' in ctx
 })()
+void _supportsFilter // suppress unused warning
 
 export function TrajectoryEditor({
   videoRef,
@@ -45,11 +76,14 @@ export function TrajectoryEditor({
   targetPoint,
   apexPoint,
   onCanvasClick,
+  markingStep = 'configure',
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
-  const [draggingPoint, setDraggingPoint] = useState<number | null>(null)
-  const [hoveredPoint, setHoveredPoint] = useState<number | null>(null)
+  // Dragging disabled - state not used for now
+  // const [draggingPoint, setDraggingPoint] = useState<number | null>(null)
+  // Hover effect disabled - dragging not supported for now
+  // const [hoveredPoint, setHoveredPoint] = useState<number | null>(null)
   const [localPoints, setLocalPoints] = useState<TrajectoryPoint[]>([])
 
   // Sync local points with trajectory prop
@@ -119,10 +153,6 @@ export function TrajectoryEditor({
     }
     const totalPathLength = pathLengths[pathLengths.length - 1]
 
-    // Easing functions for realistic motion
-    const easeOutQuart = (t: number) => 1 - Math.pow(1 - t, 4)
-    const easeInOutQuad = (t: number) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
-
     // Convert time ratio to display progress using golf ball physics
     // Based on research: ball covers most distance early (high velocity), slows before apex,
     // then descends at near-constant speed (drag limits acceleration, terminal velocity ~72mph)
@@ -132,41 +162,46 @@ export function TrajectoryEditor({
     // - Covers ~45% of path in first 25% of time (peak velocity phase)
     // - Apex around 50-55% of time, ~55% of path distance
     // - Descent is nearly linear (terminal velocity limited, no real acceleration)
+    //
+    // Uses a single continuous curve (modified Bezier) to avoid abrupt transitions
     const timeToProgress = (t: number): number => {
       if (t <= 0) return 0
       if (t >= 1) return 1
 
-      // Stage 1: Fast initial burst - ball at peak velocity (160+ mph)
-      // Cover ~45% of path in first 25% of time
-      const stage1EndTime = 0.25
-      const stage1EndProgress = 0.45
+      // Single continuous easing function using a custom curve
+      // This avoids the jarring transition between discrete stages
+      //
+      // The curve is designed to:
+      // - Start fast (explosive launch)
+      // - Smoothly decelerate approaching apex (~50% time)
+      // - Nearly linear descent after apex
+      //
+      // We use a combination of easing functions blended by a smoothstep
+      // to create one continuous curve
 
-      // Stage 2: Gradual deceleration approaching apex
-      // The ball is slowing down significantly due to drag + gravity
-      const stage2EndTime = 0.50
-      const stage2EndProgress = 0.55
+      // Use a monotonic easing function that:
+      // - Has fast early progress (ease-out character)
+      // - Gradually decelerates without abrupt transitions
+      // - Never goes backwards (guaranteed monotonic)
+      //
+      // We blend easeOutCubic with linear using a smooth transition
+      // Both curves are monotonic, and linear >= cubic at all points,
+      // so any blend is also monotonic.
 
-      // Stage 3: Near-linear descent
-      // Ball doesn't accelerate much due to drag (terminal velocity ~72mph)
-      // Nearly constant speed through descent
+      // easeOutCubic: fast start, slowing down
+      const easeOut = 1 - Math.pow(1 - t, 3)
 
-      if (t <= stage1EndTime) {
-        // Fast ascent - easeOutQuart for explosive start that naturally decelerates
-        const localT = t / stage1EndTime
-        return stage1EndProgress * easeOutQuart(localT)
-      } else if (t <= stage2EndTime) {
-        // Approaching apex - smooth transition, ball decelerating
-        const localT = (t - stage1EndTime) / (stage2EndTime - stage1EndTime)
-        return stage1EndProgress + (stage2EndProgress - stage1EndProgress) * easeInOutQuad(localT)
-      } else {
-        // Descent - nearly linear (drag prevents acceleration)
-        // Small ease-out at very end for smooth landing
-        const localT = (t - stage2EndTime) / (1 - stage2EndTime)
-        // Linear with very subtle ease-out: 90% linear + 10% ease
-        const linearPart = localT * 0.9
-        const easePart = (1 - Math.pow(1 - localT, 2)) * 0.1
-        return stage2EndProgress + (1 - stage2EndProgress) * (linearPart + easePart)
-      }
+      // Linear component
+      const linear = t
+
+      // Blend from easeOut (early) toward more linear (late)
+      // Use smooth blend that transitions from 70% easeOut to 30% easeOut
+      const easeWeight = 0.7 - 0.4 * t  // Goes from 0.7 at t=0 to 0.3 at t=1
+
+      // Combined progress (weighted average)
+      const progress = easeOut * easeWeight + linear * (1 - easeWeight)
+
+      return Math.min(1, Math.max(0, progress))
     }
 
     // Helper to convert normalized coords to canvas coords
@@ -344,7 +379,8 @@ export function TrajectoryEditor({
 
       // Calculate target distance in pixels for sub-pixel precision check
       const targetDistance = displayProgress * totalPathLength
-      const targetPixelDistance = targetDistance * canvasSize.width  // Approximate pixel distance
+      // Note: targetPixelDistance kept for potential future sub-pixel precision optimization
+      void (targetDistance * canvasSize.width) // suppress unused warning
 
       // Find which segment contains the target distance and interpolate
       let endPointIndex = localPoints.length - 1
@@ -439,105 +475,78 @@ export function TrajectoryEditor({
   }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, targetPoint, apexPoint, videoRef])
 
   // Find closest point to a normalized position
-  const findClosestPoint = useCallback((x: number, y: number): number => {
-    const visiblePoints = localPoints.filter(p => p.timestamp <= currentTime)
-    let closestIdx = -1
-    let closestDist = Infinity
+  // NOTE: Temporarily disabled - dragging feature moved to backlog
+  // Keeping the function definition for future use when dragging is re-enabled
+  // const findClosestPoint = useCallback((x: number, y: number): number => {
+  //   const visiblePoints = localPoints.filter(p => p.timestamp <= currentTime)
+  //   let closestIdx = -1
+  //   let closestDist = Infinity
+  //
+  //   for (let i = 0; i < visiblePoints.length; i++) {
+  //     const pt = visiblePoints[i]
+  //     const dist = Math.sqrt((pt.x - x) ** 2 + (pt.y - y) ** 2)
+  //     if (dist < 0.03 && dist < closestDist) { // 3% threshold
+  //       closestDist = dist
+  //       closestIdx = localPoints.indexOf(pt)
+  //     }
+  //   }
+  //   return closestIdx
+  // }, [localPoints, currentTime])
+  void currentTime  // suppress unused warning - kept for future drag feature
+  void onTrajectoryUpdate  // suppress unused warning - kept for API compatibility
 
-    for (let i = 0; i < visiblePoints.length; i++) {
-      const pt = visiblePoints[i]
-      const dist = Math.sqrt((pt.x - x) ** 2 + (pt.y - y) ** 2)
-      if (dist < 0.03 && dist < closestDist) { // 3% threshold
-        closestDist = dist
-        closestIdx = localPoints.indexOf(pt)
-      }
-    }
-    return closestIdx
-  }, [localPoints, currentTime])
+  // Pointer handlers - dragging disabled for now to allow marker placement
+  // TODO: Add tracer point dragging to backlog as optional feature
+  const handlePointerDown = useCallback((_e: React.PointerEvent) => {
+    // Dragging disabled - all clicks pass through to parent for marker placement
+    // This ensures users can always place target/landing/apex markers
+  }, [])
 
-  // Pointer handlers for point dragging (supports both mouse and touch)
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (disabled || !canvasRef.current) return
+  const handlePointerMove = useCallback((_e: React.PointerEvent) => {
+    // Dragging disabled - no hover effects needed
+    // All pointer events pass through to parent for marker placement
+  }, [])
 
-    const canvas = canvasRef.current
-    const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX - rect.left) / rect.width
-    const y = (e.clientY - rect.top) / rect.height
-
-    const closestIdx = findClosestPoint(x, y)
-
-    if (closestIdx >= 0) {
-      // Dragging an existing trajectory point
-      setDraggingPoint(closestIdx)
-      canvas.setPointerCapture(e.pointerId)
-      e.stopPropagation()  // Only stop propagation when we're handling it
-    }
-    // If no point found, let the event bubble up to parent (for landing/target marking)
-  }, [disabled, findClosestPoint])
-
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!canvasRef.current) return
-
-    const canvas = canvasRef.current
-    const rect = canvas.getBoundingClientRect()
-    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
-
-    if (draggingPoint !== null) {
-      // Dragging a point
-      setLocalPoints(prev => {
-        const updated = [...prev]
-        updated[draggingPoint] = {
-          ...updated[draggingPoint],
-          x,
-          y,
-          interpolated: false, // Manual edit
-        }
-        return updated
-      })
-    } else if (!disabled) {
-      // Just hovering - find closest point for hover effect
-      const closestIdx = findClosestPoint(x, y)
-      setHoveredPoint(closestIdx >= 0 ? closestIdx : null)
-    }
-  }, [draggingPoint, disabled, findClosestPoint])
-
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    if (canvasRef.current) {
-      canvasRef.current.releasePointerCapture(e.pointerId)
-    }
-    if (draggingPoint !== null) {
-      setDraggingPoint(null)
-      onTrajectoryUpdate?.(localPoints)
-    }
-  }, [draggingPoint, localPoints, onTrajectoryUpdate])
+  const handlePointerUp = useCallback((_e: React.PointerEvent) => {
+    // Dragging disabled - nothing to do on pointer up
+  }, [])
 
   const handlePointerLeave = useCallback(() => {
-    setHoveredPoint(null)
+    // Hover effect disabled - nothing to clear
   }, [])
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (disabled || !canvasRef.current || !onCanvasClick) return
 
-    // Only fire if not dragging a point
-    if (draggingPoint !== null) return
+    // Dragging disabled - all clicks pass through for marker placement
 
     const canvas = canvasRef.current
     const rect = canvas.getBoundingClientRect()
     const x = (e.clientX - rect.left) / rect.width
     const y = (e.clientY - rect.top) / rect.height
 
-    // Check if clicking near an existing trajectory point
-    const closestIdx = findClosestPoint(x, y)
-    if (closestIdx >= 0) return  // Don't trigger if near a draggable point
-
+    // All clicks trigger marker placement (tracer is not selectable for now)
     onCanvasClick(
       Math.max(0, Math.min(1, x)),
       Math.max(0, Math.min(1, y))
     )
-  }, [disabled, onCanvasClick, draggingPoint, findClosestPoint])
+  }, [disabled, onCanvasClick])
 
   if (!showTracer) return null
+
+  // Get cursor based on marking step
+  const getCursor = () => {
+    switch (markingStep) {
+      case 'target':
+        return svgToCursor(targetCursorSvg, 16, 16)
+      case 'landing':
+        return svgToCursor(landingCursorSvg, 16, 28)  // Hotspot at arrow tip
+      case 'apex':
+        return svgToCursor(apexCursorSvg, 16, 16)
+      default:
+        return 'crosshair'
+    }
+  }
 
   return (
     <canvas
@@ -555,7 +564,7 @@ export function TrajectoryEditor({
         width: canvasSize.width || '100%',
         height: canvasSize.height || '100%',
         pointerEvents: disabled ? 'none' : 'auto',
-        cursor: draggingPoint !== null ? 'grabbing' : (hoveredPoint !== null ? 'grab' : 'crosshair'),
+        cursor: getCursor(),
         touchAction: 'none', // Prevent scroll/zoom while interacting
         zIndex: 10,
         filter: 'none',

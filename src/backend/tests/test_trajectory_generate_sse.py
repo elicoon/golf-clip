@@ -172,6 +172,7 @@ def test_generate_trajectory_sse_full_flow():
                 # Patch at the source modules since imports are inside the function
                 with patch("backend.detection.origin.BallOriginDetector") as MockOriginDetector, \
                      patch("backend.detection.tracker.ConstrainedBallTracker") as MockTracker, \
+                     patch("backend.detection.early_tracker.EarlyBallTracker") as MockEarlyTracker, \
                      patch("backend.core.video.get_video_info") as mock_video_info:
 
                     mock_video_info.return_value = {"width": 1920, "height": 1080, "fps": 60}
@@ -181,8 +182,13 @@ def test_generate_trajectory_sse_full_flow():
                     MockOriginDetector.return_value = mock_origin_instance
 
                     mock_tracker_instance = MagicMock()
-                    mock_tracker_instance.track_with_landing_point.return_value = mock_trajectory
+                    mock_tracker_instance.generate_configured_trajectory.return_value = mock_trajectory
                     MockTracker.return_value = mock_tracker_instance
+
+                    # Mock early tracker to return empty detections list
+                    mock_early_instance = MagicMock()
+                    mock_early_instance.detect.return_value = []
+                    MockEarlyTracker.return_value = mock_early_instance
 
                     from backend.main import app
                     client = TestClient(app)
@@ -347,6 +353,7 @@ def test_generate_trajectory_sse_low_origin_confidence_warning():
                 # Patch at the source modules since imports are inside the function
                 with patch("backend.detection.origin.BallOriginDetector") as MockOriginDetector, \
                      patch("backend.detection.tracker.ConstrainedBallTracker") as MockTracker, \
+                     patch("backend.detection.early_tracker.EarlyBallTracker") as MockEarlyTracker, \
                      patch("backend.core.video.get_video_info") as mock_video_info:
 
                     mock_video_info.return_value = {"width": 1920, "height": 1080, "fps": 60}
@@ -356,8 +363,13 @@ def test_generate_trajectory_sse_low_origin_confidence_warning():
                     MockOriginDetector.return_value = mock_origin_instance
 
                     mock_tracker_instance = MagicMock()
-                    mock_tracker_instance.track_with_landing_point.return_value = mock_trajectory
+                    mock_tracker_instance.generate_configured_trajectory.return_value = mock_trajectory
                     MockTracker.return_value = mock_tracker_instance
+
+                    # Mock early tracker to return empty detections list
+                    mock_early_instance = MagicMock()
+                    mock_early_instance.detect.return_value = []
+                    MockEarlyTracker.return_value = mock_early_instance
 
                     from backend.main import app
                     client = TestClient(app)

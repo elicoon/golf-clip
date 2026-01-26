@@ -112,9 +112,9 @@ For each detected shot, you'll review and optionally adjust the clip boundaries.
 │                                                             │
 │  Review Shot #1                              1 of 3         │
 │                                                             │
-│  ┌──────────┐                        ┌──────────────────┐   │
-│  │Skip Shot │ ◄── SKIP              │    Next →        │   │
-│  └──────────┘     (false positive)   └──────────────────┘   │
+│  ┌──────────────┐                    ┌──────────────────┐   │
+│  │No golf shot  │ ◄── SKIP          │    Next →        │   │
+│  └──────────────┘   (false positive) └──────────────────┘   │
 │                                       ▲                     │
 │  ┌─────────────────────────────────┐  │  ACCEPT (requires   │
 │  │ Step 1                          │  │  trajectory setup)  │
@@ -151,10 +151,11 @@ For each detected shot, you'll review and optionally adjust the clip boundaries.
 
 | Element | Location | Purpose |
 |---------|----------|---------|
-| **Skip Shot** | Top left | Mark as false positive, don't export |
+| **No golf shot** | Top left | Mark as false positive, don't export |
 | **Next →** | Top right | Accept shot (enabled after trajectory setup) |
 | **Instruction Banner** | Below buttons | Shows current step (1, 2, or 3) |
 | **Video Player** | Center | Click to mark target/landing points |
+| **Zoom Controls** | Above video | Zoom in/out for precise marking |
 | **Timeline Scrubber** | Below video | Drag handles to adjust clip boundaries |
 | **Playback Controls** | Below timeline | Play, pause, step frame |
 | **Confidence Badge** | Bottom | Detection confidence (green/yellow/red) |
@@ -166,8 +167,10 @@ For each detected shot, you'll review and optionally adjust the clip boundaries.
 | `Space` | Play/Pause |
 | `←` / `→` | Step one frame |
 | `[` / `]` | Set clip start/end |
+| `+` / `-` | Zoom in/out |
+| `0` | Reset zoom |
 | `Enter` | Next (accept) |
-| `Esc` | Skip |
+| `Esc` | Skip (no golf shot) |
 
 ---
 
@@ -323,9 +326,9 @@ After reviewing all shots, your clips are ready to export.
 │                                                             │
 │  Review Shot #1                              1 of 3         │
 │                                                             │
-│  ┌──────────┐                        ┌──────────────────┐   │
-│  │Skip Shot │                        │    Next →        │   │
-│  └──────────┘                        └──────────────────┘   │
+│  ┌──────────────┐                    ┌──────────────────┐   │
+│  │No golf shot  │                    │    Next →        │   │
+│  └──────────────┘                    └──────────────────┘   │
 │                                              ▲               │
 │                                         CLICK THIS          │
 │                                         (now enabled!)      │
@@ -471,5 +474,7 @@ Replace ASCII art with images:
 | `Shift+→` | Forward 1 second |
 | `[` | Set clip start |
 | `]` | Set clip end |
+| `+` / `-` | Zoom in/out |
+| `0` | Reset zoom |
 | `Enter` | Accept shot |
-| `Esc` | Skip shot |
+| `Esc` | No golf shot (skip) |

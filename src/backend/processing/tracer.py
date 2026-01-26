@@ -446,10 +446,22 @@ class TracerExporter:
         self,
         video_path: Path,
         style: Optional[TracerStyle] = None,
+        two_pass: bool = False,
+        video_bitrate: str = "5M",
     ):
+        """Initialize TracerExporter.
+
+        Args:
+            video_path: Path to source video
+            style: Optional tracer style configuration
+            two_pass: Whether to use two-pass encoding for better quality
+            video_bitrate: Target bitrate for two-pass encoding (e.g., "5M", "8000k")
+        """
         self.video_path = Path(video_path)
         self.renderer = TracerRenderer(style)
         self.style = style or TracerStyle()
+        self.two_pass = two_pass
+        self.video_bitrate = video_bitrate
 
     def export_with_tracer(
         self,
@@ -561,10 +573,31 @@ class TracerExporter:
         start_time: float,
         end_time: float,
     ) -> None:
-        """Add audio from original video to the tracer video."""
+        """Add audio from original video to the tracer video.
+
+        Supports both single-pass (CRF-based) and two-pass (bitrate-based) encoding.
+        """
+        import os
+        import shutil
         import subprocess
 
         duration = end_time - start_time
+
+        if self.two_pass:
+            self._add_audio_two_pass(video_path, output_path, start_time, duration)
+        else:
+            self._add_audio_single_pass(video_path, output_path, start_time, duration)
+
+    def _add_audio_single_pass(
+        self,
+        video_path: str,
+        output_path: Path,
+        start_time: float,
+        duration: float,
+    ) -> None:
+        """Add audio using single-pass CRF encoding."""
+        import shutil
+        import subprocess
 
         cmd = [
             "ffmpeg",
@@ -588,5 +621,80 @@ class TracerExporter:
         except subprocess.CalledProcessError as e:
             logger.warning(f"Failed to add audio: {e.stderr.decode() if e.stderr else e}")
             # Fall back to video without audio
-            import shutil
             shutil.copy(video_path, output_path)
+
+    def _add_audio_two_pass(
+        self,
+        video_path: str,
+        output_path: Path,
+        start_time: float,
+        duration: float,
+    ) -> None:
+        """Add audio using two-pass bitrate-based encoding for better quality."""
+        import os
+        import shutil
+        import subprocess
+
+        # Create temp directory for passlog files
+        passlog_dir = tempfile.mkdtemp(prefix="golfclip_tracer_passlog_")
+        passlog_prefix = os.path.join(passlog_dir, "ffmpeg2pass")
+        null_output = "/dev/null" if os.name != "nt" else "NUL"
+
+        try:
+            logger.info(f"Starting two-pass encoding for tracer (bitrate: {self.video_bitrate})")
+
+            # Pass 1: Analysis
+            pass1_cmd = [
+                "ffmpeg",
+                "-y",
+                "-i", video_path,  # Video with tracer
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-b:v", self.video_bitrate,
+                "-pass", "1",
+                "-passlogfile", passlog_prefix,
+                "-an",  # No audio in pass 1
+                "-f", "null",
+                null_output,
+            ]
+
+            subprocess.run(pass1_cmd, check=True, capture_output=True)
+
+            # Pass 2: Encode with audio
+            pass2_cmd = [
+                "ffmpeg",
+                "-y",
+                "-i", video_path,  # Video with tracer (no audio)
+                "-ss", str(start_time),
+                "-t", str(duration),
+                "-i", str(self.video_path),  # Original video (for audio)
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-b:v", self.video_bitrate,
+                "-pass", "2",
+                "-passlogfile", passlog_prefix,
+                "-c:a", "aac",
+                "-map", "0:v:0",
+                "-map", "1:a:0?",
+                "-shortest",
+                "-movflags", "+faststart",
+                str(output_path),
+            ]
+
+            subprocess.run(pass2_cmd, check=True, capture_output=True)
+
+            logger.info(f"Two-pass encoding complete for tracer: {output_path}")
+
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Two-pass encoding failed: {e.stderr.decode() if e.stderr else e}")
+            # Fall back to single-pass
+            logger.info("Falling back to single-pass encoding")
+            self._add_audio_single_pass(video_path, output_path, start_time, duration)
+
+        finally:
+            # Clean up passlog files
+            try:
+                shutil.rmtree(passlog_dir)
+                logger.debug(f"Cleaned up passlog directory: {passlog_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up passlog directory: {e}")

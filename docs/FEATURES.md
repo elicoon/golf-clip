@@ -61,7 +61,7 @@ export GOLFCLIP_MIN_STRIKE_INTERVAL=25
 
 **False positives (non-shots detected):**
 - Common causes: club drops, cart sounds, other sharp noises
-- Solution: Mark as "Skip Shot" during review
+- Solution: Mark as "No golf shot" during review
 
 ---
 
@@ -222,6 +222,8 @@ The review interface lets you verify detected shots, adjust clip boundaries, and
 - Streams video from backend via Range requests (supports seeking)
 - Canvas overlay for trajectory rendering
 - Click-to-mark functionality for target/landing points
+- Zoom controls (1x-4x) for precise marker placement
+- Pan support when zoomed in
 
 **Timeline Scrubber**
 - Draggable start/end handles
@@ -250,8 +252,10 @@ The review interface lets you verify detected shots, adjust clip boundaries, and
 | Shift+→ | Forward 1 second |
 | [ | Set start to current time |
 | ] | Set end to current time |
+| + / - | Zoom in/out |
+| 0 | Reset zoom |
 | Enter | Accept shot |
-| Esc | Skip shot |
+| Esc | No golf shot (skip) |
 
 ### State Management
 

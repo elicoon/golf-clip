@@ -58,6 +58,10 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [exportWithTracer, setExportWithTracer] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
 
+  // Auto-loop state
+  const [autoLoopEnabled, setAutoLoopEnabled] = useState(true)
+  const loopPauseTimeoutRef = useRef<number | null>(null)
+
   // Landing point marking state
   const [landingPoint, setLandingPoint] = useState<{x: number, y: number} | null>(null)
   const [trajectoryProgress, setTrajectoryProgress] = useState<number | null>(null)
@@ -71,6 +75,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   // Apex point marking state (optional)
   const [apexPoint, setApexPoint] = useState<{x: number, y: number} | null>(null)
 
+  // Debug: early detection stats for debug counter display
+  const [earlyDetectionStats, setEarlyDetectionStats] = useState<{frames_analyzed: number, frames_with_ball: number} | null>(null)
+
   // Marking step: 'target' -> 'landing' -> 'apex' -> 'configure'
   type MarkingStep = 'target' | 'landing' | 'apex' | 'configure'
   const [markingStep, setMarkingStep] = useState<MarkingStep>('target')
@@ -81,9 +88,17 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [shotHeight, setShotHeight] = useState<'low' | 'medium' | 'high'>('medium')
   const [flightTime, setFlightTime] = useState<number>(3.0)
 
+  // Zoom state
+  const [zoomLevel, setZoomLevel] = useState(1)
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const panStartRef = useRef({ x: 0, y: 0, offsetX: 0, offsetY: 0 })
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Track generation ID to prevent stale EventSource callbacks from updating state
+  const generationIdRef = useRef(0)
 
   // Filter to shots needing review (confidence < 70%)
   const shotsNeedingReview = shots.filter((s) => s.confidence < 0.7)
@@ -124,6 +139,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setTrajectoryMessage('')
     setDetectionWarnings([])
     setTrajectoryError(null)
+    // Reset zoom when shot changes
+    setZoomLevel(1)
+    setPanOffset({ x: 0, y: 0 })
   }, [currentShot?.id])
 
   // Cleanup EventSource on unmount
@@ -137,7 +155,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
   // NOTE: Removed auto-regeneration on config change - user must click Generate button
 
-  // Track current video time for trajectory rendering and enforce clip boundaries
+  // Track current video time for trajectory rendering and enforce clip boundaries with auto-loop
   useEffect(() => {
     const video = videoRef.current
     if (!video || !currentShot) return
@@ -145,17 +163,59 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     const handleTimeUpdate = () => {
       setCurrentTime(video.currentTime)
 
-      // Stop playback when reaching clip end
+      // When reaching clip end, pause briefly then restart (auto-loop)
       if (video.currentTime >= currentShot.clip_end && !video.paused) {
         video.pause()
-        video.currentTime = currentShot.clip_end
         setIsPlaying(false)
+
+        if (autoLoopEnabled) {
+          // Clear any existing timeout
+          if (loopPauseTimeoutRef.current) {
+            clearTimeout(loopPauseTimeoutRef.current)
+          }
+
+          // Pause for 750ms, then restart from clip start
+          loopPauseTimeoutRef.current = window.setTimeout(() => {
+            if (videoRef.current && autoLoopEnabled) {
+              videoRef.current.currentTime = currentShot.clip_start
+              videoRef.current.play().catch(() => {
+                // Autoplay may be blocked, ignore
+              })
+              setIsPlaying(true)
+            }
+          }, 750)
+        }
       }
     }
 
     video.addEventListener('timeupdate', handleTimeUpdate)
-    return () => video.removeEventListener('timeupdate', handleTimeUpdate)
-  }, [currentShot])
+    return () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate)
+      // Cleanup timeout on unmount
+      if (loopPauseTimeoutRef.current) {
+        clearTimeout(loopPauseTimeoutRef.current)
+      }
+    }
+  }, [currentShot, autoLoopEnabled])
+
+  // Auto-play clip when video is loaded and shot changes
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !videoLoaded || !currentShot || !autoLoopEnabled) return
+
+    // Small delay to ensure video is ready
+    const startAutoPlay = setTimeout(() => {
+      if (videoRef.current && autoLoopEnabled) {
+        videoRef.current.currentTime = currentShot.clip_start
+        videoRef.current.play().catch(() => {
+          // Autoplay may be blocked by browser policy, ignore
+        })
+        setIsPlaying(true)
+      }
+    }, 100)
+
+    return () => clearTimeout(startAutoPlay)
+  }, [videoLoaded, currentShot?.id, autoLoopEnabled])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -232,6 +292,20 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
               handleTimeUpdate(currentShot.clip_start, newEnd)
             }
           }
+          break
+        case '+':
+        case '=':
+          e.preventDefault()
+          handleZoomIn()
+          break
+        case '-':
+        case '_':
+          e.preventDefault()
+          handleZoomOut()
+          break
+        case '0':
+          e.preventDefault()
+          handleZoomReset()
           break
       }
     }
@@ -451,72 +525,68 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
   }, [])
 
-  const generateTrajectorySSE = useCallback((landingX: number, landingY: number) => {
-    // Cancel previous connection if any
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close()
-    }
+  // Zoom handlers
+  const ZOOM_MIN = 1
+  const ZOOM_MAX = 4
+  const ZOOM_STEP = 0.5
 
-    setTrajectoryProgress(0)
-    setTrajectoryMessage('Starting...')
-    setDetectionWarnings([])
-    setTrajectoryError(null)
+  const handleZoomIn = useCallback(() => {
+    setZoomLevel(prev => Math.min(ZOOM_MAX, prev + ZOOM_STEP))
+  }, [])
 
-    const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot?.id}/generate?landing_x=${landingX}&landing_y=${landingY}`
-    const eventSource = new EventSource(url)
-    eventSourceRef.current = eventSource
-
-    eventSource.addEventListener('progress', (e) => {
-      const data = JSON.parse(e.data)
-      setTrajectoryProgress(data.progress)
-      setTrajectoryMessage(data.message || '')
-    })
-
-    eventSource.addEventListener('warning', (e) => {
-      const data = JSON.parse(e.data)
-      setDetectionWarnings(prev => [...prev, data.message])
-    })
-
-    eventSource.addEventListener('complete', (e) => {
-      const data = JSON.parse(e.data)
-      setTrajectory(data.trajectory)
-      setTrajectoryProgress(null)
-      setTrajectoryMessage('')
-      eventSource.close()
-      eventSourceRef.current = null
-
-      // Autoplay: seek to clip start and play
-      if (videoRef.current && currentShot) {
-        videoRef.current.currentTime = currentShot.clip_start
-        videoRef.current.play().catch(() => {
-          // Autoplay may be blocked by browser policy, ignore error
-        })
+  const handleZoomOut = useCallback(() => {
+    setZoomLevel(prev => {
+      const newZoom = Math.max(ZOOM_MIN, prev - ZOOM_STEP)
+      // Reset pan when zooming back to 1x
+      if (newZoom === 1) {
+        setPanOffset({ x: 0, y: 0 })
       }
+      return newZoom
     })
+  }, [])
 
-    eventSource.addEventListener('error', (e) => {
-      try {
-        const data = JSON.parse((e as MessageEvent).data)
-        setTrajectoryError(data.error || 'Failed to generate trajectory')
-      } catch {
-        setTrajectoryError('Connection lost during trajectory generation')
-      }
-      setTrajectoryProgress(null)
-      eventSource.close()
-      eventSourceRef.current = null
-    })
+  const handleZoomReset = useCallback(() => {
+    setZoomLevel(1)
+    setPanOffset({ x: 0, y: 0 })
+  }, [])
 
-    eventSource.onerror = () => {
-      setTrajectoryError('Connection lost during trajectory generation')
-      setTrajectoryProgress(null)
-      eventSource.close()
-      eventSourceRef.current = null
+  // Pan handlers for zoomed view
+  const handlePanStart = useCallback((e: React.MouseEvent) => {
+    if (zoomLevel <= 1) return
+    setIsPanning(true)
+    panStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      offsetX: panOffset.x,
+      offsetY: panOffset.y,
     }
-  }, [jobId, currentShot?.id])
+  }, [zoomLevel, panOffset])
+
+  const handlePanMove = useCallback((e: React.MouseEvent) => {
+    if (!isPanning || zoomLevel <= 1) return
+    const dx = e.clientX - panStartRef.current.x
+    const dy = e.clientY - panStartRef.current.y
+    // Limit pan to prevent going too far off-screen
+    const maxPan = (zoomLevel - 1) * 50 // % of container
+    setPanOffset({
+      x: Math.max(-maxPan, Math.min(maxPan, panStartRef.current.offsetX + (dx / 5))),
+      y: Math.max(-maxPan, Math.min(maxPan, panStartRef.current.offsetY + (dy / 5))),
+    })
+  }, [isPanning, zoomLevel])
+
+  const handlePanEnd = useCallback(() => {
+    setIsPanning(false)
+  }, [])
+
+  // Note: Legacy generateTrajectorySSE was removed as it was replaced by
+  // generateTrajectoryWithConfig which uses the full configuration options
 
   const generateTrajectoryWithConfig = useCallback(() => {
     if (!currentShot) return
 
+    // Increment generation ID to invalidate any stale callbacks
+    const currentGenId = ++generationIdRef.current
+
     // Cancel previous connection if any
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
@@ -526,6 +596,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setTrajectoryMessage('Starting...')
     setDetectionWarnings([])
     setTrajectoryError(null)
+    setEarlyDetectionStats(null) // Clear previous stats immediately
 
     const params = new URLSearchParams({
       starting_line: startingLine,
@@ -557,21 +628,31 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     eventSourceRef.current = eventSource
 
     eventSource.addEventListener('progress', (e) => {
+      // Ignore stale callbacks from previous generations
+      if (generationIdRef.current !== currentGenId) return
       const data = JSON.parse(e.data)
       setTrajectoryProgress(data.progress)
       setTrajectoryMessage(data.message || '')
     })
 
     eventSource.addEventListener('warning', (e) => {
+      // Ignore stale callbacks from previous generations
+      if (generationIdRef.current !== currentGenId) return
       const data = JSON.parse(e.data)
       setDetectionWarnings(prev => [...prev, data.message])
     })
 
     eventSource.addEventListener('complete', (e) => {
+      // Ignore stale callbacks from previous generations
+      if (generationIdRef.current !== currentGenId) return
       const data = JSON.parse(e.data)
       setTrajectory(data.trajectory)
       setTrajectoryProgress(null)
       setTrajectoryMessage('')
+      // Capture early detection stats for debug display
+      if (data.early_detection_stats) {
+        setEarlyDetectionStats(data.early_detection_stats)
+      }
       eventSource.close()
       eventSourceRef.current = null
 
@@ -585,6 +666,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     })
 
     eventSource.addEventListener('error', (e) => {
+      // Ignore stale callbacks from previous generations
+      if (generationIdRef.current !== currentGenId) return
       try {
         const data = JSON.parse((e as MessageEvent).data)
         setTrajectoryError(data.error || 'Failed to generate trajectory')
@@ -597,6 +680,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     })
 
     eventSource.onerror = () => {
+      // Ignore stale callbacks from previous generations
+      if (generationIdRef.current !== currentGenId) return
       setTrajectoryError('Connection lost during trajectory generation')
       setTrajectoryProgress(null)
       eventSource.close()
@@ -619,21 +704,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
   }, [loadingState, trajectoryProgress, markingStep])
 
-  const handleVideoClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!videoRef.current || loadingState === 'loading' || trajectoryProgress !== null) return
-
-    const rect = videoRef.current.getBoundingClientRect()
-    const x = (e.clientX - rect.left) / rect.width
-    const y = (e.clientY - rect.top) / rect.height
-
-    // Clamp to valid range
-    const clampedX = Math.max(0, Math.min(1, x))
-    const clampedY = Math.max(0, Math.min(1, y))
-
-    setLandingPoint({ x: clampedX, y: clampedY })
-    setTrajectoryError(null)
-    generateTrajectorySSE(clampedX, clampedY)
-  }, [loadingState, trajectoryProgress, generateTrajectorySSE])
+  // Note: handleVideoClick was replaced by handleCanvasClick in TrajectoryEditor
+  // Keeping this comment for reference in case we need to restore click-on-video behavior
+  void loadingState // suppress unused warning
 
   const clearMarking = useCallback(() => {
     if (eventSourceRef.current) {
@@ -650,6 +723,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setTrajectoryMessage('')
     setDetectionWarnings([])
     setTrajectoryError(null)
+    setEarlyDetectionStats(null)
   }, [])
 
   const handleClearPoint = useCallback((point: 'target' | 'landing' | 'apex') => {
@@ -814,11 +888,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       <div className="review-actions">
         <button
           onClick={handleReject}
-          className="btn-secondary btn-skip"
+          className="btn-no-shot"
           disabled={loadingState === 'loading' || trajectoryProgress !== null}
-          title="Skip Shot (Escape)"
+          title="Not a golf shot (Escape)"
         >
-          Skip Shot
+          No golf shot
         </button>
         <button
           onClick={handleAccept}
@@ -996,44 +1070,93 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           )}
         </div>
 
-      <div
-        className={`video-container ${!videoLoaded ? 'video-loading' : ''}`}
-        style={{ cursor: ['target', 'landing', 'apex'].includes(markingStep) ? 'crosshair' : 'default' }}
-      >
-        {!videoLoaded && (
-          <div className="video-loader">
-            <div className="spinner-large" />
-            <p>Loading video...</p>
-          </div>
-        )}
-        <video
-          ref={videoRef}
-          src={`http://127.0.0.1:8420/api/video?path=${encodeURIComponent(videoPath)}`}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onLoadedData={handleVideoLoad}
-          onError={handleVideoError}
-          playsInline
-        />
-        <TrajectoryEditor
-          videoRef={videoRef}
-          trajectory={trajectory}
-          currentTime={currentTime}
-          showTracer={showTracer}
-          disabled={trajectoryProgress !== null}
-          landingPoint={landingPoint}
-          targetPoint={targetPoint}
-          apexPoint={apexPoint}
-          onCanvasClick={handleCanvasClick}
-          onTrajectoryUpdate={(points) => {
-            if (!currentShot) return
-            fetch(`http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ points }),
-            }).catch((err) => console.error('Failed to save trajectory:', err))
+      <div className="video-zoom-wrapper">
+        {/* Zoom controls */}
+        <div className="zoom-controls">
+          <button
+            className="btn-zoom"
+            onClick={handleZoomOut}
+            disabled={zoomLevel <= ZOOM_MIN}
+            title="Zoom out (-)"
+          >
+            −
+          </button>
+          <span className="zoom-level">{zoomLevel}x</span>
+          <button
+            className="btn-zoom"
+            onClick={handleZoomIn}
+            disabled={zoomLevel >= ZOOM_MAX}
+            title="Zoom in (+)"
+          >
+            +
+          </button>
+          {zoomLevel > 1 && (
+            <button
+              className="btn-zoom btn-zoom-reset"
+              onClick={handleZoomReset}
+              title="Reset zoom (0)"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+
+        <div
+          className={`video-container ${!videoLoaded ? 'video-loading' : ''} ${zoomLevel > 1 ? 'zoomed' : ''} ${isPanning ? 'panning' : ''}`}
+          style={{
+            cursor: zoomLevel > 1 && !['target', 'landing', 'apex'].includes(markingStep)
+              ? (isPanning ? 'grabbing' : 'grab')
+              : 'default',
           }}
-        />
+          onMouseDown={handlePanStart}
+          onMouseMove={handlePanMove}
+          onMouseUp={handlePanEnd}
+          onMouseLeave={handlePanEnd}
+        >
+          {!videoLoaded && (
+            <div className="video-loader">
+              <div className="spinner-large" />
+              <p>Loading video...</p>
+            </div>
+          )}
+          <div
+            className="video-zoom-content"
+            style={{
+              transform: `scale(${zoomLevel}) translate(${panOffset.x}%, ${panOffset.y}%)`,
+              transformOrigin: 'center center',
+            }}
+          >
+            <video
+              ref={videoRef}
+              src={`http://127.0.0.1:8420/api/video?path=${encodeURIComponent(videoPath)}`}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onLoadedData={handleVideoLoad}
+              onError={handleVideoError}
+              playsInline
+            />
+            <TrajectoryEditor
+              videoRef={videoRef}
+              trajectory={trajectory}
+              currentTime={currentTime}
+              showTracer={showTracer}
+              disabled={trajectoryProgress !== null}
+              landingPoint={landingPoint}
+              targetPoint={targetPoint}
+              apexPoint={apexPoint}
+              onCanvasClick={handleCanvasClick}
+              markingStep={markingStep}
+              onTrajectoryUpdate={(points) => {
+                if (!currentShot) return
+                fetch(`http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ points }),
+                }).catch((err) => console.error('Failed to save trajectory:', err))
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       <Scrubber
@@ -1088,6 +1211,21 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       </div>
 
       <div className="tracer-controls">
+        <label>
+          <input
+            type="checkbox"
+            checked={autoLoopEnabled}
+            onChange={(e) => {
+              setAutoLoopEnabled(e.target.checked)
+              // Clear any pending loop timeout when disabling
+              if (!e.target.checked && loopPauseTimeoutRef.current) {
+                clearTimeout(loopPauseTimeoutRef.current)
+                loopPauseTimeoutRef.current = null
+              }
+            }}
+          />
+          Auto Loop
+        </label>
         <label>
           <input
             type="checkbox"
@@ -1179,9 +1317,22 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         <span><kbd>Space</kbd> Play/Pause</span>
         <span><kbd>←</kbd><kbd>→</kbd> Frame step</span>
         <span><kbd>[</kbd><kbd>]</kbd> Set in/out</span>
+        <span><kbd>+</kbd><kbd>-</kbd> Zoom</span>
         <span><kbd>Enter</kbd> Next</span>
         <span><kbd>Esc</kbd> Skip</span>
       </div>
+
+      {/* Debug counter for early ball detection */}
+      {earlyDetectionStats && (
+        <div className="debug-detection-stats">
+          <span className="debug-label">Ball Detection Debug:</span>
+          <span className="debug-value">
+            Frames with ball detected: {earlyDetectionStats.frames_with_ball}/{earlyDetectionStats.frames_analyzed}
+            {' '}
+            ({Math.round((earlyDetectionStats.frames_with_ball / earlyDetectionStats.frames_analyzed) * 100)}%)
+          </span>
+        </div>
+      )}
     </div>
   )
 }

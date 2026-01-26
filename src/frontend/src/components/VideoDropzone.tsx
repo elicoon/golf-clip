@@ -1,24 +1,55 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
+
+interface UploadedFile {
+  filename: string
+  path: string
+  size: number
+}
+
+// UploadError interface is intentionally unused in this component
+// but kept for potential future use with batch upload error handling
 
 interface VideoDropzoneProps {
-  onVideoSelected: (filePath: string) => void
+  onVideosSelected: (files: UploadedFile[]) => void
+  // Keep backward compatibility with single file selection
+  onVideoSelected?: (filePath: string) => void
 }
 
 const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime', 'video/x-m4v']
 const ACCEPTED_EXTENSIONS = ['.mp4', '.mov', '.m4v']
 const MAX_FILE_SIZE_GB = 100
 
-export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
+interface FileUploadState {
+  file: File
+  status: 'pending' | 'uploading' | 'complete' | 'error'
+  progress: number
+  error?: string
+  result?: UploadedFile
+}
+
+export function VideoDropzone({ onVideosSelected, onVideoSelected }: VideoDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<string | null>(null)
-  const [uploadPercent, setUploadPercent] = useState<number>(0)
-  const [uploadStarted, setUploadStarted] = useState(false)
+  const [uploadStates, setUploadStates] = useState<FileUploadState[]>([])
   const [manualPath, setManualPath] = useState('')
   const [showManualInput, setShowManualInput] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
+  // Track active XHRs for cleanup on unmount
+  const activeXhrsRef = useRef<Set<XMLHttpRequest>>(new Set())
+  const isMountedRef = useRef(true)
+
+  // Cleanup active XHRs on unmount
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      // Abort all active XHRs
+      activeXhrsRef.current.forEach(xhr => xhr.abort())
+      activeXhrsRef.current.clear()
+    }
+  }, [])
 
   const validateFile = (file: File): string | null => {
     // Check file type
@@ -40,92 +71,152 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
     return null
   }
 
-  const handleFile = useCallback(async (file: File) => {
-    const validationError = validateFile(file)
-    if (validationError) {
-      setError(validationError)
-      return
-    }
-
-    setError(null)
-
+  const uploadSingleFile = async (file: File, index: number): Promise<UploadedFile | null> => {
     // Check if running in Tauri (has native file path access)
     const nativePath = (file as any).path
     if (nativePath) {
       // Tauri mode: use native path directly
-      onVideoSelected(nativePath)
-      return
+      return {
+        filename: file.name,
+        path: nativePath,
+        size: file.size,
+      }
     }
 
     // Browser mode: upload file to server
-    setIsLoading(true)
-    setUploadStarted(false)
-    setUploadPercent(0)
+    return new Promise((resolve) => {
+      const formData = new FormData()
+      formData.append('file', file)
 
-    const formData = new FormData()
-    formData.append('file', file)
+      const xhr = new XMLHttpRequest()
+      // Track this XHR for cleanup
+      activeXhrsRef.current.add(xhr)
 
-    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1)
-    setUploadProgress(`Uploading ${file.name} (${fileSizeMB} MB)`)
+      xhr.upload.addEventListener('progress', (event) => {
+        if (!isMountedRef.current) return
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100)
+          setUploadStates(prev => prev.map((state, i) =>
+            i === index ? { ...state, progress: percent } : state
+          ))
+        }
+      })
 
-    // Use XMLHttpRequest for progress tracking
-    const xhr = new XMLHttpRequest()
+      xhr.addEventListener('load', () => {
+        activeXhrsRef.current.delete(xhr)
+        if (!isMountedRef.current) return
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText)
+            setUploadStates(prev => prev.map((state, i) =>
+              i === index ? { ...state, status: 'complete', result: data } : state
+            ))
+            resolve(data)
+          } catch {
+            setUploadStates(prev => prev.map((state, i) =>
+              i === index ? { ...state, status: 'error', error: 'Invalid response from server' } : state
+            ))
+            resolve(null)
+          }
+        } else {
+          let errorMessage = `Upload failed: ${xhr.status}`
+          try {
+            const errorData = JSON.parse(xhr.responseText)
+            if (errorData.detail) errorMessage = errorData.detail
+          } catch {
+            // Use default error message
+          }
+          setUploadStates(prev => prev.map((state, i) =>
+            i === index ? { ...state, status: 'error', error: errorMessage } : state
+          ))
+          resolve(null)
+        }
+      })
 
-    // Track when upload actually starts (after browser prepares the data)
-    xhr.upload.addEventListener('loadstart', () => {
-      setUploadStarted(true)
+      xhr.addEventListener('error', () => {
+        activeXhrsRef.current.delete(xhr)
+        if (!isMountedRef.current) return
+        setUploadStates(prev => prev.map((state, i) =>
+          i === index ? { ...state, status: 'error', error: 'Network error' } : state
+        ))
+        resolve(null)
+      })
+
+      setUploadStates(prev => prev.map((state, i) =>
+        i === index ? { ...state, status: 'uploading' } : state
+      ))
+
+      xhr.open('POST', 'http://127.0.0.1:8420/api/upload')
+      xhr.send(formData)
     })
+  }
 
-    xhr.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round((event.loaded / event.total) * 100)
-        setUploadPercent(percent)
+  const handleFiles = useCallback(async (files: File[]) => {
+    // Validate all files first
+    const validFiles: File[] = []
+    const validationErrors: string[] = []
+
+    for (const file of files) {
+      const validationError = validateFile(file)
+      if (validationError) {
+        validationErrors.push(`${file.name}: ${validationError}`)
+      } else {
+        validFiles.push(file)
       }
-    })
-
-    const resetState = () => {
-      setUploadProgress(null)
-      setUploadPercent(0)
-      setUploadStarted(false)
-      setIsLoading(false)
     }
 
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText)
-          resetState()
-          onVideoSelected(data.path)
-        } catch {
-          setError('Invalid response from server')
-          resetState()
-        }
-      } else {
-        let errorMessage = `Upload failed: ${xhr.status}`
-        try {
-          const errorData = JSON.parse(xhr.responseText)
-          if (errorData.detail) errorMessage = errorData.detail
-        } catch {
-          // Use default error message
-        }
-        setError(errorMessage)
-        resetState()
+    if (validationErrors.length > 0 && validFiles.length === 0) {
+      setError(validationErrors.join('\n'))
+      return
+    }
+
+    if (validFiles.length === 0) {
+      setError('No valid video files selected')
+      return
+    }
+
+    setError(null)
+    setIsLoading(true)
+
+    // Initialize upload states
+    const initialStates: FileUploadState[] = validFiles.map(file => ({
+      file,
+      status: 'pending',
+      progress: 0,
+    }))
+    setUploadStates(initialStates)
+
+    // Upload all files (sequentially to avoid overwhelming the server)
+    const results: UploadedFile[] = []
+    for (let i = 0; i < validFiles.length; i++) {
+      const result = await uploadSingleFile(validFiles[i], i)
+      if (result) {
+        results.push(result)
       }
-    })
+    }
 
-    xhr.addEventListener('error', () => {
-      setError('Upload failed - network error')
-      resetState()
-    })
+    setIsLoading(false)
 
-    xhr.addEventListener('abort', () => {
-      setError('Upload cancelled')
-      resetState()
-    })
+    if (results.length > 0) {
+      // Notify parent of uploaded files
+      onVideosSelected(results)
 
-    xhr.open('POST', 'http://127.0.0.1:8420/api/upload')
-    xhr.send(formData)
-  }, [onVideoSelected])
+      // For backward compatibility, if only one file and onVideoSelected is provided
+      if (results.length === 1 && onVideoSelected) {
+        onVideoSelected(results[0].path)
+      }
+    } else {
+      setError('All uploads failed')
+    }
+
+    // Clear upload states after a short delay
+    setTimeout(() => {
+      setUploadStates([])
+    }, 2000)
+  }, [onVideosSelected, onVideoSelected])
+
+  // Note: handleFile was removed as we now use handleFiles directly
+  // Single files are handled via handleFiles([file])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -165,26 +256,21 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
         return
       }
 
-      if (files.length > 1) {
-        setError('Please drop only one video file at a time')
-        return
-      }
-
-      handleFile(files[0])
+      handleFiles(files)
     },
-    [handleFile]
+    [handleFiles]
   )
 
   const handleFileInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files
       if (files && files.length > 0) {
-        handleFile(files[0])
+        handleFiles(Array.from(files))
       }
       // Reset the input so the same file can be selected again
       e.target.value = ''
     },
-    [handleFile]
+    [handleFiles]
   )
 
   const handleFileSelect = async () => {
@@ -196,7 +282,7 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
       // @ts-ignore - Tauri API may not be available
       const { open } = await import('@tauri-apps/api/dialog')
       const selected = await open({
-        multiple: false,
+        multiple: true,  // Allow multiple file selection in Tauri
         filters: [
           {
             name: 'Video',
@@ -205,8 +291,21 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
         ],
       })
 
-      if (selected && typeof selected === 'string') {
-        onVideoSelected(selected)
+      if (selected) {
+        // selected can be string (single file) or string[] (multiple files)
+        const paths = Array.isArray(selected) ? selected : [selected]
+        const results: UploadedFile[] = paths.map(path => ({
+          filename: path.split('/').pop() || path,
+          path,
+          size: 0,  // Size not available from Tauri dialog
+        }))
+
+        if (results.length > 0) {
+          onVideosSelected(results)
+          if (results.length === 1 && onVideoSelected) {
+            onVideoSelected(results[0].path)
+          }
+        }
       }
     } catch {
       // Fallback to native file input for web/development
@@ -228,9 +327,24 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
   const handleManualPathSubmit = () => {
     if (manualPath.trim()) {
       setError(null)
-      onVideoSelected(manualPath.trim())
+      const result: UploadedFile = {
+        filename: manualPath.trim().split('/').pop() || manualPath.trim(),
+        path: manualPath.trim(),
+        size: 0,
+      }
+      onVideosSelected([result])
+      if (onVideoSelected) {
+        onVideoSelected(manualPath.trim())
+      }
     }
   }
+
+  const totalProgress = uploadStates.length > 0
+    ? Math.round(uploadStates.reduce((sum, s) => sum + s.progress, 0) / uploadStates.length)
+    : 0
+
+  const completedCount = uploadStates.filter(s => s.status === 'complete').length
+  const errorCount = uploadStates.filter(s => s.status === 'error').length
 
   return (
     <div
@@ -248,22 +362,41 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
         <div className="dropzone-icon" aria-hidden="true">
           {isDragging ? '📥' : '🎬'}
         </div>
-        <h2>{isDragging ? 'Drop it here!' : 'Drop your golf video here'}</h2>
+        <h2>{isDragging ? 'Drop it here!' : 'Drop your golf videos here'}</h2>
         <p>or</p>
-        {isLoading && uploadProgress ? (
+        {isLoading && uploadStates.length > 0 ? (
           <div className="upload-progress-container">
             <div className="upload-progress-text">
               <span className="spinner" />
-              {uploadProgress}
+              Uploading {uploadStates.length} file{uploadStates.length > 1 ? 's' : ''}...
             </div>
-            <div className={`upload-progress-bar ${!uploadStarted ? 'upload-progress-indeterminate' : ''}`}>
+            <div className="upload-progress-bar">
               <div
                 className="upload-progress-fill"
-                style={{ width: uploadStarted ? `${uploadPercent}%` : '100%' }}
+                style={{ width: `${totalProgress}%` }}
               />
             </div>
             <div className="upload-progress-percent">
-              {uploadStarted ? `${uploadPercent}%` : 'Preparing...'}
+              {completedCount}/{uploadStates.length} complete
+              {errorCount > 0 && ` (${errorCount} failed)`}
+            </div>
+            {/* Individual file progress */}
+            <div className="upload-files-list">
+              {uploadStates.map((state, index) => (
+                <div key={index} className={`upload-file-item upload-file-${state.status}`}>
+                  <span className="upload-file-name" title={state.file.name}>
+                    {state.file.name.length > 30
+                      ? state.file.name.substring(0, 27) + '...'
+                      : state.file.name}
+                  </span>
+                  <span className="upload-file-status">
+                    {state.status === 'pending' && 'Waiting...'}
+                    {state.status === 'uploading' && `${state.progress}%`}
+                    {state.status === 'complete' && 'Done'}
+                    {state.status === 'error' && state.error}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         ) : (
@@ -278,11 +411,12 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
                 Loading...
               </>
             ) : (
-              'Select File'
+              'Select Files'
             )}
           </button>
         )}
-        <p className="dropzone-hint">Supports MP4, MOV, M4V (up to {MAX_FILE_SIZE_GB}GB)</p>
+        <p className="dropzone-hint">Supports MP4, MOV, M4V (up to {MAX_FILE_SIZE_GB}GB each)</p>
+        <p className="dropzone-hint-secondary">You can select multiple videos at once</p>
 
         {/* Dev mode: manual path input */}
         <div className="manual-path-section">
@@ -317,7 +451,7 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
         )}
       </div>
 
-      {/* Hidden file input for web fallback */}
+      {/* Hidden file input for web fallback - now allows multiple */}
       <input
         ref={fileInputRef}
         type="file"
@@ -325,6 +459,7 @@ export function VideoDropzone({ onVideoSelected }: VideoDropzoneProps) {
         onChange={handleFileInputChange}
         style={{ display: 'none' }}
         aria-hidden="true"
+        multiple
       />
     </div>
   )

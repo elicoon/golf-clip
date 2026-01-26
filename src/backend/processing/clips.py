@@ -1,9 +1,12 @@
 """Clip extraction and export with progress tracking and quality control."""
 
+import os
 import re
 import shutil
+import tempfile
 import threading
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from queue import Queue, Empty
 from typing import Callable, Optional
@@ -18,6 +21,19 @@ from backend.processing.tracer import TracerExporter, TracerStyle
 
 
 ProgressCallback = Callable[[str, float], None]
+
+
+class ExportQuality(str, Enum):
+    """Quality presets for video export.
+
+    Controls encoding speed vs quality tradeoffs:
+    - DRAFT: Fast encoding for quick previews (single-pass, faster preset)
+    - PREVIEW: Balanced for review (single-pass, medium preset)
+    - FINAL: Best quality for delivery (two-pass, slower preset)
+    """
+    DRAFT = "draft"
+    PREVIEW = "preview"
+    FINAL = "final"
 
 
 @dataclass
@@ -43,8 +59,41 @@ class ClipExportSettings:
 
     # Processing
     use_copy_codec: bool = False  # True for fast but potentially imprecise cuts
-    # TODO: Implement two-pass encoding for better quality at target bitrates
+
+    # Two-pass encoding for better quality at target bitrates
+    # When enabled, uses bitrate-based encoding instead of CRF
     two_pass: bool = False
+    video_bitrate: str = "5M"  # Target bitrate for two-pass encoding (e.g., "5M", "8000k")
+
+    # Quality preset (overrides individual settings when set)
+    quality_preset: Optional[ExportQuality] = None
+
+    def __post_init__(self):
+        """Apply quality preset settings if specified."""
+        if self.quality_preset:
+            self._apply_preset(self.quality_preset)
+
+    def _apply_preset(self, preset: ExportQuality) -> None:
+        """Apply settings for the given quality preset.
+
+        Args:
+            preset: Quality preset to apply
+        """
+        if preset == ExportQuality.DRAFT:
+            # Fast encoding for quick previews
+            self.video_preset = "veryfast"
+            self.video_crf = 23
+            self.two_pass = False
+        elif preset == ExportQuality.PREVIEW:
+            # Balanced for review
+            self.video_preset = "medium"
+            self.video_crf = 20
+            self.two_pass = False
+        elif preset == ExportQuality.FINAL:
+            # Best quality for delivery
+            self.video_preset = "slow"
+            self.two_pass = True
+            self.video_bitrate = "8M"  # Higher bitrate for final exports
 
 
 @dataclass
@@ -458,6 +507,33 @@ class ClipExporter:
     ) -> None:
         """Export clip with H.264 re-encoding.
 
+        Supports both single-pass (CRF-based) and two-pass (bitrate-based) encoding.
+
+        Args:
+            start_time: Start time in seconds
+            duration: Duration in seconds
+            output_path: Destination path
+            progress_callback: Optional progress callback
+        """
+        export_settings = self.export_settings
+
+        # Use two-pass encoding if enabled
+        if export_settings.two_pass:
+            self._export_two_pass(start_time, duration, output_path, progress_callback)
+            return
+
+        # Single-pass CRF-based encoding
+        self._export_single_pass(start_time, duration, output_path, progress_callback)
+
+    def _export_single_pass(
+        self,
+        start_time: float,
+        duration: float,
+        output_path: Path,
+        progress_callback: Optional[ProgressCallback],
+    ) -> None:
+        """Export clip with single-pass CRF encoding.
+
         Args:
             start_time: Start time in seconds
             duration: Duration in seconds
@@ -473,23 +549,7 @@ class ClipExporter:
         video = input_stream.video
 
         # Apply resolution limits if specified
-        if export_settings.max_width or export_settings.max_height:
-            scale_parts = []
-            if export_settings.max_width:
-                scale_parts.append(f"min({export_settings.max_width},iw)")
-            else:
-                scale_parts.append("-2")
-            if export_settings.max_height:
-                scale_parts.append(f"min({export_settings.max_height},ih)")
-            else:
-                scale_parts.append("-2")
-
-            video = video.filter(
-                "scale",
-                scale_parts[0],
-                scale_parts[1],
-                force_original_aspect_ratio="decrease",
-            )
+        video = self._apply_resolution_limits(video, export_settings)
 
         # Build output with H.264 settings
         output_kwargs = {
@@ -534,11 +594,244 @@ class ClipExporter:
                 .run(capture_stdout=True, capture_stderr=True)
             )
 
+    def _export_two_pass(
+        self,
+        start_time: float,
+        duration: float,
+        output_path: Path,
+        progress_callback: Optional[ProgressCallback],
+    ) -> None:
+        """Export clip with two-pass bitrate-based encoding.
+
+        Two-pass encoding improves quality by:
+        1. First pass: Analyzes the video to understand scene complexity
+        2. Second pass: Uses the analysis to allocate bitrate efficiently
+
+        This is especially valuable for golf clips where static backgrounds
+        need less bitrate while fast ball motion needs more.
+
+        Args:
+            start_time: Start time in seconds
+            duration: Duration in seconds
+            output_path: Destination path
+            progress_callback: Optional progress callback
+        """
+        export_settings = self.export_settings
+
+        # Create temp directory for passlog files
+        passlog_dir = tempfile.mkdtemp(prefix="golfclip_passlog_")
+        passlog_prefix = os.path.join(passlog_dir, "ffmpeg2pass")
+
+        try:
+            logger.info(f"Starting two-pass encoding (bitrate: {export_settings.video_bitrate})")
+
+            # === PASS 1: Analysis ===
+            if progress_callback:
+                progress_callback("Pass 1: Analyzing", 0)
+
+            self._run_pass_one(start_time, duration, passlog_prefix, progress_callback)
+
+            # === PASS 2: Encode ===
+            if progress_callback:
+                progress_callback("Pass 2: Encoding", 50)
+
+            self._run_pass_two(start_time, duration, output_path, passlog_prefix, progress_callback)
+
+            logger.info(f"Two-pass encoding complete: {output_path}")
+
+        finally:
+            # Clean up passlog files
+            self._cleanup_passlog(passlog_dir)
+
+    def _run_pass_one(
+        self,
+        start_time: float,
+        duration: float,
+        passlog_prefix: str,
+        progress_callback: Optional[ProgressCallback],
+    ) -> None:
+        """Run first pass of two-pass encoding (analysis only).
+
+        Args:
+            start_time: Start time in seconds
+            duration: Duration in seconds
+            passlog_prefix: Path prefix for passlog files
+            progress_callback: Optional progress callback
+        """
+        export_settings = self.export_settings
+
+        # Build input stream
+        input_stream = ffmpeg.input(str(self.video_path), ss=start_time, t=duration)
+
+        # Build video stream with filters
+        video = input_stream.video
+        video = self._apply_resolution_limits(video, export_settings)
+
+        # Pass 1 output settings - no audio, output to null
+        output_kwargs = {
+            "vcodec": export_settings.video_codec,
+            "preset": export_settings.video_preset,
+            "b:v": export_settings.video_bitrate,
+            "profile:v": export_settings.video_profile,
+            "level": export_settings.video_level,
+            "pix_fmt": "yuv420p",
+            "pass": 1,
+            "passlogfile": passlog_prefix,
+            "an": None,  # No audio in pass 1
+            "f": "null",  # Output to null
+        }
+
+        # Determine null device based on platform
+        null_output = "/dev/null" if os.name != "nt" else "NUL"
+
+        if progress_callback:
+            process = (
+                ffmpeg
+                .output(video, null_output, **output_kwargs)
+                .overwrite_output()
+                .global_args("-progress", "pipe:1", "-nostats")
+                .run_async(pipe_stdout=True, pipe_stderr=True)
+            )
+
+            # Monitor pass 1 (0-50% of total progress)
+            self._monitor_encode_progress(
+                process, duration, progress_callback,
+                progress_offset=0, progress_scale=0.5,
+            )
+        else:
+            (
+                ffmpeg
+                .output(video, null_output, **output_kwargs)
+                .overwrite_output()
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+
+    def _run_pass_two(
+        self,
+        start_time: float,
+        duration: float,
+        output_path: Path,
+        passlog_prefix: str,
+        progress_callback: Optional[ProgressCallback],
+    ) -> None:
+        """Run second pass of two-pass encoding (actual encode).
+
+        Args:
+            start_time: Start time in seconds
+            duration: Duration in seconds
+            output_path: Destination path
+            passlog_prefix: Path prefix for passlog files
+            progress_callback: Optional progress callback
+        """
+        export_settings = self.export_settings
+
+        # Build input stream
+        input_stream = ffmpeg.input(str(self.video_path), ss=start_time, t=duration)
+
+        # Build video stream with filters
+        video = input_stream.video
+        video = self._apply_resolution_limits(video, export_settings)
+
+        # Pass 2 output settings
+        output_kwargs = {
+            "vcodec": export_settings.video_codec,
+            "preset": export_settings.video_preset,
+            "b:v": export_settings.video_bitrate,
+            "profile:v": export_settings.video_profile,
+            "level": export_settings.video_level,
+            "movflags": "+faststart",
+            "pix_fmt": "yuv420p",
+            "pass": 2,
+            "passlogfile": passlog_prefix,
+        }
+
+        # Only add audio settings if video has audio
+        if self.metadata.has_audio:
+            output_kwargs.update({
+                "acodec": export_settings.audio_codec,
+                "audio_bitrate": export_settings.audio_bitrate,
+                "ar": export_settings.audio_sample_rate,
+            })
+            output_streams = [video, input_stream.audio]
+        else:
+            output_kwargs["an"] = None
+            output_streams = [video]
+
+        if progress_callback:
+            process = (
+                ffmpeg
+                .output(*output_streams, str(output_path), **output_kwargs)
+                .overwrite_output()
+                .global_args("-progress", "pipe:1", "-nostats")
+                .run_async(pipe_stdout=True, pipe_stderr=True)
+            )
+
+            # Monitor pass 2 (50-100% of total progress)
+            self._monitor_encode_progress(
+                process, duration, progress_callback,
+                progress_offset=50, progress_scale=0.5,
+            )
+        else:
+            (
+                ffmpeg
+                .output(*output_streams, str(output_path), **output_kwargs)
+                .overwrite_output()
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+
+    def _apply_resolution_limits(
+        self,
+        video,
+        export_settings: "ClipExportSettings",
+    ):
+        """Apply resolution limits to video stream if specified.
+
+        Args:
+            video: ffmpeg video stream
+            export_settings: Export settings with resolution limits
+
+        Returns:
+            Modified video stream
+        """
+        if export_settings.max_width or export_settings.max_height:
+            scale_parts = []
+            if export_settings.max_width:
+                scale_parts.append(f"min({export_settings.max_width},iw)")
+            else:
+                scale_parts.append("-2")
+            if export_settings.max_height:
+                scale_parts.append(f"min({export_settings.max_height},ih)")
+            else:
+                scale_parts.append("-2")
+
+            video = video.filter(
+                "scale",
+                scale_parts[0],
+                scale_parts[1],
+                force_original_aspect_ratio="decrease",
+            )
+
+        return video
+
+    def _cleanup_passlog(self, passlog_dir: str) -> None:
+        """Clean up passlog files and directory after two-pass encoding.
+
+        Args:
+            passlog_dir: Directory containing passlog files
+        """
+        try:
+            shutil.rmtree(passlog_dir)
+            logger.debug(f"Cleaned up passlog directory: {passlog_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up passlog directory {passlog_dir}: {e}")
+
     def _monitor_encode_progress(
         self,
         process,
         total_duration: float,
         progress_callback: ProgressCallback,
+        progress_offset: float = 0,
+        progress_scale: float = 1.0,
     ) -> None:
         """Monitor ffmpeg encoding progress.
 
@@ -549,6 +842,8 @@ class ClipExporter:
             process: ffmpeg async process
             total_duration: Expected clip duration
             progress_callback: Progress callback function
+            progress_offset: Base progress value (for two-pass, pass 2 starts at 50)
+            progress_scale: Scale factor for progress (for two-pass, each pass is 0.5)
         """
         time_pattern = re.compile(r"out_time_ms=(\d+)")
         last_progress = 0
@@ -598,11 +893,14 @@ class ClipExporter:
                 if match and total_duration > 0:
                     time_ms = int(match.group(1))
                     time_sec = time_ms / 1_000_000
-                    progress = min(100, (time_sec / total_duration) * 100)
+                    # Calculate raw progress (0-100)
+                    raw_progress = min(100, (time_sec / total_duration) * 100)
+                    # Apply offset and scale for two-pass encoding
+                    scaled_progress = progress_offset + (raw_progress * progress_scale)
 
-                    if progress - last_progress >= 2:  # Report every 2%
-                        progress_callback("Encoding", progress)
-                        last_progress = progress
+                    if scaled_progress - last_progress >= 2:  # Report every 2%
+                        progress_callback("Encoding", scaled_progress)
+                        last_progress = scaled_progress
 
             process.wait(timeout=30)
 

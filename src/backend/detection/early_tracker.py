@@ -19,6 +19,7 @@ import numpy as np
 from loguru import logger
 
 from backend.detection.color_family import (
+    ColorFamily,
     ColorTemplate,
     compute_color_match_score,
     extract_color_template,
@@ -187,9 +188,13 @@ class EarlyBallTracker:
 
     DETECTION_WINDOW_SEC = 0.5
     MIN_REQUIRED_DETECTIONS = 5
-    DIFF_THRESHOLD = 15
-    MIN_CONTOUR_AREA = 5
-    MAX_CONTOUR_AREA = 500
+    DIFF_THRESHOLD = 12  # Lowered from 15 for better sensitivity
+    MIN_CONTOUR_AREA = 3  # Lowered from 5 to catch smaller motion blobs
+    MAX_CONTOUR_AREA = 600  # Increased from 500 for motion-blurred balls
+
+    # White ball specific thresholds
+    WHITE_BALL_MIN_BRIGHTNESS = 120  # Minimum pixel brightness for white ball candidates
+    WHITE_BALL_BOOST_THRESHOLD = 180  # Brightness above this gets score boost
 
     def __init__(
         self,
@@ -432,16 +437,38 @@ class EarlyBallTracker:
                         cx = M["m10"] / M["m00"]
                         cy = M["m01"] / M["m00"]
 
+                        # Ensure coordinates are within bounds
+                        cx_int = int(min(max(0, cx), gray.shape[1] - 1))
+                        cy_int = int(min(max(0, cy), gray.shape[0] - 1))
+
+                        # Get pixel brightness for white ball boost
+                        pixel_brightness = float(gray[cy_int, cx_int])
+
                         color_score = 0.5
                         if self.color_template:
-                            pixel_hsv = hsv[int(cy), int(cx)]
+                            pixel_hsv = hsv[cy_int, cx_int]
                             color_score = compute_color_match_score(
                                 tuple(pixel_hsv),
                                 self.color_template,
                                 elapsed,
                             )
 
-                        motion_score = min(1.0, area / 100)
+                            # BOOST for white balls: if template is white and pixel is bright
+                            if self.color_template.family == ColorFamily.WHITE:
+                                if pixel_brightness >= self.WHITE_BALL_BOOST_THRESHOLD:
+                                    # Very bright pixel - likely the ball
+                                    color_score = max(color_score, 0.85)
+                                elif pixel_brightness >= self.WHITE_BALL_MIN_BRIGHTNESS:
+                                    # Reasonably bright - boost score
+                                    brightness_factor = (pixel_brightness - self.WHITE_BALL_MIN_BRIGHTNESS) / 60
+                                    color_score = max(color_score, 0.5 + brightness_factor * 0.3)
+
+                        # Motion score based on area - normalized differently for early frames
+                        # Larger blobs in early frames are more likely to be the ball (less motion blur)
+                        if frame_idx <= 10:
+                            motion_score = min(1.0, area / 80)  # More sensitive in early frames
+                        else:
+                            motion_score = min(1.0, area / 120)
 
                         candidates.append(DetectionCandidate(
                             frame_idx=frame_idx,
@@ -449,6 +476,7 @@ class EarlyBallTracker:
                             y=cy,
                             color_score=color_score,
                             motion_score=motion_score,
+                            radius=math.sqrt(area / math.pi),  # Estimate radius from area
                         ))
 
         return candidates

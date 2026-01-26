@@ -5,7 +5,7 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, List, Optional
 
 import shutil
 import tempfile
@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from loguru import logger
 
 from backend.api.schemas import (
+    BatchUploadResponse,
     ClipBoundary,
     DetectedShot,
     ExportClipsRequest,
@@ -33,6 +34,8 @@ from backend.api.schemas import (
     TrajectoryData,
     TrajectoryPoint,
     TrajectoryUpdateRequest,
+    UploadedFile,
+    UploadError,
     VideoInfo,
 )
 from backend.core.config import settings
@@ -157,6 +160,73 @@ async def upload_video(file: UploadFile = File(...)):
             file_path.unlink()
         logger.exception(f"Failed to save uploaded file: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
+
+
+@router.post("/upload-batch", response_model=BatchUploadResponse)
+async def upload_videos_batch(files: List[UploadFile] = File(...)):
+    """Upload multiple video files for processing.
+
+    Handles errors per-file without failing the entire batch.
+    Returns arrays of successful uploads and errors.
+    """
+    allowed_extensions = {".mp4", ".mov", ".m4v"}
+    uploaded: list[UploadedFile] = []
+    errors: list[UploadError] = []
+
+    # Create upload directory if needed
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    for file in files:
+        filename = file.filename or "unknown"
+
+        # Validate file type
+        file_ext = Path(filename).suffix.lower()
+        if file_ext not in allowed_extensions:
+            errors.append(UploadError(
+                filename=filename,
+                error=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+            ))
+            continue
+
+        # Generate unique filename to avoid collisions
+        # Sanitize filename to prevent path traversal attacks
+        unique_id = str(uuid.uuid4())[:8]
+        clean_basename = Path(filename).name  # Remove any directory components
+        # Remove potentially dangerous characters, keep only alphanumeric, dash, underscore, dot, space
+        import re
+        clean_basename = re.sub(r'[^\w\-_\. ]', '', clean_basename)
+        if not clean_basename or clean_basename.startswith('.'):
+            clean_basename = f"video{file_ext}"
+        safe_filename = f"{unique_id}_{clean_basename}"
+        file_path = _UPLOAD_DIR / safe_filename
+
+        try:
+            # Stream file to disk to handle large files
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            file_size = file_path.stat().st_size
+            logger.info(f"Uploaded video saved to {file_path} ({file_size} bytes)")
+
+            uploaded.append(UploadedFile(
+                filename=filename,
+                path=str(file_path),
+                size=file_size,
+            ))
+
+        except Exception as e:
+            # Clean up on error
+            if file_path.exists():
+                file_path.unlink()
+            logger.exception(f"Failed to save uploaded file {filename}: {e}")
+            errors.append(UploadError(
+                filename=filename,
+                error=str(e)
+            ))
+
+    logger.info(f"Batch upload complete: {len(uploaded)} uploaded, {len(errors)} errors")
+
+    return BatchUploadResponse(uploaded=uploaded, errors=errors)
 
 
 @router.post("/process", response_model=ProcessVideoResponse)
@@ -1406,6 +1476,37 @@ async def generate_trajectory_sse(
                 "message": "Generating trajectory..."
             })
 
+            # Run early ball detection to get stats for debug display
+            from backend.detection.early_tracker import EarlyBallTracker
+            early_detection_stats = {"frames_analyzed": 30, "frames_with_ball": 0}
+            try:
+                fps = video_info.get("fps", 60.0)
+                early_tracker = EarlyBallTracker(
+                    video_path=video_path,
+                    origin_x=origin.x,
+                    origin_y=origin.y,
+                    strike_time=strike_time,
+                    frame_width=frame_width,
+                    frame_height=frame_height,
+                    fps=fps,
+                )
+                # Run early detection (first 0.5s = ~30 frames at 60fps)
+                early_detections = await loop.run_in_executor(
+                    None,
+                    lambda: early_tracker.detect()
+                )
+                early_detection_stats["frames_with_ball"] = len(early_detections)
+                early_detection_stats["frames_analyzed"] = int(0.5 * fps)  # ~30 frames
+                logger.info(f"Early detection stats: {len(early_detections)} detections in {int(0.5 * fps)} frames")
+            except Exception as e:
+                logger.warning(f"Early detection stats failed: {e}")
+
+            yield sse_event("progress", {
+                "step": "generating",
+                "progress": 40,
+                "message": f"Early detection: {early_detection_stats['frames_with_ball']}/{early_detection_stats['frames_analyzed']} frames"
+            })
+
             # Normalize origin
             origin_normalized = (origin.x / frame_width, origin.y / frame_height)
 
@@ -1498,7 +1599,8 @@ async def generate_trajectory_sse(
             yield sse_event("complete", {
                 "trajectory": saved_trajectory,
                 "progress": 100,
-                "message": "Trajectory generation complete"
+                "message": "Trajectory generation complete",
+                "early_detection_stats": early_detection_stats,
             })
 
         except Exception as e:

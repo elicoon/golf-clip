@@ -301,14 +301,23 @@ The review flow uses click-to-mark for precise trajectory endpoints:
 - Click on video marks landing point (confirms as true positive)
 - SSE streams progress: `extracting_template` → `detecting_early` → `generating_physics` → `smoothing`
 - Detection warnings (shaft failed, early detection failed) shown to user
-- "Skip Shot" marks as false positive, "Next →" requires landing point marked
+- "No golf shot" marks as false positive, "Next →" requires trajectory generated
+
+### Video Zoom Controls
+
+The review interface supports zooming for precise marker placement:
+- **Zoom in/out**: +/- buttons or keyboard shortcuts
+- **Pan**: Click and drag when zoomed in (cursor changes to grab)
+- **Reset**: Click reset button or press 0 to return to 1x
+- Zoom range: 1x to 4x in 0.5x increments
+- All marking functionality works at any zoom level
 
 ### Frontend Components
 
 **TrajectoryEditor.tsx** - Canvas overlay on video player:
 - Progressive animation (line grows as video plays)
 - Control points: green (detected) vs gray (interpolated)
-- Hover highlight (yellow ring) and drag-to-edit
+- Custom SVG cursors for marker placement (crosshair, arrow, diamond icons)
 - Touch/pointer event support for mobile
 - Safari fallback for canvas blur filter
 
@@ -318,13 +327,15 @@ The review flow uses click-to-mark for precise trajectory endpoints:
 - Detection warnings display for troubleshooting
 - "Show Tracer" checkbox to toggle trajectory visibility
 - "Render Shot Tracers" checkbox for export
-- "Skip Shot" / "Next →" buttons (replaced Accept/Reject)
+- "No golf shot" (red) / "Next →" buttons for shot review
 - Markers rendered via TrajectoryEditor: target (⊕), landing (↓), apex (◆)
+- Custom SVG cursors matching marker icons during placement
 - Autoplay: video seeks to clip start and plays after trajectory generation completes
+- Video zoom (1x-4x) with pan support when zoomed in
 
 **PointStatusTracker.tsx** - Visual step progress indicator:
 - Shows all 4 steps with completion status (pending/done)
-- Current step highlighted with instructions
+- Current step highlighted, clickable to navigate between steps
 - Compact horizontal layout fits in review UI
 
 ### Backend Modules
@@ -505,3 +516,45 @@ Implementation uses:
 ### Design Document
 
 See `docs/plans/2026-01-24-constraint-based-ball-tracking.md` for full design.
+
+## Background Agent Best Practices
+
+When using parallel background agents for development work:
+
+### When to Use Background Agents
+- **Good for:** Parallel exploration, independent research tasks, fire-and-forget operations
+- **Bad for:** Work that must continue after completion, sequential dependencies
+
+### Continuation-Critical Work
+If work MUST continue after agents finish, prefer **foreground sequential execution**:
+```
+# Instead of 3 background agents:
+Agent 1 (foreground) → Agent 2 (foreground) → Agent 3 (foreground) → Continue
+```
+This ensures immediate continuation without polling overhead.
+
+### If Using Background Agents, Always Poll
+```
+1. Launch background agents
+2. Immediately set up polling (every 5 min):
+   - Check TaskOutput for each agent
+   - If all complete → proceed with next steps
+   - If not → wait and check again
+3. Never assume you'll be "notified"
+```
+
+### Communicate Expectations
+Before async work, tell the user:
+- What's running in background
+- Expected completion time
+- What happens when complete (and how you'll ensure it)
+- What to expect if they return early
+
+### Continuation Checklist
+Before launching background agents:
+- [ ] What runs in background?
+- [ ] What's my continuation trigger?
+- [ ] How will I know when to continue?
+- [ ] What if the trigger never fires?
+
+**Key lesson:** Background agents provide parallelism, not automatic continuation. Without active polling, completion goes unnoticed.

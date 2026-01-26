@@ -307,3 +307,33 @@ class TracerStyle(BaseModel):
     show_apex_marker: bool = Field(True, description="Show marker at apex point")
     show_landing_marker: bool = Field(True, description="Show marker at landing point")
     animation_speed: float = Field(1.0, ge=0.5, le=3.0, description="Animation speed multiplier")
+
+
+# ============================================================================
+# Batch Upload Schemas
+# ============================================================================
+
+
+class UploadedFile(BaseModel):
+    """Information about a successfully uploaded file."""
+    filename: str = Field(..., description="Original filename")
+    path: str = Field(..., description="Server path where file was saved")
+    size: int = Field(..., description="File size in bytes")
+
+
+class UploadError(BaseModel):
+    """Error information for a failed upload."""
+    filename: str = Field(..., description="Original filename that failed")
+    error: str = Field(..., description="Error message describing the failure")
+
+
+class BatchUploadResponse(BaseModel):
+    """Response for batch file upload."""
+    uploaded: list[UploadedFile] = Field(
+        default_factory=list,
+        description="List of successfully uploaded files"
+    )
+    errors: list[UploadError] = Field(
+        default_factory=list,
+        description="List of files that failed to upload"
+    )
