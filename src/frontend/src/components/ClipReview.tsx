@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
-import { PointStatusTracker } from './PointStatusTracker'
+import { PointStatusTracker, ReviewStep } from './PointStatusTracker'
 
 interface ClipReviewProps {
   jobId: string
@@ -69,24 +69,21 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [detectionWarnings, setDetectionWarnings] = useState<string[]>([])
   const [trajectoryError, setTrajectoryError] = useState<string | null>(null)
 
-  // Target point marking state
-  const [targetPoint, setTargetPoint] = useState<{x: number, y: number} | null>(null)
-
-  // Apex point marking state (optional)
-  const [apexPoint, setApexPoint] = useState<{x: number, y: number} | null>(null)
-
   // Debug: early detection stats for debug counter display
   const [earlyDetectionStats, setEarlyDetectionStats] = useState<{frames_analyzed: number, frames_with_ball: number} | null>(null)
 
-  // Marking step: 'target' -> 'landing' -> 'apex' -> 'configure'
-  type MarkingStep = 'target' | 'landing' | 'apex' | 'configure'
-  const [markingStep, setMarkingStep] = useState<MarkingStep>('target')
+  // New simplified review step state machine:
+  // - confirming_shot: "Is this a golf shot?"
+  // - marking_landing: "Click where the ball landed"
+  // - generating: Auto-generating tracer (loading state)
+  // - reviewing: "Does this tracer look right?"
+  const [reviewStep, setReviewStep] = useState<ReviewStep>('confirming_shot')
 
-  // Trajectory configuration
-  const [startingLine, setStartingLine] = useState<'left' | 'center' | 'right'>('center')
-  const [shotShape, setShotShape] = useState<'hook' | 'draw' | 'straight' | 'fade' | 'slice'>('straight')
-  const [shotHeight, setShotHeight] = useState<'low' | 'medium' | 'high'>('medium')
-  const [flightTime, setFlightTime] = useState<number>(3.0)
+  // Trajectory configuration defaults (used for auto-generation)
+  const [startingLine] = useState<'left' | 'center' | 'right'>('center')
+  const [shotShape] = useState<'hook' | 'draw' | 'straight' | 'fade' | 'slice'>('straight')
+  const [shotHeight] = useState<'low' | 'medium' | 'high'>('medium')
+  const [flightTime] = useState<number>(3.0)
 
   // Zoom state
   const [zoomLevel, setZoomLevel] = useState(1)
@@ -127,14 +124,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
   // Reset marking state when shot changes
   useEffect(() => {
-    setTargetPoint(null)
     setLandingPoint(null)
-    setApexPoint(null)
-    setMarkingStep('target')
-    setStartingLine('center')
-    setShotShape('straight')
-    setShotHeight('medium')
-    setFlightTime(3.0)
+    setReviewStep('confirming_shot')
     setTrajectoryProgress(null)
     setTrajectoryMessage('')
     setDetectionWarnings([])
@@ -152,8 +143,6 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       }
     }
   }, [])
-
-  // NOTE: Removed auto-regeneration on config change - user must click Generate button
 
   // Track current video time for trajectory rendering and enforce clip boundaries with auto-loop
   useEffect(() => {
@@ -266,7 +255,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           break
         case 'Enter':
           e.preventDefault()
-          if (landingPoint !== null && trajectoryProgress === null) {
+          if (reviewStep === 'reviewing' && trajectory) {
             handleAccept()
           }
           break
@@ -619,11 +608,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setIsPanning(false)
   }, [])
 
-  // Note: Legacy generateTrajectorySSE was removed as it was replaced by
-  // generateTrajectoryWithConfig which uses the full configuration options
-
-  const generateTrajectoryWithConfig = useCallback(() => {
-    if (!currentShot) return
+  // Generate trajectory with auto configuration
+  const generateTrajectory = useCallback(() => {
+    if (!currentShot || !landingPoint) return
 
     // Increment generation ID to invalidate any stale callbacks
     const currentGenId = ++generationIdRef.current
@@ -633,36 +620,21 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       eventSourceRef.current.close()
     }
 
+    setReviewStep('generating')
     setTrajectoryProgress(0)
     setTrajectoryMessage('Starting...')
     setDetectionWarnings([])
     setTrajectoryError(null)
-    setEarlyDetectionStats(null) // Clear previous stats immediately
+    setEarlyDetectionStats(null)
 
     const params = new URLSearchParams({
       starting_line: startingLine,
       shot_shape: shotShape,
       shot_height: shotHeight,
       flight_time: flightTime.toString(),
+      landing_x: landingPoint.x.toString(),
+      landing_y: landingPoint.y.toString(),
     })
-
-    // Add landing point if marked (optional)
-    if (landingPoint) {
-      params.append('landing_x', landingPoint.x.toString())
-      params.append('landing_y', landingPoint.y.toString())
-    }
-
-    // Add target point if marked (optional)
-    if (targetPoint) {
-      params.append('target_x', targetPoint.x.toString())
-      params.append('target_y', targetPoint.y.toString())
-    }
-
-    // Add apex if marked (optional)
-    if (apexPoint) {
-      params.append('apex_x', apexPoint.x.toString())
-      params.append('apex_y', apexPoint.y.toString())
-    }
 
     const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}/generate?${params}`
     const eventSource = new EventSource(url)
@@ -690,6 +662,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       setTrajectory(data.trajectory)
       setTrajectoryProgress(null)
       setTrajectoryMessage('')
+      setReviewStep('reviewing')
       // Capture early detection stats for debug display
       if (data.early_detection_stats) {
         setEarlyDetectionStats(data.early_detection_stats)
@@ -716,6 +689,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         setTrajectoryError('Connection lost during trajectory generation')
       }
       setTrajectoryProgress(null)
+      setReviewStep('marking_landing')
       eventSource.close()
       eventSourceRef.current = null
     })
@@ -725,29 +699,31 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       if (generationIdRef.current !== currentGenId) return
       setTrajectoryError('Connection lost during trajectory generation')
       setTrajectoryProgress(null)
+      setReviewStep('marking_landing')
       eventSource.close()
       eventSourceRef.current = null
     }
-  }, [jobId, currentShot?.id, landingPoint, targetPoint, apexPoint, startingLine, shotShape, shotHeight, flightTime])
+  }, [jobId, currentShot?.id, landingPoint, startingLine, shotShape, shotHeight, flightTime])
+
+  // Auto-trigger trajectory generation when landing is marked
+  useEffect(() => {
+    if (landingPoint && reviewStep === 'marking_landing') {
+      // Small delay to show the landing marker before generating
+      const timeout = setTimeout(() => {
+        generateTrajectory()
+      }, 200)
+      return () => clearTimeout(timeout)
+    }
+  }, [landingPoint, reviewStep, generateTrajectory])
 
   const handleCanvasClick = useCallback((x: number, y: number) => {
-    if (loadingState === 'loading' || trajectoryProgress !== null) return
+    if (loadingState === 'loading' || reviewStep === 'generating') return
 
-    if (markingStep === 'target') {
-      setTargetPoint({ x, y })
-      setMarkingStep('landing')
-    } else if (markingStep === 'landing') {
+    if (reviewStep === 'marking_landing') {
       setLandingPoint({ x, y })
-      setMarkingStep('apex')
-    } else if (markingStep === 'apex') {
-      setApexPoint({ x, y })
-      setMarkingStep('configure')
+      // generateTrajectory will be triggered by the useEffect above
     }
-  }, [loadingState, trajectoryProgress, markingStep])
-
-  // Note: handleVideoClick was replaced by handleCanvasClick in TrajectoryEditor
-  // Keeping this comment for reference in case we need to restore click-on-video behavior
-  void loadingState // suppress unused warning
+  }, [loadingState, reviewStep])
 
   const clearMarking = useCallback(() => {
     if (eventSourceRef.current) {
@@ -755,10 +731,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       eventSourceRef.current = null
     }
 
-    setTargetPoint(null)
     setLandingPoint(null)
-    setApexPoint(null)
-    setMarkingStep('target')
+    setReviewStep('marking_landing')
     setTrajectory(null)
     setTrajectoryProgress(null)
     setTrajectoryMessage('')
@@ -766,27 +740,6 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setTrajectoryError(null)
     setEarlyDetectionStats(null)
   }, [])
-
-  const handleClearPoint = useCallback((point: 'target' | 'landing' | 'apex') => {
-    if (point === 'target') {
-      setTargetPoint(null)
-      setLandingPoint(null)
-      setApexPoint(null)
-      setMarkingStep('target')
-    } else if (point === 'landing') {
-      setLandingPoint(null)
-      setApexPoint(null)
-      setMarkingStep('landing')
-    } else if (point === 'apex') {
-      setApexPoint(null)
-      if (markingStep === 'configure') {
-        // Stay in configure - user can re-mark apex or skip
-      } else {
-        setMarkingStep('apex')
-      }
-    }
-    setTrajectory(null)
-  }, [markingStep])
 
   const handleVideoLoad = () => {
     setVideoLoaded(true)
@@ -796,6 +749,15 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setVideoLoaded(false)
     setErrorMessage('Failed to load video')
   }
+
+  // Handle step selection from PointStatusTracker
+  const handleSelectStep = useCallback((step: ReviewStep) => {
+    if (step === 'marking_landing') {
+      clearMarking()
+    } else if (step === 'reviewing' && trajectory) {
+      setReviewStep('reviewing')
+    }
+  }, [trajectory, clearMarking])
 
   // Export progress modal
   const renderExportModal = () => {
@@ -830,7 +792,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
             {isComplete && (
               <>
-                <div className="export-success-icon">{hasErrors ? '⚠' : '✓'}</div>
+                <div className="export-success-icon">{hasErrors ? '!' : '>'}</div>
                 <p className="export-result">
                   {exportProgress.exported_count} of {exportProgress.total_clips} clips exported successfully
                 </p>
@@ -862,7 +824,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
             {exportProgress.status === 'error' && (
               <>
-                <div className="export-error-icon">✗</div>
+                <div className="export-error-icon">X</div>
                 <p className="export-error-message">Export failed</p>
                 {exportProgress.errors.length > 0 && (
                   <p className="export-error-detail">{exportProgress.errors[0]?.error}</p>
@@ -890,7 +852,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     return (
       <div className="clip-review clip-review-complete">
         {renderExportModal()}
-        <div className="review-complete-icon">✓</div>
+        <div className="review-complete-icon">{'>'}</div>
         <h2>All clips reviewed!</h2>
         <p className="review-complete-summary">
           {shots.filter((s) => s.confidence >= 0.7).length} clips approved for export
@@ -914,6 +876,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     )
   }
 
+  const isGenerating = reviewStep === 'generating'
+
   return (
     <div className="clip-review" ref={containerRef} tabIndex={-1}>
       {renderExportModal()}
@@ -930,7 +894,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         <button
           onClick={handleReject}
           className="btn-no-shot"
-          disabled={loadingState === 'loading' || trajectoryProgress !== null}
+          disabled={loadingState === 'loading' || isGenerating}
           title="Not a golf shot (Escape)"
         >
           No golf shot
@@ -938,8 +902,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         <button
           onClick={handleAccept}
           className="btn-primary btn-next"
-          disabled={loadingState === 'loading' || trajectoryProgress !== null || !trajectory}
-          title={!trajectory ? "Generate a trajectory first" : "Next (Enter)"}
+          disabled={loadingState === 'loading' || isGenerating || !trajectory}
+          title={!trajectory ? "Mark landing point first" : "Next (Enter)"}
         >
           {loadingState === 'loading' ? (
             <>
@@ -947,169 +911,77 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
               Saving...
             </>
           ) : (
-            'Next →'
+            'Next'
           )}
         </button>
       </div>
 
-      {/* Instruction banner */}
+      {/* Instruction banner based on review step */}
       <div className="marking-instruction">
-        {markingStep === 'target' && (
+        {reviewStep === 'confirming_shot' && (
+          <>
+            <span className="instruction-text">Is this a golf shot?</span>
+            <button
+              className="btn-confirm-shot"
+              onClick={() => setReviewStep('marking_landing')}
+            >
+              Yes, mark landing
+            </button>
+          </>
+        )}
+        {reviewStep === 'marking_landing' && (
           <>
             <span className="step-badge">Step 1</span>
-            <span>Click where you were aiming (optional)</span>
-            <button
-              className="btn-skip-inline"
-              onClick={() => setMarkingStep('landing')}
-            >
-              Skip
-            </button>
-            <button
-              className="btn-skip-inline"
-              onClick={() => setMarkingStep('configure')}
-              title="Skip all marking and use auto-generated trajectory"
-            >
-              Skip All →
-            </button>
+            <span>Click where the ball landed</span>
+            {landingPoint && (
+              <button className="btn-reset-inline" onClick={clearMarking} title="Reset and start over">
+                Reset
+              </button>
+            )}
           </>
         )}
-        {markingStep === 'landing' && (
+        {reviewStep === 'generating' && (
           <>
-            <span className="step-badge">Step 2</span>
-            <span>Click where the ball landed (optional)</span>
-            <button
-              className="btn-skip-inline"
-              onClick={() => setMarkingStep('apex')}
-            >
-              Skip
-            </button>
-            <button className="btn-reset-inline" onClick={clearMarking} title="Reset and start over">
-              Reset
-            </button>
+            <span className="step-badge generating">Generating</span>
+            <span>Creating trajectory...</span>
           </>
         )}
-        {markingStep === 'apex' && (
+        {reviewStep === 'reviewing' && (
           <>
-            <span className="step-badge">Step 3</span>
-            <span>Click the highest point of ball flight (optional)</span>
-            <button
-              className="btn-skip-inline"
-              onClick={() => setMarkingStep('configure')}
-            >
-              Skip
-            </button>
+            <span className="step-badge complete">Done</span>
+            <span>Does this tracer look right?</span>
             <button className="btn-reset-inline" onClick={clearMarking}>
-              Reset
+              Re-mark landing
             </button>
-          </>
-        )}
-        {markingStep === 'configure' && (
-          <>
-            <span className="step-badge">Configure</span>
-            <span>Adjust settings and click Generate{!landingPoint && !targetPoint ? ' (using auto trajectory)' : ''}</span>
           </>
         )}
       </div>
 
       <PointStatusTracker
-        targetPoint={targetPoint}
         landingPoint={landingPoint}
-        apexPoint={apexPoint}
-        markingStep={markingStep}
-        onClearPoint={handleClearPoint}
-        onSelectStep={(step) => {
-          // Allow navigating to any step - clear trajectory when changing steps
-          if (step !== markingStep) {
-            setTrajectory(null)
-            setMarkingStep(step)
-          }
-        }}
+        reviewStep={reviewStep}
+        isGenerating={isGenerating}
+        hasTrajectory={!!trajectory}
+        onSelectStep={handleSelectStep}
       />
 
-      {/* Trajectory configuration section - ABOVE player - always visible */}
-      <div className="trajectory-config-above-player">
-          {trajectoryProgress !== null ? (
-            <div className="trajectory-progress">
-              <div className="progress-header">
-                Generating tracer... {trajectoryProgress}%
-              </div>
-              <div className="progress-bar">
-                <div
-                  className="progress-fill"
-                  style={{ width: `${trajectoryProgress}%` }}
-                />
-              </div>
-              <div className="progress-message">{trajectoryMessage}</div>
+      {/* Trajectory progress section - only show when generating */}
+      {isGenerating && trajectoryProgress !== null && (
+        <div className="trajectory-config-above-player">
+          <div className="trajectory-progress">
+            <div className="progress-header">
+              Generating tracer... {trajectoryProgress}%
             </div>
-          ) : (
-            <div className="trajectory-controls-inline">
-              <div className="control-group">
-                <label>Starting line:</label>
-                <div className="button-group">
-                  {(['left', 'center', 'right'] as const).map((value) => (
-                    <button
-                      key={value}
-                      className={`btn-option ${startingLine === value ? 'active' : ''}`}
-                      onClick={() => setStartingLine(value)}
-                    >
-                      {value.charAt(0).toUpperCase() + value.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="control-group">
-                <label>Shot shape:</label>
-                <div className="button-group">
-                  {(['hook', 'draw', 'straight', 'fade', 'slice'] as const).map((value) => (
-                    <button
-                      key={value}
-                      className={`btn-option ${shotShape === value ? 'active' : ''}`}
-                      onClick={() => setShotShape(value)}
-                    >
-                      {value.charAt(0).toUpperCase() + value.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="control-group">
-                <label>Shot height:</label>
-                <div className="button-group">
-                  {(['low', 'medium', 'high'] as const).map((value) => (
-                    <button
-                      key={value}
-                      className={`btn-option ${shotHeight === value ? 'active' : ''}`}
-                      onClick={() => setShotHeight(value)}
-                    >
-                      {value.charAt(0).toUpperCase() + value.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="control-group">
-                <label>Flight time: {flightTime.toFixed(1)}s</label>
-                <input
-                  type="range"
-                  min="1.0"
-                  max="6.0"
-                  step="0.5"
-                  value={flightTime}
-                  onChange={(e) => setFlightTime(parseFloat(e.target.value))}
-                  className="flight-time-slider"
-                />
-              </div>
-              <button
-                className="btn-primary btn-generate"
-                onClick={() => generateTrajectoryWithConfig()}
-                disabled={trajectoryProgress !== null}
-              >
-                Generate
-              </button>
-              <button className="btn-clear" onClick={clearMarking}>
-                Start Over
-              </button>
+            <div className="progress-bar">
+              <div
+                className="progress-fill"
+                style={{ width: `${trajectoryProgress}%` }}
+              />
             </div>
-          )}
+            <div className="progress-message">{trajectoryMessage}</div>
+          </div>
         </div>
+      )}
 
       <div className="video-zoom-wrapper">
         {/* Zoom controls */}
@@ -1120,7 +992,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
             disabled={zoomLevel <= ZOOM_MIN}
             title="Zoom out (-)"
           >
-            −
+            -
           </button>
           <span className="zoom-level">{zoomLevel}x</span>
           <button
@@ -1145,7 +1017,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         <div
           className={`video-container ${!videoLoaded ? 'video-loading' : ''} ${zoomLevel > 1 ? 'zoomed' : ''} ${isPanning ? 'panning' : ''}`}
           style={{
-            cursor: zoomLevel > 1 && !['target', 'landing', 'apex'].includes(markingStep)
+            cursor: zoomLevel > 1 && reviewStep !== 'marking_landing'
               ? (isPanning ? 'grabbing' : 'grab')
               : 'default',
           }}
@@ -1181,12 +1053,10 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
               trajectory={trajectory}
               currentTime={currentTime}
               showTracer={showTracer}
-              disabled={trajectoryProgress !== null}
+              disabled={isGenerating || reviewStep === 'confirming_shot'}
               landingPoint={landingPoint}
-              targetPoint={targetPoint}
-              apexPoint={apexPoint}
               onCanvasClick={handleCanvasClick}
-              markingStep={markingStep}
+              markingStep={reviewStep}
               onTrajectoryUpdate={(points) => {
                 if (!currentShot) return
                 fetch(`http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}`, {
@@ -1212,18 +1082,18 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         <button
           onClick={() => stepTime(-1)}
           className="btn-icon"
-          title="Back 1 second (Shift + ←)"
+          title="Back 1 second (Shift + Left)"
           disabled={loadingState === 'loading'}
         >
-          ⏪
+          {'<<'}
         </button>
         <button
           onClick={() => stepFrame(-1)}
           className="btn-icon"
-          title="Previous frame (←)"
+          title="Previous frame (Left)"
           disabled={loadingState === 'loading'}
         >
-          ◀
+          {'<'}
         </button>
         <button
           onClick={togglePlayPause}
@@ -1231,23 +1101,23 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           title="Play/Pause (Space)"
           disabled={loadingState === 'loading'}
         >
-          {isPlaying ? '⏸ Pause' : '▶ Play'}
+          {isPlaying ? 'Pause' : 'Play'}
         </button>
         <button
           onClick={() => stepFrame(1)}
           className="btn-icon"
-          title="Next frame (→)"
+          title="Next frame (Right)"
           disabled={loadingState === 'loading'}
         >
-          ▶
+          {'>'}
         </button>
         <button
           onClick={() => stepTime(1)}
           className="btn-icon"
-          title="Forward 1 second (Shift + →)"
+          title="Forward 1 second (Shift + Right)"
           disabled={loadingState === 'loading'}
         >
-          ⏩
+          {'>>'}
         </button>
       </div>
 
@@ -1287,36 +1157,19 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         </label>
       </div>
 
-      {/* Trajectory status section (for non-configure steps) */}
-      {markingStep !== 'configure' && (targetPoint || landingPoint) && (
-        <div className="trajectory-config-section">
-          <div className="marking-status">
-            {targetPoint && (
-              <div className="marked-point">
-                <span className="marker-icon">&#8853;</span>
-                <span>Target marked</span>
-              </div>
-            )}
-            <button className="btn-clear" onClick={clearMarking}>
-              Clear
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Trajectory errors/warnings */}
       {(trajectoryError || detectionWarnings.length > 0) && (
         <div className="trajectory-config-section">
           {trajectoryError && (
             <div className="trajectory-error">
-              <span>&#9888;&#65039; {trajectoryError}</span>
+              <span>! {trajectoryError}</span>
             </div>
           )}
           {detectionWarnings.length > 0 && (
             <div className="detection-warnings">
               {detectionWarnings.map((warning, i) => (
                 <div key={i} className="warning-item">
-                  <span className="warning-icon">&#9888;</span>
+                  <span className="warning-icon">!</span>
                   <span>{warning}</span>
                 </div>
               ))}
@@ -1340,9 +1193,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
       {errorMessage && (
         <div className="error-banner">
-          <span className="error-icon">⚠</span>
+          <span className="error-icon">!</span>
           <span>{errorMessage}</span>
-          <button onClick={() => setErrorMessage(null)} className="error-dismiss">×</button>
+          <button onClick={() => setErrorMessage(null)} className="error-dismiss">x</button>
         </div>
       )}
 
@@ -1356,7 +1209,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
       <div className="keyboard-hints">
         <span><kbd>Space</kbd> Play/Pause</span>
-        <span><kbd>←</kbd><kbd>→</kbd> Frame step</span>
+        <span><kbd>Left/Right</kbd> Frame step</span>
         <span><kbd>[</kbd><kbd>]</kbd> Set in/out</span>
         <span><kbd>+</kbd><kbd>-</kbd> Zoom</span>
         <span><kbd>Enter</kbd> Next</span>

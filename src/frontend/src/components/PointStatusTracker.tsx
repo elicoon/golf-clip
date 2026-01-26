@@ -1,90 +1,70 @@
 // src/frontend/src/components/PointStatusTracker.tsx
 import { useCallback } from 'react'
 
+export type ReviewStep = 'confirming_shot' | 'marking_landing' | 'generating' | 'reviewing'
+
 interface PointStatusTrackerProps {
-  targetPoint: { x: number; y: number } | null
   landingPoint: { x: number; y: number } | null
-  apexPoint: { x: number; y: number } | null
-  markingStep: 'target' | 'landing' | 'apex' | 'configure'
-  onClearPoint: (point: 'target' | 'landing' | 'apex') => void
-  onSelectStep: (step: 'target' | 'landing' | 'apex' | 'configure') => void
+  reviewStep: ReviewStep
+  isGenerating: boolean
+  hasTrajectory: boolean
+  onSelectStep: (step: ReviewStep) => void
 }
 
-type StatusState = 'active' | 'complete' | 'pending' | 'optional' | 'ready'
+type StatusState = 'active' | 'complete' | 'pending' | 'generating'
 
 export function PointStatusTracker({
-  targetPoint,
   landingPoint,
-  apexPoint,
-  markingStep,
-  onClearPoint,
+  reviewStep,
+  isGenerating,
+  hasTrajectory,
   onSelectStep,
 }: PointStatusTrackerProps) {
-  const getStatus = useCallback(
-    (
-      point: { x: number; y: number } | null,
-      step: string,
-      isOptional: boolean = false
-    ): StatusState => {
-      if (point) return 'complete'
-      if (markingStep === step) return 'active'
-      if (isOptional) return 'optional'
-      return 'pending'
-    },
-    [markingStep]
-  )
+  const getLandingStatus = useCallback((): StatusState => {
+    if (landingPoint) return 'complete'
+    if (reviewStep === 'marking_landing') return 'active'
+    return 'pending'
+  }, [landingPoint, reviewStep])
 
-  const targetStatus = getStatus(targetPoint, 'target')
-  const landingStatus = getStatus(landingPoint, 'landing')
-  const apexStatus = getStatus(apexPoint, 'apex', true)
-  const configStatus: StatusState =
-    markingStep === 'configure'
-      ? 'active'
-      : targetPoint && landingPoint
-      ? 'ready'
-      : 'pending'
+  const getReviewStatus = useCallback((): StatusState => {
+    if (isGenerating) return 'generating'
+    if (hasTrajectory) {
+      if (reviewStep === 'reviewing') return 'active'
+      return 'complete'
+    }
+    return 'pending'
+  }, [isGenerating, hasTrajectory, reviewStep])
+
+  const landingStatus = getLandingStatus()
+  const reviewStatus = getReviewStatus()
 
   return (
     <div className="point-status-tracker">
       <StatusItem
-        label="Target"
-        status={targetStatus}
-        icon="⊕"
-        point={targetPoint}
-        onClear={() => onClearPoint('target')}
-        onClick={() => onSelectStep('target')}
-      />
-
-      <StatusConnector complete={!!targetPoint} />
-
-      <StatusItem
-        label="Landing"
+        label="Mark Landing"
         status={landingStatus}
         icon="↓"
-        point={landingPoint}
-        onClear={() => onClearPoint('landing')}
-        onClick={() => onSelectStep('landing')}
+        onClick={() => {
+          // Only allow going back to landing if not currently generating
+          if (!isGenerating) {
+            onSelectStep('marking_landing')
+          }
+        }}
+        disabled={isGenerating}
       />
 
       <StatusConnector complete={!!landingPoint} />
 
       <StatusItem
-        label="Apex"
-        status={apexStatus}
-        icon="◇"
-        point={apexPoint}
-        onClear={() => onClearPoint('apex')}
-        onClick={() => onSelectStep('apex')}
-      />
-
-      <StatusConnector complete={!!landingPoint} />
-
-      <StatusItem
-        label="Generate"
-        status={configStatus}
-        icon="▶"
-        isAction
-        onClick={() => onSelectStep('configure')}
+        label={isGenerating ? 'Generating...' : 'Review Tracer'}
+        status={reviewStatus}
+        icon={isGenerating ? '...' : '✓'}
+        onClick={() => {
+          if (hasTrajectory && !isGenerating) {
+            onSelectStep('reviewing')
+          }
+        }}
+        disabled={!hasTrajectory || isGenerating}
       />
     </div>
   )
@@ -94,51 +74,37 @@ interface StatusItemProps {
   label: string
   status: StatusState
   icon: string
-  point?: { x: number; y: number } | null
-  isAction?: boolean
-  onClear?: () => void
   onClick?: () => void
+  disabled?: boolean
 }
 
 function StatusItem({
   label,
   status,
   icon,
-  point,
-  isAction,
-  onClear,
   onClick,
+  disabled,
 }: StatusItemProps) {
   return (
     <div
-      className={`status-item status-${status} clickable`}
-      onClick={onClick}
-      title={`Click to ${status === 'complete' ? 're-mark' : 'mark'} ${label.toLowerCase()}`}
+      className={`status-item status-${status} ${!disabled ? 'clickable' : ''}`}
+      onClick={!disabled ? onClick : undefined}
+      title={disabled ? undefined : `Click to ${status === 'complete' ? 're-mark' : 'go to'} ${label.toLowerCase()}`}
       role="button"
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault()
           onClick?.()
         }
       }}
     >
-      <div className="status-icon">{status === 'complete' ? '✓' : icon}</div>
+      <div className="status-icon">
+        {status === 'complete' ? '✓' : status === 'generating' ? <span className="spinner-small" /> : icon}
+      </div>
       <div className="status-label">
         {label}
       </div>
-      {point && onClear && !isAction && (
-        <button
-          className="status-clear"
-          onClick={(e) => {
-            e.stopPropagation()
-            onClear()
-          }}
-          title={`Clear ${label.toLowerCase()}`}
-        >
-          ×
-        </button>
-      )}
     </div>
   )
 }

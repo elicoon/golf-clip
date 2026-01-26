@@ -21,32 +21,14 @@ interface TrajectoryEditorProps {
   disabled?: boolean
   showTracer?: boolean
   landingPoint?: { x: number; y: number } | null
-  targetPoint?: { x: number; y: number } | null
-  apexPoint?: { x: number; y: number } | null
   onCanvasClick?: (x: number, y: number) => void
-  markingStep?: 'target' | 'landing' | 'apex' | 'configure'
+  markingStep?: 'confirming_shot' | 'marking_landing' | 'generating' | 'reviewing'
 }
 
-// Custom cursor SVGs for marker placement
-// Target cursor: crosshair with circle (⊕)
-const targetCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <circle cx="16" cy="16" r="10" fill="none" stroke="white" stroke-width="2"/>
-  <line x1="16" y1="2" x2="16" y2="10" stroke="white" stroke-width="2"/>
-  <line x1="16" y1="22" x2="16" y2="30" stroke="white" stroke-width="2"/>
-  <line x1="2" y1="16" x2="10" y2="16" stroke="white" stroke-width="2"/>
-  <line x1="22" y1="16" x2="30" y2="16" stroke="white" stroke-width="2"/>
-  <circle cx="16" cy="16" r="10" fill="none" stroke="black" stroke-width="1" stroke-opacity="0.5"/>
-</svg>`
-
+// Custom cursor SVG for landing point marker placement
 // Landing cursor: downward arrow (↓)
 const landingCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
   <polygon points="16,28 8,16 12,16 12,4 20,4 20,16 24,16" fill="white" stroke="black" stroke-width="1"/>
-</svg>`
-
-// Apex cursor: diamond (◇)
-const apexCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <polygon points="16,2 30,16 16,30 2,16" fill="#ffd700" stroke="white" stroke-width="2"/>
-  <polygon points="16,2 30,16 16,30 2,16" fill="none" stroke="black" stroke-width="1" stroke-opacity="0.3"/>
 </svg>`
 
 // Convert SVG to data URI for cursor
@@ -73,10 +55,8 @@ export function TrajectoryEditor({
   disabled = false,
   showTracer = true,
   landingPoint,
-  targetPoint,
-  apexPoint,
   onCanvasClick,
-  markingStep = 'configure',
+  markingStep = 'reviewing',
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
@@ -242,44 +222,6 @@ export function TrajectoryEditor({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, canvasSize.width, canvasSize.height)
 
-      // Draw target marker (crosshair with circle)
-      if (targetPoint) {
-        const markerX = targetPoint.x * canvasSize.width
-        const markerY = targetPoint.y * canvasSize.height
-        const circleRadius = 16
-        const crosshairExtend = 8
-
-        ctx.save()
-        ctx.shadowColor = 'rgba(255, 255, 255, 0.8)'
-        ctx.shadowBlur = 6
-        ctx.strokeStyle = '#ffffff'
-        ctx.lineWidth = 2
-        ctx.lineCap = 'round'
-
-        ctx.beginPath()
-        ctx.arc(markerX, markerY, circleRadius, 0, Math.PI * 2)
-        ctx.stroke()
-
-        ctx.beginPath()
-        ctx.moveTo(markerX, markerY - circleRadius - crosshairExtend)
-        ctx.lineTo(markerX, markerY - circleRadius + 4)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(markerX, markerY + circleRadius - 4)
-        ctx.lineTo(markerX, markerY + circleRadius + crosshairExtend)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(markerX - circleRadius - crosshairExtend, markerY)
-        ctx.lineTo(markerX - circleRadius + 4, markerY)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(markerX + circleRadius - 4, markerY)
-        ctx.lineTo(markerX + circleRadius + crosshairExtend, markerY)
-        ctx.stroke()
-
-        ctx.restore()
-      }
-
       // Draw landing marker (downward arrow)
       if (landingPoint) {
         const markerX = landingPoint.x * canvasSize.width
@@ -306,32 +248,6 @@ export function TrajectoryEditor({
         ctx.beginPath()
         ctx.moveTo(markerX - lineWidth / 2, markerY + 3)
         ctx.lineTo(markerX + lineWidth / 2, markerY + 3)
-        ctx.stroke()
-
-        ctx.restore()
-      }
-
-      // Draw apex marker (gold diamond)
-      if (apexPoint) {
-        const markerX = apexPoint.x * canvasSize.width
-        const markerY = apexPoint.y * canvasSize.height
-        const size = 12
-
-        ctx.save()
-        ctx.shadowColor = 'rgba(255, 215, 0, 0.8)'
-        ctx.shadowBlur = 8
-        ctx.fillStyle = '#ffd700'
-        ctx.strokeStyle = '#ffffff'
-        ctx.lineWidth = 2
-
-        // Diamond shape
-        ctx.beginPath()
-        ctx.moveTo(markerX, markerY - size)
-        ctx.lineTo(markerX + size, markerY)
-        ctx.lineTo(markerX, markerY + size)
-        ctx.lineTo(markerX - size, markerY)
-        ctx.closePath()
-        ctx.fill()
         ctx.stroke()
 
         ctx.restore()
@@ -472,7 +388,7 @@ export function TrajectoryEditor({
     return () => {
       cancelAnimationFrame(animationFrameId)
     }
-  }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, targetPoint, apexPoint, videoRef])
+  }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, videoRef])
 
   // Find closest point to a normalized position
   // NOTE: Temporarily disabled - dragging feature moved to backlog
@@ -537,14 +453,10 @@ export function TrajectoryEditor({
   // Get cursor based on marking step
   const getCursor = () => {
     switch (markingStep) {
-      case 'target':
-        return svgToCursor(targetCursorSvg, 16, 16)
-      case 'landing':
+      case 'marking_landing':
         return svgToCursor(landingCursorSvg, 16, 28)  // Hotspot at arrow tip
-      case 'apex':
-        return svgToCursor(apexCursorSvg, 16, 16)
       default:
-        return 'crosshair'
+        return 'default'
     }
   }
 

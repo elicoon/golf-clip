@@ -1860,6 +1860,46 @@ kbd {
   font-size: 12px;
 }
 
+.step-badge.generating {
+  background: #f59e0b;
+}
+
+.step-badge.complete {
+  background: #22c55e;
+}
+
+.instruction-text {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.btn-confirm-shot {
+  padding: 8px 16px;
+  background: #22c55e;
+  border: none;
+  color: white;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-confirm-shot:hover {
+  background: #16a34a;
+  transform: translateY(-1px);
+}
+
+.spinner-small {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 .btn-reset-inline {
   margin-left: auto;
   padding: 4px 12px;
