@@ -63,6 +63,7 @@ class StrikeDetection:
     frequency_centroid: float
     decay_ratio: float = 0.5  # How quickly sound decays (higher = faster = more impulsive)
     zero_crossing_rate: float = 0.25  # ZCR around the peak
+    rise_time: float = 0.5  # Attack speed (lower = faster attack, typical strike <10ms)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API responses."""
@@ -75,6 +76,7 @@ class StrikeDetection:
             "frequency_centroid": self.frequency_centroid,
             "decay_ratio": self.decay_ratio,
             "zero_crossing_rate": self.zero_crossing_rate,
+            "rise_time": self.rise_time,
         }
 
 

@@ -27,7 +27,7 @@ def test_migration_adds_landing_columns():
 
                 # Check schema version
                 version = loop.run_until_complete(db_module.get_schema_version())
-                assert version == 4, f"Expected schema v4, got v{version}"
+                assert version == 5, f"Expected schema v5, got v{version}"
 
                 # Verify columns exist by inserting a shot with landing coords
                 async def verify_columns():
