@@ -194,7 +194,7 @@ export function TracerConfigPanel({
               <input
                 type="range"
                 min="1.0"
-                max="6.0"
+                max="10.0"
                 step="0.1"
                 value={config.flightTime}
                 onChange={handleFlightTimeChange}

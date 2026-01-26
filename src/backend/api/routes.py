@@ -1383,7 +1383,7 @@ async def generate_trajectory_sse(
     starting_line: str = Query("center", description="Starting line: left, center, right"),
     shot_shape: str = Query("straight", description="Shot shape: hook, draw, straight, fade, slice"),
     shot_height: str = Query("medium", description="Shot height: low, medium, high"),
-    flight_time: float = Query(None, ge=1.0, le=6.0, description="Flight time in seconds (1.0-6.0)"),
+    flight_time: float = Query(None, ge=1.0, le=10.0, description="Flight time in seconds (1.0-10.0)"),
     apex_x: Optional[float] = Query(None, ge=0, le=1, description="Apex X coordinate (0-1), optional"),
     apex_y: Optional[float] = Query(None, ge=0, le=1, description="Apex Y coordinate (0-1), optional"),
     origin_x: Optional[float] = Query(None, ge=0, le=1, description="Manual origin X coordinate (0-1), optional - overrides auto-detection"),
