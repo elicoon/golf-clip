@@ -13,7 +13,7 @@ from loguru import logger
 DB_PATH = Path.home() / ".golfclip" / "golfclip.db"
 
 # Current schema version - increment when making schema changes
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # Global connection pool (single connection for SQLite)
 _db_connection: Optional[aiosqlite.Connection] = None
@@ -77,6 +77,8 @@ async def _apply_migrations(current_version: int) -> None:
         await _migrate_v5()
     if current_version < 6:
         await _migrate_v6()
+    if current_version < 7:
+        await _migrate_v7()
 
 
 async def _migrate_v1() -> None:
@@ -280,6 +282,57 @@ async def _migrate_v6() -> None:
     )
 
     logger.info("Migration v6 applied successfully")
+
+
+async def _migrate_v7() -> None:
+    """Add origin_feedback table for collecting user corrections to ball origin detection."""
+    logger.info("Applying migration v7: Origin feedback table")
+
+    await _db_connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS origin_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            shot_id INTEGER NOT NULL,
+            video_path TEXT NOT NULL,
+            strike_time REAL NOT NULL,
+            frame_width INTEGER NOT NULL,
+            frame_height INTEGER NOT NULL,
+
+            -- Auto-detection results (null if detection failed completely)
+            auto_origin_x REAL,
+            auto_origin_y REAL,
+            auto_confidence REAL,
+            auto_method TEXT,
+            shaft_score REAL,
+            clubhead_detected INTEGER,
+
+            -- User-marked origin (normalized 0-1 coordinates)
+            manual_origin_x REAL NOT NULL,
+            manual_origin_y REAL NOT NULL,
+
+            -- Computed error (null if no auto-detection)
+            error_dx REAL,
+            error_dy REAL,
+            error_distance REAL,
+
+            created_at TEXT NOT NULL,
+            environment TEXT DEFAULT 'prod',
+
+            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_origin_feedback_job ON origin_feedback(job_id);
+        CREATE INDEX IF NOT EXISTS idx_origin_feedback_error ON origin_feedback(error_distance);
+        """
+    )
+
+    await _db_connection.execute(
+        "INSERT OR IGNORE INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
+        (7, datetime.utcnow().isoformat(), "Origin feedback table for ball origin corrections"),
+    )
+
+    logger.info("Migration v7 applied successfully")
 
 
 async def close_db() -> None:

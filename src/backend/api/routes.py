@@ -25,6 +25,8 @@ from backend.api.schemas import (
     FeedbackStats,
     HoleInfo,
     JobError,
+    OriginFeedbackExportResponse,
+    OriginFeedbackStats,
     ProcessingStatus,
     ProcessVideoRequest,
     ProcessVideoResponse,
@@ -62,8 +64,11 @@ from backend.models.job import (
     update_shot,
 )
 from backend.models.trajectory import (
+    create_origin_feedback,
     create_tracer_feedback,
+    export_origin_feedback,
     export_tracer_feedback,
+    get_origin_feedback_stats,
     get_tracer_feedback_for_job,
     get_trajectory,
     get_trajectories_for_job,
@@ -1454,11 +1459,24 @@ async def generate_trajectory_sse(
             tracker = ConstrainedBallTracker(origin_detector=origin_detector)
             loop = asyncio.get_event_loop()
 
+            # Always run auto-detection first (for feedback collection when manual origin provided)
+            yield sse_event("progress", {
+                "step": "origin",
+                "progress": 10,
+                "message": "Detecting ball origin..."
+            })
+
+            # Run origin detection in executor (CPU-bound)
+            auto_origin = await loop.run_in_executor(
+                None,
+                lambda: origin_detector.detect_origin(video_path, strike_time)
+            )
+
             # Check if user provided manual origin point
             if origin_x is not None and origin_y is not None:
                 yield sse_event("progress", {
                     "step": "origin",
-                    "progress": 10,
+                    "progress": 15,
                     "message": "Using manually marked origin point..."
                 })
                 # Convert from normalized (0-1) to pixel coordinates
@@ -1468,25 +1486,37 @@ async def generate_trajectory_sse(
                     confidence=1.0,
                     method="manual"
                 )
+
+                # Save origin feedback to capture auto vs manual comparison
+                try:
+                    await create_origin_feedback(
+                        job_id=job_id,
+                        shot_id=shot_id,
+                        video_path=str(video_path),
+                        strike_time=strike_time,
+                        frame_width=frame_width,
+                        frame_height=frame_height,
+                        auto_origin_x=auto_origin.x / frame_width if auto_origin else None,
+                        auto_origin_y=auto_origin.y / frame_height if auto_origin else None,
+                        auto_confidence=auto_origin.confidence if auto_origin else None,
+                        auto_method=auto_origin.method if auto_origin else None,
+                        shaft_score=getattr(auto_origin, 'shaft_score', None) if auto_origin else None,
+                        clubhead_detected=getattr(auto_origin, 'clubhead_detected', None) if auto_origin else None,
+                        manual_origin_x=origin_x,
+                        manual_origin_y=origin_y,
+                    )
+                    logger.info(f"Saved origin feedback for job={job_id} shot={shot_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to save origin feedback: {e}")
+
                 yield sse_event("progress", {
                     "step": "origin",
                     "progress": 20,
                     "message": f"Using manual origin at ({origin.x:.0f}, {origin.y:.0f})"
                 })
             else:
-                yield sse_event("progress", {
-                    "step": "origin",
-                    "progress": 10,
-                    "message": "Detecting ball origin..."
-                })
-
-                # Run origin detection in executor (CPU-bound)
-                origin = await loop.run_in_executor(
-                    None,
-                    lambda: origin_detector.detect_origin(video_path, strike_time)
-                )
-
-                if origin is None:
+                # Use auto-detection result
+                if auto_origin is None:
                     # Emit warning but continue with fallback origin
                     yield sse_event("warning", {
                         "code": "origin_detection_failed",
@@ -1499,11 +1529,13 @@ async def generate_trajectory_sse(
                         confidence=0.3,
                         method="fallback"
                     )
-                elif origin.confidence < 0.6:
-                    yield sse_event("warning", {
-                        "code": "low_origin_confidence",
-                        "message": f"Ball origin detection confidence is low ({origin.confidence:.0%})"
-                    })
+                else:
+                    origin = auto_origin
+                    if origin.confidence < 0.6:
+                        yield sse_event("warning", {
+                            "code": "low_origin_confidence",
+                            "message": f"Ball origin detection confidence is low ({origin.confidence:.0%})"
+                        })
 
                 yield sse_event("progress", {
                     "step": "origin",
@@ -1773,4 +1805,47 @@ async def submit_tracer_feedback(job_id: str, request: TracerFeedbackRequest):
         apex_point=feedback_record["apex_point"],
         created_at=feedback_record["created_at"],
         environment=feedback_record["environment"],
+    )
+
+
+# =============================================================================
+# Origin Feedback Endpoints (ML Training Data Collection)
+# NOTE: Specific paths (/origin-feedback/stats, /origin-feedback/export) MUST
+# come before parameterized paths for correct routing.
+# =============================================================================
+
+
+@router.get("/origin-feedback/stats", response_model=OriginFeedbackStats)
+async def get_origin_feedback_statistics():
+    """Get aggregate statistics on origin detection feedback.
+
+    Returns correction rate, mean error distance, and counts by detection method.
+    """
+    stats = await get_origin_feedback_stats()
+
+    return OriginFeedbackStats(
+        total_feedback=stats["total_feedback"],
+        correction_rate=stats["correction_rate"],
+        mean_error_distance=stats.get("mean_error_distance"),
+        by_method=stats.get("by_method", {}),
+    )
+
+
+@router.get("/origin-feedback/export", response_model=OriginFeedbackExportResponse)
+async def export_origin_feedback_data(environment: Optional[str] = None):
+    """Export origin feedback for ML training.
+
+    Args:
+        environment: Optional filter by environment ('prod', 'dev', etc.)
+
+    Returns:
+        All origin feedback records with error metrics.
+    """
+    export_data = await export_origin_feedback(environment=environment)
+
+    return OriginFeedbackExportResponse(
+        exported_at=export_data["exported_at"],
+        total_records=export_data["total_records"],
+        records=export_data["records"],
+        stats=export_data["stats"],
     )

@@ -447,3 +447,41 @@ class TracerFeedbackExportResponse(BaseModel):
         ...,
         description="Aggregate statistics including total and by_type counts"
     )
+
+
+# =============================================================================
+# Origin Feedback Schemas (ML Training Data Collection)
+# =============================================================================
+
+
+class OriginFeedbackStats(BaseModel):
+    """Aggregate statistics on origin detection feedback."""
+
+    total_feedback: int = Field(..., description="Total number of origin feedback records")
+    correction_rate: float = Field(
+        ...,
+        description="Percentage of shots where user corrected auto-detection"
+    )
+    mean_error_distance: Optional[float] = Field(
+        None,
+        description="Mean distance between auto and manual origins (normalized 0-1)"
+    )
+    by_method: dict[str, int] = Field(
+        default_factory=dict,
+        description="Count of feedback records by auto-detection method"
+    )
+
+
+class OriginFeedbackExportResponse(BaseModel):
+    """Response for exporting origin feedback data."""
+
+    exported_at: str = Field(..., description="ISO timestamp of export")
+    total_records: int = Field(..., description="Number of records exported")
+    records: list[dict[str, Any]] = Field(
+        ...,
+        description="List of origin feedback records with error metrics"
+    )
+    stats: dict[str, Any] = Field(
+        ...,
+        description="Aggregate statistics"
+    )
