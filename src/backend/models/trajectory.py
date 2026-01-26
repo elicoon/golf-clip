@@ -249,3 +249,221 @@ def _row_to_dict(row) -> dict:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+# ============================================================================
+# Tracer Feedback CRUD Operations
+# ============================================================================
+
+
+async def create_tracer_feedback(
+    job_id: str,
+    shot_id: int,
+    feedback_type: str,
+    auto_params: Optional[dict],
+    final_params: Optional[dict],
+    origin_point: Optional[dict],
+    landing_point: Optional[dict],
+    apex_point: Optional[dict] = None,
+    environment: str = "prod",
+) -> dict:
+    """Store tracer feedback capturing user corrections to auto-generated trajectories.
+
+    Args:
+        job_id: The job ID
+        shot_id: The shot number within the job
+        feedback_type: One of: tracer_auto_accepted, tracer_configured,
+                       tracer_reluctant_accept, tracer_skip, tracer_rejected
+        auto_params: The auto-generated trajectory parameters
+        final_params: The user's final configured parameters (null if auto-accepted)
+        origin_point: Ball origin point dict with x, y
+        landing_point: User-marked landing point dict with x, y
+        apex_point: Optional apex point dict with x, y
+        environment: Environment tag (default: 'prod')
+
+    Returns:
+        Dict with the created feedback record
+    """
+    db = await get_db()
+
+    created_at = datetime.utcnow().isoformat()
+
+    cursor = await db.execute(
+        """
+        INSERT INTO tracer_feedback (
+            job_id, shot_id, feedback_type,
+            auto_params_json, final_params_json,
+            origin_point_json, landing_point_json, apex_point_json,
+            created_at, environment
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            job_id,
+            shot_id,
+            feedback_type,
+            serialize_json(auto_params),
+            serialize_json(final_params),
+            serialize_json(origin_point),
+            serialize_json(landing_point),
+            serialize_json(apex_point),
+            created_at,
+            environment,
+        ),
+    )
+    await db.commit()
+
+    feedback_id = cursor.lastrowid
+    logger.debug(f"Created tracer feedback {feedback_id} for job={job_id} shot={shot_id} type={feedback_type}")
+
+    return {
+        "id": feedback_id,
+        "job_id": job_id,
+        "shot_id": shot_id,
+        "feedback_type": feedback_type,
+        "auto_params": auto_params,
+        "final_params": final_params,
+        "origin_point": origin_point,
+        "landing_point": landing_point,
+        "apex_point": apex_point,
+        "created_at": created_at,
+        "environment": environment,
+    }
+
+
+async def get_tracer_feedback(feedback_id: int) -> Optional[dict]:
+    """Get tracer feedback by ID.
+
+    Args:
+        feedback_id: The feedback record ID
+
+    Returns:
+        Dict with feedback data or None if not found
+    """
+    db = await get_db()
+
+    async with db.execute(
+        "SELECT * FROM tracer_feedback WHERE id = ?",
+        (feedback_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+
+    if not row:
+        return None
+
+    return _tracer_feedback_row_to_dict(row)
+
+
+async def get_tracer_feedback_for_job(job_id: str) -> list[dict]:
+    """Get all tracer feedback for a job.
+
+    Args:
+        job_id: The job ID
+
+    Returns:
+        List of feedback dicts ordered by shot_id
+    """
+    db = await get_db()
+
+    async with db.execute(
+        """
+        SELECT * FROM tracer_feedback
+        WHERE job_id = ?
+        ORDER BY shot_id
+        """,
+        (job_id,),
+    ) as cursor:
+        rows = await cursor.fetchall()
+
+    return [_tracer_feedback_row_to_dict(row) for row in rows]
+
+
+async def export_tracer_feedback(environment: Optional[str] = None) -> dict:
+    """Export all tracer feedback data with computed deltas for ML analysis.
+
+    Args:
+        environment: Optional filter by environment ('prod', 'dev', etc.)
+
+    Returns:
+        Dict with:
+        - feedback: List of feedback records with computed deltas
+        - stats: Aggregate statistics
+    """
+    db = await get_db()
+
+    # Build query with optional environment filter
+    query = "SELECT * FROM tracer_feedback"
+    params = []
+    if environment is not None:
+        query += " WHERE environment = ?"
+        params.append(environment)
+    query += " ORDER BY created_at"
+
+    async with db.execute(query, params) as cursor:
+        rows = await cursor.fetchall()
+
+    feedback_list = []
+    stats_by_type: dict[str, int] = {}
+
+    for row in rows:
+        feedback = _tracer_feedback_row_to_dict(row)
+
+        # Compute deltas between auto and final params
+        deltas = _compute_param_deltas(feedback["auto_params"], feedback["final_params"])
+        feedback["deltas"] = deltas
+
+        feedback_list.append(feedback)
+
+        # Count by type
+        ftype = feedback["feedback_type"]
+        stats_by_type[ftype] = stats_by_type.get(ftype, 0) + 1
+
+    return {
+        "feedback": feedback_list,
+        "stats": {
+            "total": len(feedback_list),
+            "by_type": stats_by_type,
+        },
+    }
+
+
+def _tracer_feedback_row_to_dict(row) -> dict:
+    """Convert database row to tracer feedback dict."""
+    return {
+        "id": row["id"],
+        "job_id": row["job_id"],
+        "shot_id": row["shot_id"],
+        "feedback_type": row["feedback_type"],
+        "auto_params": deserialize_json(row["auto_params_json"]),
+        "final_params": deserialize_json(row["final_params_json"]),
+        "origin_point": deserialize_json(row["origin_point_json"]),
+        "landing_point": deserialize_json(row["landing_point_json"]),
+        "apex_point": deserialize_json(row["apex_point_json"]),
+        "created_at": row["created_at"],
+        "environment": row["environment"],
+    }
+
+
+def _compute_param_deltas(auto_params: Optional[dict], final_params: Optional[dict]) -> Optional[dict]:
+    """Compute deltas between auto-generated and user-configured parameters.
+
+    Args:
+        auto_params: The auto-generated trajectory parameters
+        final_params: The user's final configured parameters
+
+    Returns:
+        Dict mapping param names to {auto, final} values for params that differ,
+        or None if no final_params (auto-accepted case)
+    """
+    if final_params is None or auto_params is None:
+        return None
+
+    deltas = {}
+    all_keys = set(auto_params.keys()) | set(final_params.keys())
+
+    for key in all_keys:
+        auto_val = auto_params.get(key)
+        final_val = final_params.get(key)
+        if auto_val != final_val:
+            deltas[key] = {"auto": auto_val, "final": final_val}
+
+    return deltas if deltas else {}

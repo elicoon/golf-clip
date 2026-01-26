@@ -13,7 +13,7 @@ from loguru import logger
 DB_PATH = Path.home() / ".golfclip" / "golfclip.db"
 
 # Current schema version - increment when making schema changes
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Global connection pool (single connection for SQLite)
 _db_connection: Optional[aiosqlite.Connection] = None
@@ -75,6 +75,8 @@ async def _apply_migrations(current_version: int) -> None:
         await _migrate_v4()
     if current_version < 5:
         await _migrate_v5()
+    if current_version < 6:
+        await _migrate_v6()
 
 
 async def _migrate_v1() -> None:
@@ -244,6 +246,40 @@ async def _migrate_v5() -> None:
     )
 
     logger.info("Migration v5 applied successfully")
+
+
+async def _migrate_v6() -> None:
+    """Add tracer_feedback table for capturing user corrections to auto-generated trajectories."""
+    logger.info("Applying migration v6: Tracer feedback table")
+
+    await _db_connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS tracer_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            shot_id INTEGER NOT NULL,
+            feedback_type TEXT NOT NULL,
+            auto_params_json TEXT,
+            final_params_json TEXT,
+            origin_point_json TEXT,
+            landing_point_json TEXT,
+            apex_point_json TEXT,
+            created_at TEXT NOT NULL,
+            environment TEXT DEFAULT 'prod',
+            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tracer_feedback_job ON tracer_feedback(job_id);
+        CREATE INDEX IF NOT EXISTS idx_tracer_feedback_type ON tracer_feedback(feedback_type);
+        """
+    )
+
+    await _db_connection.execute(
+        "INSERT OR IGNORE INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
+        (6, datetime.utcnow().isoformat(), "Tracer feedback table for trajectory corrections"),
+    )
+
+    logger.info("Migration v6 applied successfully")
 
 
 async def close_db() -> None:
