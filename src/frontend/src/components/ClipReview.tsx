@@ -4,6 +4,7 @@ import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { PointStatusTracker, ReviewStep } from './PointStatusTracker'
 import { TracerConfigPanel, TracerConfig } from './TracerConfigPanel'
+import { TracerFeedbackModal } from './TracerFeedbackModal'
 
 interface ClipReviewProps {
   jobId: string
@@ -85,6 +86,10 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const [isMarkingApex, setIsMarkingApex] = useState(false)
   const [apexPoint, setApexPoint] = useState<{x: number, y: number} | null>(null)
 
+  // Track which config options user has tried (for "doesn't look right" feedback)
+  const [triedInputs, setTriedInputs] = useState<Set<string>>(new Set())
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+
   // New simplified review step state machine:
   // - confirming_shot: "Is this a golf shot?"
   // - marking_landing: "Click where the ball landed"
@@ -154,6 +159,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setHasUnsavedChanges(false)
     setIsMarkingApex(false)
     setApexPoint(null)
+    // Reset feedback tracking state
+    setTriedInputs(new Set())
+    setShowFeedbackModal(false)
   }, [currentShot?.id])
 
   // Cleanup EventSource on unmount
@@ -748,6 +756,8 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       setApexPoint({ x, y })
       setIsMarkingApex(false)
       setHasUnsavedChanges(true)
+      // Track that user has tried marking apex
+      setTriedInputs(prev => new Set([...prev, 'apex']))
       return
     }
 
@@ -797,8 +807,17 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
   }, [trajectory, clearMarking])
 
-  // Handle config changes from TracerConfigPanel
+  // Handle config changes from TracerConfigPanel - track which inputs user has tried
   const handleConfigChange = useCallback((newConfig: TracerConfig) => {
+    // Track which settings have been changed from defaults
+    const newTriedInputs = new Set<string>()
+    if (newConfig.height !== DEFAULT_CONFIG.height) newTriedInputs.add('height')
+    if (newConfig.shape !== DEFAULT_CONFIG.shape) newTriedInputs.add('shape')
+    if (newConfig.startingLine !== DEFAULT_CONFIG.startingLine) newTriedInputs.add('startingLine')
+    if (Math.abs(newConfig.flightTime - DEFAULT_CONFIG.flightTime) > 0.1) newTriedInputs.add('flightTime')
+
+    // Merge with existing tried inputs
+    setTriedInputs(prev => new Set([...prev, ...newTriedInputs]))
     setTracerConfig(newConfig)
     setHasUnsavedChanges(true)
   }, [])
@@ -816,6 +835,63 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   // Toggle config panel visibility
   const handleToggleConfigPanel = useCallback(() => {
     setShowConfigPanel(prev => !prev)
+  }, [])
+
+  // Calculate which inputs user hasn't tried yet
+  const allInputs = ['height', 'shape', 'startingLine', 'flightTime', 'apex']
+  const missingInputs = allInputs.filter(input => !triedInputs.has(input))
+  const hasTriedAllInputs = missingInputs.length === 0
+
+  // Map input keys to friendly names for display
+  const friendlyNames: Record<string, string> = {
+    height: 'shot height',
+    shape: 'shot shape',
+    startingLine: 'starting line',
+    flightTime: 'flight time',
+    apex: 'apex point',
+  }
+  const missingInputsFriendly = missingInputs.map(input => friendlyNames[input] || input)
+
+  // Handle "Tracer still doesn't look right" button click
+  const handleTracerFeedback = useCallback(() => {
+    setShowFeedbackModal(true)
+  }, [])
+
+  // Handle accepting shot with current trajectory anyway
+  const handleAcceptAnyway = useCallback(() => {
+    setShowFeedbackModal(false)
+    handleAccept()
+  }, [handleAccept])
+
+  // Handle accepting shot without trajectory
+  const handleAcceptNoTracer = useCallback(async () => {
+    setShowFeedbackModal(false)
+    if (!currentShot) return
+
+    // Clear trajectory and accept
+    setTrajectory(null)
+
+    // Delete trajectory from backend
+    try {
+      await fetch(`http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}`, {
+        method: 'DELETE',
+      })
+    } catch (error) {
+      console.error('Failed to delete trajectory:', error)
+    }
+
+    handleAccept()
+  }, [currentShot, jobId, handleAccept])
+
+  // Handle skipping shot from feedback modal
+  const handleSkipFromFeedback = useCallback(() => {
+    setShowFeedbackModal(false)
+    handleReject()
+  }, [handleReject])
+
+  // Close feedback modal
+  const handleCloseFeedbackModal = useCallback(() => {
+    setShowFeedbackModal(false)
   }, [])
 
   // Export progress modal
@@ -940,6 +1016,15 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   return (
     <div className="clip-review" ref={containerRef} tabIndex={-1}>
       {renderExportModal()}
+      <TracerFeedbackModal
+        isOpen={showFeedbackModal}
+        onClose={handleCloseFeedbackModal}
+        hasTriedAllInputs={hasTriedAllInputs}
+        missingInputs={missingInputsFriendly}
+        onAcceptAnyway={handleAcceptAnyway}
+        onSkipShot={handleSkipFromFeedback}
+        onAcceptNoTracer={handleAcceptNoTracer}
+      />
       <div className="review-header">
         <h2>
           Review Shot #{currentShot.id}
@@ -1038,17 +1123,30 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
       {/* Tracer configuration panel - show when reviewing trajectory */}
       {reviewStep === 'reviewing' && trajectory && (
-        <TracerConfigPanel
-          config={tracerConfig}
-          onChange={handleConfigChange}
-          onGenerate={handleConfigGenerate}
-          onMarkApex={handleMarkApex}
-          hasChanges={hasUnsavedChanges}
-          apexMarked={!!apexPoint}
-          isGenerating={isGenerating}
-          isCollapsed={!showConfigPanel}
-          onToggleCollapse={handleToggleConfigPanel}
-        />
+        <>
+          <TracerConfigPanel
+            config={tracerConfig}
+            onChange={handleConfigChange}
+            onGenerate={handleConfigGenerate}
+            onMarkApex={handleMarkApex}
+            hasChanges={hasUnsavedChanges}
+            apexMarked={!!apexPoint}
+            isGenerating={isGenerating}
+            isCollapsed={!showConfigPanel}
+            onToggleCollapse={handleToggleConfigPanel}
+          />
+          {/* "Tracer still doesn't look right" button */}
+          <div className="tracer-feedback-trigger">
+            <button
+              type="button"
+              className="btn-tracer-feedback"
+              onClick={handleTracerFeedback}
+              disabled={isGenerating}
+            >
+              Tracer still doesn't look right
+            </button>
+          </div>
+        </>
       )}
 
       {/* Trajectory progress section - only show when generating */}

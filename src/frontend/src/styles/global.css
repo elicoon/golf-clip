@@ -2653,3 +2653,163 @@ kbd {
     width: 100%;
   }
 }
+
+/* ============================================
+   Tracer Feedback Modal
+   ============================================ */
+
+.tracer-feedback-trigger {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.btn-tracer-feedback {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color var(--transition-fast);
+}
+
+.btn-tracer-feedback:hover:not(:disabled) {
+  color: var(--color-text-secondary);
+}
+
+.btn-tracer-feedback:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tracer-feedback-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.tracer-feedback-modal {
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-width: 420px;
+  width: 90%;
+  padding: var(--spacing-xl);
+  animation: modalSlideIn 0.3s ease;
+  text-align: center;
+}
+
+.tracer-feedback-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-md) 0;
+  color: var(--color-text);
+}
+
+.tracer-feedback-message {
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.tracer-feedback-submessage {
+  color: var(--color-text);
+  margin: 0 0 var(--spacing-lg) 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.tracer-feedback-suggestions {
+  text-align: left;
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--color-bg-elevated);
+}
+
+.suggestions-label {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-sm) 0;
+}
+
+.suggestions-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.suggestion-item {
+  font-size: 0.9rem;
+  color: var(--color-text);
+  padding: var(--spacing-xs) 0;
+  padding-left: var(--spacing-md);
+  position: relative;
+}
+
+.suggestion-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  background-color: var(--color-primary);
+  border-radius: 50%;
+}
+
+.tracer-feedback-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.tracer-feedback-actions.single {
+  align-items: center;
+}
+
+.tracer-feedback-actions .btn-ok {
+  padding: var(--spacing-sm) var(--spacing-xl);
+  min-width: 160px;
+}
+
+.tracer-feedback-actions .btn-accept-anyway {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-weight: 500;
+}
+
+.tracer-feedback-actions .btn-no-tracer {
+  padding: var(--spacing-sm) var(--spacing-lg);
+}
+
+.tracer-feedback-actions .btn-skip-shot {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  padding: var(--spacing-sm);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.tracer-feedback-actions .btn-skip-shot:hover {
+  color: var(--color-danger);
+}
