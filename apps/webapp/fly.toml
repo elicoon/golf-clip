@@ -1,0 +1,26 @@
+# apps/webapp/fly.toml
+app = "golfclip-api"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  GOLFCLIP_DEBUG = "false"
+  GOLFCLIP_AUTO_CLEANUP_AFTER_EXPORT = "true"
+
+[http_service]
+  internal_port = 8420
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "256mb"
+
+[deploy]
+  release_command = "echo 'Deployment starting...'"

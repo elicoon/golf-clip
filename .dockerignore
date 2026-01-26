@@ -1,0 +1,30 @@
+# .dockerignore (at repo root)
+.git
+.gitignore
+.env*
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+node_modules
+dist
+build
+*.egg-info
+.DS_Store
+
+# Don't include desktop app in webapp build
+apps/desktop
+
+# Don't include docs in container
+docs/
+*.md
+!README.md
+
+# Test files
+**/tests/
+**/test_*.py
+**/*_test.py
