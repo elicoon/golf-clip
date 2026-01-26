@@ -1,7 +1,7 @@
 // src/frontend/src/components/PointStatusTracker.tsx
 import { useCallback } from 'react'
 
-export type ReviewStep = 'confirming_shot' | 'marking_landing' | 'generating' | 'reviewing'
+export type ReviewStep = 'marking_landing' | 'generating' | 'reviewing'
 
 interface PointStatusTrackerProps {
   landingPoint: { x: number; y: number } | null

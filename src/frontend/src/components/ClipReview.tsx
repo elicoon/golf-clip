@@ -97,12 +97,11 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   // Track whether user has configured and regenerated the tracer
   const [hasConfiguredTracer, setHasConfiguredTracer] = useState(false)
 
-  // New simplified review step state machine:
-  // - confirming_shot: "Is this a golf shot?"
-  // - marking_landing: "Click where the ball landed"
+  // Review step state machine:
+  // - marking_landing: "Click where the ball landed" (initial state - direct click to mark)
   // - generating: Auto-generating tracer (loading state)
   // - reviewing: "Does this tracer look right?"
-  const [reviewStep, setReviewStep] = useState<ReviewStep>('confirming_shot')
+  const [reviewStep, setReviewStep] = useState<ReviewStep>('marking_landing')
 
   // Default trajectory configuration (used to reset config state)
   const DEFAULT_CONFIG: TracerConfig = {
@@ -152,7 +151,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   // Reset marking state when shot changes
   useEffect(() => {
     setLandingPoint(null)
-    setReviewStep('confirming_shot')
+    setReviewStep('marking_landing')
     setTrajectoryProgress(null)
     setTrajectoryMessage('')
     setDetectionWarnings([])
@@ -1202,20 +1201,9 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
       {/* Instruction banner based on review step */}
       <div className="marking-instruction">
-        {reviewStep === 'confirming_shot' && (
-          <>
-            <span className="instruction-text">Is this a golf shot?</span>
-            <button
-              className="btn-confirm-shot"
-              onClick={() => setReviewStep('marking_landing')}
-            >
-              Yes, mark landing
-            </button>
-          </>
-        )}
         {reviewStep === 'marking_landing' && (
           <>
-            <span className="step-badge">Step 1</span>
+            <span className="step-badge">Landing</span>
             <span>Click where the ball landed</span>
             {landingPoint && (
               <button className="btn-reset-inline" onClick={clearMarking} title="Reset and start over">
@@ -1394,7 +1382,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
               trajectory={trajectory}
               currentTime={currentTime}
               showTracer={showTracer}
-              disabled={isGenerating || reviewStep === 'confirming_shot'}
+              disabled={isGenerating}
               landingPoint={landingPoint}
               apexPoint={apexPoint}
               originPoint={originPoint}
