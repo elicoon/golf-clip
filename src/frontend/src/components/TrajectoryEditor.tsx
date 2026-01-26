@@ -21,14 +21,21 @@ interface TrajectoryEditorProps {
   disabled?: boolean
   showTracer?: boolean
   landingPoint?: { x: number; y: number } | null
+  apexPoint?: { x: number; y: number } | null
   onCanvasClick?: (x: number, y: number) => void
   markingStep?: 'confirming_shot' | 'marking_landing' | 'generating' | 'reviewing'
+  isMarkingApex?: boolean
 }
 
 // Custom cursor SVG for landing point marker placement
-// Landing cursor: downward arrow (↓)
+// Landing cursor: downward arrow (arrow-down)
 const landingCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
   <polygon points="16,28 8,16 12,16 12,4 20,4 20,16 24,16" fill="white" stroke="black" stroke-width="1"/>
+</svg>`
+
+// Apex cursor: diamond shape (highest point marker)
+const apexCursorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <polygon points="16,4 28,16 16,28 4,16" fill="#FFD700" stroke="black" stroke-width="1"/>
 </svg>`
 
 // Convert SVG to data URI for cursor
@@ -55,8 +62,10 @@ export function TrajectoryEditor({
   disabled = false,
   showTracer = true,
   landingPoint,
+  apexPoint,
   onCanvasClick,
   markingStep = 'reviewing',
+  isMarkingApex = false,
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
@@ -253,6 +262,31 @@ export function TrajectoryEditor({
         ctx.restore()
       }
 
+      // Draw user-marked apex point (gold diamond)
+      if (apexPoint) {
+        const apexX = apexPoint.x * canvasSize.width
+        const apexY = apexPoint.y * canvasSize.height
+        const diamondSize = 10
+
+        ctx.save()
+        ctx.shadowColor = 'rgba(255, 215, 0, 0.8)'
+        ctx.shadowBlur = 8
+        ctx.fillStyle = '#FFD700'
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 2
+
+        ctx.beginPath()
+        ctx.moveTo(apexX, apexY - diamondSize)
+        ctx.lineTo(apexX + diamondSize, apexY)
+        ctx.lineTo(apexX, apexY + diamondSize)
+        ctx.lineTo(apexX - diamondSize, apexY)
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+
+        ctx.restore()
+      }
+
       // Skip trajectory drawing if no points
       if (!localPoints.length) {
         animationFrameId = requestAnimationFrame(render)
@@ -388,7 +422,7 @@ export function TrajectoryEditor({
     return () => {
       cancelAnimationFrame(animationFrameId)
     }
-  }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, videoRef])
+  }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, apexPoint, videoRef])
 
   // Suppress unused parameter warnings - kept for API compatibility
   void currentTime
@@ -433,8 +467,12 @@ export function TrajectoryEditor({
 
   if (!showTracer) return null
 
-  // Get cursor based on marking step
+  // Get cursor based on marking step or mode
   const getCursor = () => {
+    // Apex marking takes priority when active
+    if (isMarkingApex) {
+      return svgToCursor(apexCursorSvg, 16, 16)  // Hotspot at center of diamond
+    }
     switch (markingStep) {
       case 'marking_landing':
         return svgToCursor(landingCursorSvg, 16, 28)  // Hotspot at arrow tip

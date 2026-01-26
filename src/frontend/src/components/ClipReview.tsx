@@ -3,6 +3,7 @@ import { useAppStore } from '../stores/appStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { PointStatusTracker, ReviewStep } from './PointStatusTracker'
+import { TracerConfigPanel, TracerConfig } from './TracerConfigPanel'
 
 interface ClipReviewProps {
   jobId: string
@@ -72,6 +73,18 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   // Debug: early detection stats for debug counter display
   const [earlyDetectionStats, setEarlyDetectionStats] = useState<{frames_analyzed: number, frames_with_ball: number} | null>(null)
 
+  // Tracer configuration panel state
+  const [showConfigPanel, setShowConfigPanel] = useState(false)
+  const [tracerConfig, setTracerConfig] = useState<TracerConfig>({
+    height: 'medium',
+    shape: 'straight',
+    startingLine: 'center',
+    flightTime: 3.0,
+  })
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [isMarkingApex, setIsMarkingApex] = useState(false)
+  const [apexPoint, setApexPoint] = useState<{x: number, y: number} | null>(null)
+
   // New simplified review step state machine:
   // - confirming_shot: "Is this a golf shot?"
   // - marking_landing: "Click where the ball landed"
@@ -79,11 +92,13 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   // - reviewing: "Does this tracer look right?"
   const [reviewStep, setReviewStep] = useState<ReviewStep>('confirming_shot')
 
-  // Trajectory configuration defaults (used for auto-generation)
-  const STARTING_LINE = 'center' as const
-  const SHOT_SHAPE = 'straight' as const
-  const SHOT_HEIGHT = 'medium' as const
-  const FLIGHT_TIME = 3.0
+  // Default trajectory configuration (used to reset config state)
+  const DEFAULT_CONFIG: TracerConfig = {
+    height: 'medium',
+    shape: 'straight',
+    startingLine: 'center',
+    flightTime: 3.0,
+  }
 
   // Zoom state
   const [zoomLevel, setZoomLevel] = useState(1)
@@ -133,6 +148,12 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     // Reset zoom when shot changes
     setZoomLevel(1)
     setPanOffset({ x: 0, y: 0 })
+    // Reset config panel state
+    setShowConfigPanel(false)
+    setTracerConfig(DEFAULT_CONFIG)
+    setHasUnsavedChanges(false)
+    setIsMarkingApex(false)
+    setApexPoint(null)
   }, [currentShot?.id])
 
   // Cleanup EventSource on unmount
@@ -604,7 +625,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setIsPanning(false)
   }, [])
 
-  // Generate trajectory with auto configuration
+  // Generate trajectory with current configuration
   const generateTrajectory = useCallback(() => {
     if (!currentShot || !landingPoint) return
 
@@ -622,15 +643,22 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setDetectionWarnings([])
     setTrajectoryError(null)
     setEarlyDetectionStats(null)
+    setHasUnsavedChanges(false)
 
     const params = new URLSearchParams({
-      starting_line: STARTING_LINE,
-      shot_shape: SHOT_SHAPE,
-      shot_height: SHOT_HEIGHT,
-      flight_time: FLIGHT_TIME.toString(),
+      starting_line: tracerConfig.startingLine,
+      shot_shape: tracerConfig.shape,
+      shot_height: tracerConfig.height,
+      flight_time: tracerConfig.flightTime.toString(),
       landing_x: landingPoint.x.toString(),
       landing_y: landingPoint.y.toString(),
     })
+
+    // Add apex point if marked
+    if (apexPoint) {
+      params.set('apex_x', apexPoint.x.toString())
+      params.set('apex_y', apexPoint.y.toString())
+    }
 
     const url = `http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}/generate?${params}`
     const eventSource = new EventSource(url)
@@ -699,7 +727,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       eventSource.close()
       eventSourceRef.current = null
     }
-  }, [jobId, currentShot?.id, landingPoint])
+  }, [jobId, currentShot?.id, landingPoint, tracerConfig, apexPoint])
 
   // Auto-trigger trajectory generation when landing is marked
   useEffect(() => {
@@ -715,11 +743,19 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   const handleCanvasClick = useCallback((x: number, y: number) => {
     if (loadingState === 'loading' || reviewStep === 'generating') return
 
+    // Handle apex marking mode (from config panel)
+    if (isMarkingApex) {
+      setApexPoint({ x, y })
+      setIsMarkingApex(false)
+      setHasUnsavedChanges(true)
+      return
+    }
+
     if (reviewStep === 'marking_landing') {
       setLandingPoint({ x, y })
       // generateTrajectory will be triggered by the useEffect above
     }
-  }, [loadingState, reviewStep])
+  }, [loadingState, reviewStep, isMarkingApex])
 
   const clearMarking = useCallback(() => {
     if (eventSourceRef.current) {
@@ -735,6 +771,12 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     setDetectionWarnings([])
     setTrajectoryError(null)
     setEarlyDetectionStats(null)
+    // Reset config panel state
+    setShowConfigPanel(false)
+    setTracerConfig(DEFAULT_CONFIG)
+    setHasUnsavedChanges(false)
+    setIsMarkingApex(false)
+    setApexPoint(null)
   }, [])
 
   const handleVideoLoad = () => {
@@ -754,6 +796,27 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       setReviewStep('reviewing')
     }
   }, [trajectory, clearMarking])
+
+  // Handle config changes from TracerConfigPanel
+  const handleConfigChange = useCallback((newConfig: TracerConfig) => {
+    setTracerConfig(newConfig)
+    setHasUnsavedChanges(true)
+  }, [])
+
+  // Handle mark apex button from config panel
+  const handleMarkApex = useCallback(() => {
+    setIsMarkingApex(true)
+  }, [])
+
+  // Handle generate from config panel
+  const handleConfigGenerate = useCallback(() => {
+    generateTrajectory()
+  }, [generateTrajectory])
+
+  // Toggle config panel visibility
+  const handleToggleConfigPanel = useCallback(() => {
+    setShowConfigPanel(prev => !prev)
+  }, [])
 
   // Export progress modal
   const renderExportModal = () => {
@@ -942,12 +1005,24 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
             <span>Creating trajectory...</span>
           </>
         )}
-        {reviewStep === 'reviewing' && (
+        {reviewStep === 'reviewing' && !isMarkingApex && (
           <>
             <span className="step-badge complete">Done</span>
             <span>Does this tracer look right?</span>
             <button className="btn-reset-inline" onClick={clearMarking}>
               Re-mark landing
+            </button>
+          </>
+        )}
+        {reviewStep === 'reviewing' && isMarkingApex && (
+          <>
+            <span className="step-badge">Apex</span>
+            <span>Click the highest point of the ball flight</span>
+            <button
+              className="btn-reset-inline"
+              onClick={() => setIsMarkingApex(false)}
+            >
+              Cancel
             </button>
           </>
         )}
@@ -960,6 +1035,21 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         hasTrajectory={!!trajectory}
         onSelectStep={handleSelectStep}
       />
+
+      {/* Tracer configuration panel - show when reviewing trajectory */}
+      {reviewStep === 'reviewing' && trajectory && (
+        <TracerConfigPanel
+          config={tracerConfig}
+          onChange={handleConfigChange}
+          onGenerate={handleConfigGenerate}
+          onMarkApex={handleMarkApex}
+          hasChanges={hasUnsavedChanges}
+          apexMarked={!!apexPoint}
+          isGenerating={isGenerating}
+          isCollapsed={!showConfigPanel}
+          onToggleCollapse={handleToggleConfigPanel}
+        />
+      )}
 
       {/* Trajectory progress section - only show when generating */}
       {isGenerating && trajectoryProgress !== null && (
@@ -1051,8 +1141,10 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
               showTracer={showTracer}
               disabled={isGenerating || reviewStep === 'confirming_shot'}
               landingPoint={landingPoint}
+              apexPoint={apexPoint}
               onCanvasClick={handleCanvasClick}
               markingStep={reviewStep}
+              isMarkingApex={isMarkingApex}
               onTrajectoryUpdate={(points) => {
                 if (!currentShot) return
                 fetch(`http://127.0.0.1:8420/api/trajectory/${jobId}/${currentShot.id}`, {
