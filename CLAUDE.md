@@ -14,74 +14,88 @@ AI-powered golf clip detection and export tool. Analyzes video to detect golf sh
 
 ## Project Structure
 
+This is a **monorepo** with shared packages and multiple apps:
+
 ```
 golf-clip/
-├── src/
-│   ├── backend/
-│   │   ├── api/              # FastAPI routes and endpoints
-│   │   │   ├── routes.py     # All API endpoints
-│   │   │   └── schemas.py    # Pydantic request/response models
-│   │   ├── core/             # Database, config, settings
-│   │   │   ├── database.py   # SQLite setup and migrations
-│   │   │   └── config.py     # App settings
-│   │   ├── detection/        # Shot detection algorithms
-│   │   │   ├── audio.py      # Audio transient detection
-│   │   │   ├── visual.py     # YOLO ball tracking
-│   │   │   ├── origin.py     # Ball origin detection (shaft + clubhead)
-│   │   │   ├── tracker.py    # Constraint-based ball tracking
-│   │   │   ├── early_tracker.py  # Early ball motion detection (first 200ms)
-│   │   │   ├── color_family.py   # Color family classification for ball detection
-│   │   │   ├── search_expansion.py # Expanding search for ball candidates
-│   │   │   └── pipeline.py   # Combined detection pipeline
-│   │   ├── models/           # Database CRUD operations
-│   │   │   ├── job.py        # Job, Shot, Feedback operations
-│   │   │   └── trajectory.py # Trajectory CRUD for shot tracers
-│   │   ├── processing/       # Video processing utilities
-│   │   │   └── tracer.py     # Shot tracer rendering (OpenCV)
-│   │   └── tests/            # Integration tests
-│   │       ├── conftest.py   # Pytest fixtures
-│   │       ├── test_audio_detection.py
-│   │       ├── test_database.py
-│   │       ├── test_download.py
-│   │       ├── test_feedback.py
-│   │       └── test_integration.py
-│   └── frontend/
-│       └── src/
-│           ├── App.tsx           # Main app with view routing
-│           ├── components/
-│           │   ├── VideoDropzone.tsx     # File input
-│           │   ├── ProcessingView.tsx    # Progress tracking
-│           │   ├── ClipReview.tsx        # Shot review + export + autoplay
-│           │   ├── ExportComplete.tsx    # Feedback collection
-│           │   ├── Scrubber.tsx          # Timeline controls
-│           │   ├── TrajectoryEditor.tsx  # Shot tracer canvas overlay
-│           │   └── PointStatusTracker.tsx # Four-step marking progress UI
-│           └── stores/
-│               └── appStore.ts   # Zustand state management
-└── PRD.md
+├── packages/
+│   ├── frontend/             # Shared React app (TypeScript + Vite)
+│   │   └── src/
+│   │       ├── App.tsx           # Main app with view routing
+│   │       ├── components/
+│   │       │   ├── VideoDropzone.tsx     # File input
+│   │       │   ├── ProcessingView.tsx    # Progress tracking
+│   │       │   ├── ClipReview.tsx        # Shot review + export + autoplay
+│   │       │   ├── ExportComplete.tsx    # Feedback collection
+│   │       │   ├── Scrubber.tsx          # Timeline controls
+│   │       │   ├── TrajectoryEditor.tsx  # Shot tracer canvas overlay
+│   │       │   └── PointStatusTracker.tsx # Four-step marking progress UI
+│   │       └── stores/
+│   │           └── appStore.ts   # Zustand state management
+│   ├── detection/            # Shared ML/detection code (golfclip-detection)
+│   └── api-schemas/          # Shared Pydantic schemas (golfclip-schemas)
+├── apps/
+│   ├── desktop/              # Desktop app (golfclip-desktop)
+│   │   └── backend/
+│   │       ├── api/              # FastAPI routes and endpoints
+│   │       │   ├── routes.py     # All API endpoints
+│   │       │   └── schemas.py    # Pydantic request/response models
+│   │       ├── core/             # Database, config, settings
+│   │       │   ├── database.py   # SQLite setup and migrations
+│   │       │   └── config.py     # App settings
+│   │       ├── detection/        # Shot detection algorithms
+│   │       │   ├── audio.py      # Audio transient detection
+│   │       │   ├── visual.py     # YOLO ball tracking
+│   │       │   ├── origin.py     # Ball origin detection (shaft + clubhead)
+│   │       │   ├── tracker.py    # Constraint-based ball tracking
+│   │       │   ├── early_tracker.py  # Early ball motion detection (first 200ms)
+│   │       │   ├── color_family.py   # Color family classification for ball detection
+│   │       │   ├── search_expansion.py # Expanding search for ball candidates
+│   │       │   └── pipeline.py   # Combined detection pipeline
+│   │       ├── models/           # Database CRUD operations
+│   │       │   ├── job.py        # Job, Shot, Feedback operations
+│   │       │   └── trajectory.py # Trajectory CRUD for shot tracers
+│   │       ├── processing/       # Video processing utilities
+│   │       │   └── tracer.py     # Shot tracer rendering (OpenCV)
+│   │       └── tests/            # Integration tests
+│   │           ├── conftest.py   # Pytest fixtures
+│   │           ├── test_audio_detection.py
+│   │           ├── test_database.py
+│   │           ├── test_download.py
+│   │           ├── test_feedback.py
+│   │           └── test_integration.py
+│   └── webapp/               # Cloud webapp (coming soon)
+│       └── backend/          # FastAPI + PostgreSQL + R2
+├── scripts/                  # Development scripts
+│   └── setup-dev.sh          # Setup development environment
+├── docs/                     # Documentation
+└── CLAUDE.md
 ```
 
 ## Development Commands
 
 ```bash
-# Run backend server (from src directory)
-cd golf-clip/src
+# Setup development environment
+./scripts/setup-dev.sh
+
+# Run backend server (from apps/desktop)
+cd golf-clip/apps/desktop
 uvicorn backend.main:app --host 127.0.0.1 --port 8420 --reload
 
-# Run frontend (from frontend directory)
-cd golf-clip/src/frontend
+# Run frontend (from packages/frontend)
+cd golf-clip/packages/frontend
 npm install
 npm run dev
 
-# Run tests
-cd golf-clip/src/backend
-pytest tests/ -v
+# Run tests (from apps/desktop)
+cd golf-clip/apps/desktop
+pytest backend/tests/ -v
 
 # Run specific test file
-pytest tests/test_integration.py -v
+pytest backend/tests/test_integration.py -v
 
 # Skip slow tests
-pytest tests/ -v -m "not slow"
+pytest backend/tests/ -v -m "not slow"
 ```
 
 ## Running in Browser (Dev Mode)
@@ -103,7 +117,8 @@ cd golf-clip
 /opt/homebrew/bin/python3.11 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
+# Install dependencies (from apps/desktop)
+cd apps/desktop
 pip install -e ".[dev]"
 ```
 
@@ -464,31 +479,31 @@ The tracer doesn't need to follow the actual ball pixel-by-pixel. It needs to:
 
 ### Completed Shot Tracer Features
 
-1. ✅ **Detect ball origin accurately** - Shaft + clubhead detection working
-2. ✅ **Generate smooth parabolic curve** - Physics model in `track_full_trajectory()`
-3. ✅ **Detect trajectory characteristics** - `_extract_launch_params()` analyzes first 200ms
-4. ✅ **Four-step marking UI** - Target → Landing → Apex (optional) → Configure
-5. ✅ **Professional rendering**:
+1. **Detect ball origin accurately** - Shaft + clubhead detection working
+2. **Generate smooth parabolic curve** - Physics model in `track_full_trajectory()`
+3. **Detect trajectory characteristics** - `_extract_launch_params()` analyzes first 200ms
+4. **Four-step marking UI** - Target → Landing → Apex (optional) → Configure
+5. **Professional rendering**:
    - Smooth quadratic Bezier curves
    - RED tracer line with multi-layer glow effect
    - Physics-based animation timing (research-backed)
-   - Apex marker at highest point (gold diamond ◆)
+   - Apex marker at highest point (gold diamond)
    - Progressive "drawing" effect during playback
    - 60fps animation using requestAnimationFrame
-6. ✅ **Early ball detection** - Motion tracking in first 200ms post-impact:
+6. **Early ball detection** - Motion tracking in first 200ms post-impact:
    - `early_tracker.py` - Constraint-based ball tracking
    - `color_family.py` - Color family classification (white, yellow, orange, etc.)
    - `search_expansion.py` - Expanding search patterns for candidate detection
-7. ✅ **PointStatusTracker component** - Visual progress indicator for marking steps
-8. ✅ **Autoplay after generation** - Video auto-plays with tracer after trajectory completes
+7. **PointStatusTracker component** - Visual progress indicator for marking steps
+8. **Autoplay after generation** - Video auto-plays with tracer after trajectory completes
 
 ### Four-Step Marking Flow
 
 The review UI uses a guided four-step process with visual status tracking (`PointStatusTracker.tsx`):
 
-1. **Step 1: Mark Target** - User clicks where they were aiming (⊕ crosshair marker)
-2. **Step 2: Mark Landing** - User clicks where ball actually landed (↓ arrow marker)
-3. **Step 3: Mark Apex** - User clicks highest point of ball flight (◆ gold diamond marker, optional - can skip)
+1. **Step 1: Mark Target** - User clicks where they were aiming (crosshair marker)
+2. **Step 2: Mark Landing** - User clicks where ball actually landed (arrow marker)
+3. **Step 3: Mark Apex** - User clicks highest point of ball flight (gold diamond marker, optional - can skip)
 4. **Step 4: Configure & Generate** - Select trajectory settings:
    - Starting line: Left / Center / Right
    - Shot shape: Hook / Draw / Straight / Fade / Slice
