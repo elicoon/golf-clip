@@ -55,7 +55,7 @@ golf-clip/
 │           │   ├── ExportComplete.tsx    # Feedback collection
 │           │   ├── Scrubber.tsx          # Timeline controls
 │           │   ├── TrajectoryEditor.tsx  # Shot tracer canvas overlay
-│           │   └── PointStatusTracker.tsx # Four-step marking progress UI
+│           │   └── PointStatusTracker.tsx # Two-step review progress UI
 │           └── stores/
 │               └── appStore.ts   # Zustand state management
 └── PRD.md
@@ -187,6 +187,11 @@ class JobCacheProxy:
 - `PUT /api/trajectory/{job_id}/{shot_id}` - Update trajectory after manual edits
 - `GET /api/trajectories/{job_id}` - Get all trajectories for a job
 - `GET /api/trajectory/{job_id}/{shot_id}/generate?landing_x=&landing_y=` - SSE endpoint for trajectory generation with user-marked landing point (streams progress, warning, complete, error events)
+
+### Tracer Feedback (for ML improvement)
+- `POST /api/tracer-feedback/{job_id}` - Submit tracer feedback (auto-accepted, configured, skipped, etc.)
+- `GET /api/tracer-feedback/stats` - Get aggregate tracer feedback statistics
+- `GET /api/tracer-feedback/export` - Export all tracer feedback data for ML training
 
 ## Detection Pipeline
 
@@ -339,14 +344,17 @@ The shot tracer overlays ball flight trajectory on video clips during review and
 5. **Edit**: Users can drag trajectory points or re-mark landing point to adjust
 6. **Export**: Optionally render tracer overlay onto exported clips using OpenCV
 
-### Landing Point Workflow
+### Review Flow (Simplified)
 
-The review flow uses click-to-mark for precise trajectory endpoints:
-- User sees shot at impact frame with video playback controls
-- Click on video marks landing point (confirms as true positive)
-- SSE streams progress: `extracting_template` → `detecting_early` → `generating_physics` → `smoothing`
-- Detection warnings (shaft failed, early detection failed) shown to user
-- "No golf shot" marks as false positive, "Next →" requires trajectory generated
+The review flow uses a streamlined 2-step process:
+
+1. **Step 1: Confirm Golf Shot** - User confirms "Is this a golf shot?" (Yes/No)
+2. **Step 2: Mark Landing** - User clicks where ball landed (mandatory for tracer)
+3. **Auto-Generate** - System generates trajectory using origin + landing + early detection
+4. **Step 3: Review Tracer** - "Does this look right?" (Accept / Configure & Regenerate)
+
+SSE streams progress: `extracting_template` → `detecting_early` → `generating_physics` → `smoothing`
+Detection warnings (shaft failed, early detection failed) shown to user for troubleshooting.
 
 ### Video Zoom Controls
 
@@ -367,20 +375,21 @@ The review interface supports zooming for precise marker placement:
 - Safari fallback for canvas blur filter
 
 **ClipReview.tsx** additions:
-- Four-step click-to-mark flow: target → landing → apex → configure
+- Simplified 2-step review flow: confirm shot → mark landing → auto-generate → review
 - SSE progress bar during trajectory generation
 - Detection warnings display for troubleshooting
 - "Show Tracer" checkbox to toggle trajectory visibility
 - "Render Shot Tracers" checkbox for export
-- "No golf shot" (red) / "Next →" buttons for shot review
-- Markers rendered via TrajectoryEditor: target (⊕), landing (↓), apex (◆)
+- "No golf shot" (red) / "Next" buttons for shot review
+- "Accept" / "Configure" buttons for tracer review
+- Markers rendered via TrajectoryEditor: landing (↓), apex (◆)
 - Custom SVG cursors matching marker icons during placement
 - Autoplay: video seeks to clip start and plays after trajectory generation completes
 - Video zoom (1x-4x) with pan support when zoomed in
 
 **PointStatusTracker.tsx** - Visual step progress indicator:
-- Shows all 4 steps with completion status (pending/done)
-- Current step highlighted, clickable to navigate between steps
+- Shows 2 main steps: "Confirm Shot" and "Mark Landing"
+- Current step highlighted with completion status
 - Compact horizontal layout fits in review UI
 
 ### Backend Modules
@@ -424,6 +433,67 @@ When exporting with tracer, you can customize appearance:
 - `glow_enabled`: Add glow effect around line
 - `show_apex_marker`: Circle at highest point
 - `show_landing_marker`: X marker at landing point
+
+## Tracer Feedback System
+
+The tracer feedback system collects user corrections to auto-generated trajectories for ML improvement.
+
+### Review Flow
+
+1. Video auto-plays, user confirms "Is this a golf shot?"
+2. User marks landing point (mandatory)
+3. System auto-generates tracer using origin + landing + early detection
+4. User accepts or configures adjustments
+5. Feedback captured for ML training
+
+### Feedback Types
+
+| Type | When | Data Captured |
+|------|------|---------------|
+| `tracer_auto_accepted` | User accepts auto-generated tracer | auto_params |
+| `tracer_configured` | User adjusts config then accepts | auto_params, final_params, delta |
+| `tracer_reluctant_accept` | User accepts despite issues | auto_params, final_params |
+| `tracer_skip` | User skips shot entirely | auto_params, final_params |
+| `tracer_rejected` | User accepts shot without tracer | auto_params, final_params |
+
+### ML Training Data (The Delta)
+
+The key training signal is the **delta** between auto-generated and user-configured params:
+
+```json
+{
+  "origin": {"x": 0.45, "y": 0.85},
+  "landing": {"x": 0.72, "y": 0.65},
+  "auto_params": {"height": "medium", "shape": "straight", "flight_time": 3.0},
+  "final_params": {"height": "high", "shape": "draw", "flight_time": 4.5},
+  "delta": {
+    "height": {"from": "medium", "to": "high", "change": "+1"},
+    "flight_time": {"from": 3.0, "to": 4.5, "change": 1.5}
+  }
+}
+```
+
+### API Endpoints
+
+- `POST /api/tracer-feedback/{job_id}` - Submit tracer feedback
+- `GET /api/tracer-feedback/stats` - Get aggregate statistics
+- `GET /api/tracer-feedback/export` - Export for ML training
+
+### CLI Analysis Tools
+
+```bash
+# View tracer feedback statistics
+python -m backend.ml.tracer_feedback_stats
+
+# Export feedback for ML training
+curl http://localhost:8420/api/tracer-feedback/export
+```
+
+### Future ML Improvements
+
+1. **Stage 1: Bias correction** - Learn global adjustments (e.g., "always increase height by 1 level")
+2. **Stage 2: Position-based prediction** - Learn from origin/landing positions
+3. **Stage 3: Per-user calibration** - Personalize defaults per user
 
 ## Constraint-Based Ball Tracking
 
@@ -512,7 +582,7 @@ The tracer doesn't need to follow the actual ball pixel-by-pixel. It needs to:
 1. ✅ **Detect ball origin accurately** - Shaft + clubhead detection working
 2. ✅ **Generate smooth parabolic curve** - Physics model in `track_full_trajectory()`
 3. ✅ **Detect trajectory characteristics** - `_extract_launch_params()` analyzes first 200ms
-4. ✅ **Four-step marking UI** - Target → Landing → Apex (optional) → Configure
+4. ✅ **Simplified 2-step review UI** - Confirm shot → Mark landing → Auto-generate → Review
 5. ✅ **Professional rendering**:
    - Smooth quadratic Bezier curves
    - RED tracer line with multi-layer glow effect
@@ -524,24 +594,28 @@ The tracer doesn't need to follow the actual ball pixel-by-pixel. It needs to:
    - `early_tracker.py` - Constraint-based ball tracking
    - `color_family.py` - Color family classification (white, yellow, orange, etc.)
    - `search_expansion.py` - Expanding search patterns for candidate detection
-7. ✅ **PointStatusTracker component** - Visual progress indicator for marking steps
+7. ✅ **PointStatusTracker component** - Visual progress indicator for review steps
 8. ✅ **Autoplay after generation** - Video auto-plays with tracer after trajectory completes
+9. ✅ **Tracer feedback collection** - Captures user corrections for ML training
 
-### Four-Step Marking Flow
+### Simplified Review Flow
 
-The review UI uses a guided four-step process with visual status tracking (`PointStatusTracker.tsx`):
+The review UI uses a streamlined 2-step process with visual status tracking (`PointStatusTracker.tsx`):
 
-1. **Step 1: Mark Target** - User clicks where they were aiming (⊕ crosshair marker)
+1. **Step 1: Confirm Shot** - Video plays, user confirms "Is this a golf shot?" (Yes/No)
 2. **Step 2: Mark Landing** - User clicks where ball actually landed (↓ arrow marker)
-3. **Step 3: Mark Apex** - User clicks highest point of ball flight (◆ gold diamond marker, optional - can skip)
-4. **Step 4: Configure & Generate** - Select trajectory settings:
-   - Starting line: Left / Center / Right
-   - Shot shape: Hook / Draw / Straight / Fade / Slice
-   - Shot height: Low / Medium / High
-   - Flight time: 1.0s - 6.0s slider
-   - Click "Generate" to create trajectory
+3. **Auto-Generate** - System generates trajectory using origin + landing + early detection
+4. **Step 3: Review Tracer** - "Does this look right?"
+   - **Accept**: Tracer looks good, move to next shot
+   - **Configure**: Adjust parameters and regenerate:
+     - Starting line: Left / Center / Right
+     - Shot shape: Hook / Draw / Straight / Fade / Slice
+     - Shot height: Low / Medium / High
+     - Flight time: 1.0s - 6.0s slider
 
 **Autoplay**: After trajectory generation completes, the video automatically seeks to clip start and plays the shot with tracer overlay.
+
+**Feedback Collection**: Every interaction is captured for ML training (see Tracer Feedback System below).
 
 ### Trajectory Animation Physics
 
