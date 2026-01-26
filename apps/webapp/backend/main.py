@@ -41,6 +41,6 @@ async def health():
     return {"status": "healthy", "mode": "cloud"}
 
 
-# Routes will be added in Task 2.2
-# from backend.api.routes import router
-# app.include_router(router, prefix="/api")
+# API routes
+from backend.api.routes import router
+app.include_router(router, prefix="/api")
