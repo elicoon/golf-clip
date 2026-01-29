@@ -107,11 +107,27 @@ function App() {
     }])
   }, [handleVideosSelected])
 
-  const handleProcessingComplete = useCallback((needsReview: boolean) => {
+  const handleProcessingComplete = useCallback((needsReview: boolean, totalShots: number) => {
     // Mark current video as complete in the queue
     updateQueueItem(currentQueueIndex, { status: 'complete' })
-    setView(needsReview ? 'review' : 'complete')
-  }, [currentQueueIndex, updateQueueItem])
+
+    // If there are shots to review, go to review
+    // Otherwise, if there are more videos, continue processing
+    // Only go to 'complete' when there's nothing to review and no more videos
+    if (totalShots > 0) {
+      // Always show review if there are any shots detected
+      setView('review')
+    } else if (currentQueueIndex < videoQueue.length - 1) {
+      // No shots but more videos - auto-advance to next video
+      const nextIndex = currentQueueIndex + 1
+      advanceQueue()
+      setShots([])
+      startProcessingVideo(videoQueue[nextIndex].path, nextIndex)
+    } else {
+      // No shots and no more videos - show complete
+      setView('complete')
+    }
+  }, [currentQueueIndex, videoQueue, updateQueueItem, advanceQueue, setShots, startProcessingVideo])
 
   const handleReviewComplete = useCallback((clips: string[]) => {
     setExportedClips(prev => [...prev, ...clips])

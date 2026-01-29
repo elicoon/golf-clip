@@ -1,5 +1,6 @@
 """Webapp configuration - cloud mode."""
 
+from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings
 
@@ -11,6 +12,9 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8420
     debug: bool = False
+
+    # Temp directory for processing
+    temp_dir: Path = Path("/tmp/golfclip")
 
     # PostgreSQL (required)
     database_url: str = "postgresql://localhost/golfclip"
@@ -49,3 +53,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Ensure temp directory exists
+settings.temp_dir.mkdir(parents=True, exist_ok=True)

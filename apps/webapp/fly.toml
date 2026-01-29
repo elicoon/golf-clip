@@ -4,6 +4,7 @@ primary_region = "sjc"
 
 [build]
   dockerfile = "Dockerfile"
+  build-target = "runtime"
 
 [env]
   GOLFCLIP_DEBUG = "false"
@@ -19,8 +20,8 @@ primary_region = "sjc"
 
 [[vm]]
   cpu_kind = "shared"
-  cpus = 1
-  memory = "256mb"
+  cpus = 2
+  memory = "2gb"
 
 [deploy]
   release_command = "echo 'Deployment starting...'"

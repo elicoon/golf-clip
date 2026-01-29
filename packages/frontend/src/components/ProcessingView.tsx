@@ -4,7 +4,7 @@ import { config } from '../config'
 
 interface ProcessingViewProps {
   jobId: string
-  onComplete: (needsReview: boolean) => void
+  onComplete: (needsReview: boolean, totalShots: number) => void
 }
 
 interface ProcessingStatus {
@@ -91,7 +91,7 @@ export function ProcessingView({ jobId, onComplete, onCancel }: ProcessingViewPr
     return response.json()
   }, [jobId])
 
-  const handleComplete = useCallback(async (needsReview: boolean) => {
+  const handleComplete = useCallback(async (needsReview: boolean, totalShots: number) => {
     // Prevent duplicate completion (race between SSE and polling)
     if (isCompletedRef.current) return
     isCompletedRef.current = true
@@ -99,7 +99,8 @@ export function ProcessingView({ jobId, onComplete, onCancel }: ProcessingViewPr
     try {
       const shotsData = await fetchShots()
       setShots(shotsData)
-      onComplete(needsReview)
+      // Pass total shots from API, or fall back to fetched shots length
+      onComplete(needsReview, totalShots > 0 ? totalShots : shotsData.length)
     } catch {
       isCompletedRef.current = false // Allow retry on failure
       setError('Failed to fetch detected shots')
@@ -129,7 +130,7 @@ export function ProcessingView({ jobId, onComplete, onCancel }: ProcessingViewPr
       } else if (data.status === 'review' || data.status === 'complete') {
         cleanupPolling()
         cleanupSSE()
-        handleComplete(data.status === 'review')
+        handleComplete(data.status === 'review', data.total_shots_detected)
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Connection error'
@@ -174,6 +175,7 @@ export function ProcessingView({ jobId, onComplete, onCancel }: ProcessingViewPr
         }))
 
         // Check if this is a completion message (progress 100% with completion step)
+        // Check if this is a completion message (progress 100% with completion step)
         // This provides a fallback if the 'complete' SSE event doesn't fire
         if (data.progress >= 100 && (
           data.step.toLowerCase().includes('complete') ||
@@ -183,7 +185,10 @@ export function ProcessingView({ jobId, onComplete, onCancel }: ProcessingViewPr
           setTimeout(() => {
             if (!isCompletedRef.current) {
               const needsReview = data.step.toLowerCase().includes('need review')
-              handleComplete(needsReview)
+              // Try to extract shot count from message like "3 shots need review"
+              const shotMatch = data.step.match(/(\d+)\s+shots?\s+need/)
+              const totalShots = shotMatch ? parseInt(shotMatch[1], 10) : 0
+              handleComplete(needsReview, totalShots)
             }
           }, 500)
         }
@@ -198,18 +203,19 @@ export function ProcessingView({ jobId, onComplete, onCancel }: ProcessingViewPr
       try {
         const data = JSON.parse((event as MessageEvent).data)
         const needsReview = data.shots_needing_review > 0
+        const totalShots = data.total_shots_detected || 0
 
         setStatus(prev => ({
           ...prev!,
           status: needsReview ? 'review' : 'complete',
           progress: 100,
-          total_shots_detected: data.total_shots_detected || prev?.total_shots_detected || 0,
+          total_shots_detected: totalShots || prev?.total_shots_detected || 0,
           shots_needing_review: data.shots_needing_review || 0,
         }))
 
-        handleComplete(needsReview)
+        handleComplete(needsReview, totalShots)
       } catch {
-        handleComplete(false)
+        handleComplete(false, 0)
       }
     })
 

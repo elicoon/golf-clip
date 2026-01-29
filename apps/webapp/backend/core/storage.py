@@ -81,6 +81,27 @@ class R2Storage:
         except ClientError:
             return False
 
+    def get_presigned_upload_url(self, key: str, expires_in: int = 3600) -> str:
+        """Get presigned URL for direct upload (PUT)."""
+        return self.client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": self.bucket_name, "Key": key},
+            ExpiresIn=expires_in,
+        )
+
+    def get_object_size(self, key: str) -> int | None:
+        """Get object size in bytes, or None if not found."""
+        try:
+            response = self.client.head_object(Bucket=self.bucket_name, Key=key)
+            return response["ContentLength"]
+        except ClientError:
+            return None
+
+    def generate_storage_key(self, filename: str, prefix: str = "uploads") -> str:
+        """Generate a unique storage key for a file."""
+        unique_id = str(uuid.uuid4())[:8]
+        return f"{prefix}/{unique_id}_{filename}"
+
 
 _storage: Optional[R2Storage] = None
 

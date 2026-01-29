@@ -11,6 +11,7 @@ from typing import AsyncGenerator, Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse, StreamingResponse
 from loguru import logger
+from pydantic import BaseModel
 
 from backend.core.config import settings
 from backend.core.storage import get_storage
@@ -71,7 +72,7 @@ async def _emit_progress(job_id: str, step: str, progress: float, details: Optio
 
 @router.post("/upload")
 async def upload_video(file: UploadFile = File(...)):
-    """Upload a video file to R2 storage."""
+    """Upload a video file to R2 storage (legacy - buffers in memory)."""
     allowed_extensions = {".mp4", ".mov", ".m4v"}
     file_ext = Path(file.filename or "").suffix.lower()
 
@@ -105,6 +106,66 @@ async def upload_video(file: UploadFile = File(...)):
     except Exception as e:
         logger.exception(f"Upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/upload/initiate")
+async def initiate_direct_upload(filename: str, size_bytes: int):
+    """Get a presigned URL for direct upload to R2.
+
+    This bypasses the server for large files - client uploads directly to R2.
+    """
+    allowed_extensions = {".mp4", ".mov", ".m4v"}
+    file_ext = Path(filename).suffix.lower()
+
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+        )
+
+    size_mb = size_bytes / (1024 * 1024)
+    if size_mb > settings.max_video_size_mb:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Max: {settings.max_video_size_mb}MB, declared: {size_mb:.1f}MB"
+        )
+
+    storage = get_storage()
+    storage_key = storage.generate_storage_key(filename)
+    upload_url = storage.get_presigned_upload_url(storage_key, expires_in=3600)
+
+    logger.info(f"Initiated direct upload: {storage_key} ({size_mb:.1f}MB)")
+
+    return {
+        "storage_key": storage_key,
+        "upload_url": upload_url,
+        "expires_in": 3600,
+    }
+
+
+class UploadCompleteRequest(BaseModel):
+    storage_key: str
+
+@router.post("/upload/complete")
+async def complete_direct_upload(request: UploadCompleteRequest):
+    """Verify a direct upload completed successfully."""
+    storage = get_storage()
+    storage_key = request.storage_key
+
+    size = storage.get_object_size(storage_key)
+    if size is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Upload not found in storage. Upload may have failed or expired."
+        )
+
+    logger.info(f"Verified direct upload: {storage_key} ({size / (1024*1024):.1f}MB)")
+
+    return {
+        "storage_key": storage_key,
+        "size_bytes": size,
+        "verified": True,
+    }
 
 
 @router.post("/process")

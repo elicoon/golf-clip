@@ -4,7 +4,9 @@ import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { PointStatusTracker, ReviewStep } from './PointStatusTracker'
 import { TracerConfigPanel, TracerConfig } from './TracerConfigPanel'
-import { apiUrl } from '../config'
+import { config } from '../config'
+
+const API_BASE = config.apiBaseUrl
 
 interface ClipReviewProps {
   jobId: string
@@ -147,7 +149,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
   useEffect(() => {
     if (currentShot) {
       setTrajectoryLoading(true)
-      fetch(`${apiUrl}/api/trajectory/${jobId}/${currentShot.id}`)
+      fetch(`${API_BASE}/api/trajectory/${jobId}/${currentShot.id}`)
         .then(res => res.ok ? res.json() : null)
         .then(data => setTrajectory(data))
         .catch(() => setTrajectory(null))
@@ -370,7 +372,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     if (!currentShot) return
 
     try {
-      await fetch(`${apiUrl}/api/feedback/${jobId}`, {
+      await fetch(`${API_BASE}/api/feedback/${jobId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -420,7 +422,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
     }
 
     try {
-      await fetch(`${apiUrl}/api/tracer-feedback/${jobId}`, {
+      await fetch(`${API_BASE}/api/tracer-feedback/${jobId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -456,7 +458,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       updateShot(currentShot.id, { confidence: 1.0 })
 
       // Send update to server
-      const response = await fetch(`${apiUrl}/api/shots/${jobId}/update`, {
+      const response = await fetch(`${API_BASE}/api/shots/${jobId}/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify([
@@ -497,7 +499,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     // Submit false positive feedback
     try {
-      await fetch(`${apiUrl}/api/feedback/${jobId}`, {
+      await fetch(`${API_BASE}/api/feedback/${jobId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -551,7 +553,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       const outputDir = videoPath.replace(/\.[^.]+$/, '_clips')
 
       // Start export job
-      const response = await fetch(`${apiUrl}/api/export`, {
+      const response = await fetch(`${API_BASE}/api/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -600,7 +602,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const response = await fetch(`${apiUrl}/api/export/${exportJobId}/status`)
+        const response = await fetch(`${API_BASE}/api/export/${exportJobId}/status`)
 
         if (!response.ok) {
           throw new Error('Failed to get export status')
@@ -758,7 +760,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
       params.set('origin_y', originPoint.y.toString())
     }
 
-    const url = `${apiUrl}/api/trajectory/${jobId}/${currentShot.id}/generate?${params}`
+    const url = `${API_BASE}/api/trajectory/${jobId}/${currentShot.id}/generate?${params}`
     const eventSource = new EventSource(url)
     eventSourceRef.current = eventSource
 
@@ -1046,7 +1048,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
 
     // Delete trajectory from backend
     try {
-      await fetch(`${apiUrl}/api/trajectory/${jobId}/${currentShot.id}`, {
+      await fetch(`${API_BASE}/api/trajectory/${jobId}/${currentShot.id}`, {
         method: 'DELETE',
       })
     } catch (error) {
@@ -1396,7 +1398,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
           >
             <video
               ref={videoRef}
-              src={`${apiUrl}/api/video?path=${encodeURIComponent(videoPath)}`}
+              src={`${API_BASE}/api/video?path=${encodeURIComponent(videoPath)}`}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
               onLoadedData={handleVideoLoad}
@@ -1418,7 +1420,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
               isMarkingOrigin={isMarkingOrigin}
               onTrajectoryUpdate={(points) => {
                 if (!currentShot) return
-                fetch(`${apiUrl}/api/trajectory/${jobId}/${currentShot.id}`, {
+                fetch(`${API_BASE}/api/trajectory/${jobId}/${currentShot.id}`, {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ points }),

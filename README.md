@@ -33,6 +33,9 @@ python3.11 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
+# Verify Python dependencies installed correctly
+python -c "import fastapi; print('✅ Backend dependencies installed')"
+
 # Install frontend dependencies
 cd src/frontend
 npm install

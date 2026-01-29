@@ -84,72 +84,168 @@ export function VideoDropzone({ onVideosSelected, onVideoSelected }: VideoDropzo
       }
     }
 
-    // Browser mode: upload file to server
-    return new Promise((resolve) => {
+    // Browser mode: try multipart upload first (desktop), fall back to R2 (webapp)
+    try {
+      setUploadStates(prev => prev.map((state, i) =>
+        i === index ? { ...state, status: 'uploading', progress: 0 } : state
+      ))
+
+      // Try desktop-style multipart upload first
       const formData = new FormData()
       formData.append('file', file)
 
-      const xhr = new XMLHttpRequest()
-      // Track this XHR for cleanup
-      activeXhrsRef.current.add(xhr)
+      const uploadResult = await new Promise<UploadedFile | 'try-r2'>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        activeXhrsRef.current.add(xhr)
 
-      xhr.upload.addEventListener('progress', (event) => {
-        if (!isMountedRef.current) return
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100)
-          setUploadStates(prev => prev.map((state, i) =>
-            i === index ? { ...state, progress: percent } : state
-          ))
-        }
+        xhr.upload.addEventListener('progress', (event) => {
+          if (!isMountedRef.current) return
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100)
+            setUploadStates(prev => prev.map((state, i) =>
+              i === index ? { ...state, progress: percent } : state
+            ))
+          }
+        })
+
+        xhr.addEventListener('load', () => {
+          activeXhrsRef.current.delete(xhr)
+          if (!isMountedRef.current) {
+            reject(new Error('Component unmounted'))
+            return
+          }
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText)
+              resolve({
+                filename: response.filename || file.name,
+                path: response.path,
+                size: response.size || file.size,
+              })
+            } catch {
+              reject(new Error('Invalid response from server'))
+            }
+          } else if (xhr.status === 404) {
+            // Desktop upload endpoint not found, try R2 flow
+            resolve('try-r2')
+          } else {
+            try {
+              const errorData = JSON.parse(xhr.responseText)
+              reject(new Error(errorData.detail || `Upload failed: ${xhr.status}`))
+            } catch {
+              reject(new Error(`Upload failed: ${xhr.status}`))
+            }
+          }
+        })
+
+        xhr.addEventListener('error', () => {
+          activeXhrsRef.current.delete(xhr)
+          reject(new Error('Network error during upload'))
+        })
+
+        xhr.open('POST', apiUrl('/api/upload'))
+        xhr.send(formData)
       })
 
-      xhr.addEventListener('load', () => {
-        activeXhrsRef.current.delete(xhr)
-        if (!isMountedRef.current) return
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText)
-            setUploadStates(prev => prev.map((state, i) =>
-              i === index ? { ...state, status: 'complete', result: data } : state
-            ))
-            resolve(data)
-          } catch {
-            setUploadStates(prev => prev.map((state, i) =>
-              i === index ? { ...state, status: 'error', error: 'Invalid response from server' } : state
-            ))
-            resolve(null)
-          }
-        } else {
-          let errorMessage = `Upload failed: ${xhr.status}`
-          try {
-            const errorData = JSON.parse(xhr.responseText)
-            if (errorData.detail) errorMessage = errorData.detail
-          } catch {
-            // Use default error message
-          }
-          setUploadStates(prev => prev.map((state, i) =>
-            i === index ? { ...state, status: 'error', error: errorMessage } : state
-          ))
-          resolve(null)
-        }
-      })
-
-      xhr.addEventListener('error', () => {
-        activeXhrsRef.current.delete(xhr)
-        if (!isMountedRef.current) return
+      // If desktop upload succeeded, return the result
+      if (uploadResult !== 'try-r2') {
         setUploadStates(prev => prev.map((state, i) =>
-          i === index ? { ...state, status: 'error', error: 'Network error' } : state
+          i === index ? { ...state, status: 'complete', progress: 100, result: uploadResult } : state
         ))
-        resolve(null)
-      })
+        return uploadResult
+      }
 
+      // Fall back to R2 direct upload (webapp mode)
       setUploadStates(prev => prev.map((state, i) =>
-        i === index ? { ...state, status: 'uploading' } : state
+        i === index ? { ...state, progress: 0 } : state
       ))
 
-      xhr.open('POST', apiUrl('/api/upload'))
-      xhr.send(formData)
-    })
+      // Step 1: Get presigned upload URL from backend
+      const initUrl = apiUrl(`/api/upload/initiate?filename=${encodeURIComponent(file.name)}&size_bytes=${file.size}`)
+      const initResponse = await fetch(initUrl)
+
+      if (!initResponse.ok) {
+        const errorData = await initResponse.json().catch(() => ({}))
+        throw new Error(errorData.detail || `Init failed: ${initResponse.status}`)
+      }
+
+      const { storage_key, upload_url } = await initResponse.json()
+
+      // Step 2: Upload directly to R2 with progress tracking
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        activeXhrsRef.current.add(xhr)
+
+        xhr.upload.addEventListener('progress', (event) => {
+          if (!isMountedRef.current) return
+          if (event.lengthComputable) {
+            // Use 1-95% for R2 upload, reserve 96-100% for verification
+            const percent = Math.round((event.loaded / event.total) * 95)
+            setUploadStates(prev => prev.map((state, i) =>
+              i === index ? { ...state, progress: percent } : state
+            ))
+          }
+        })
+
+        xhr.addEventListener('load', () => {
+          activeXhrsRef.current.delete(xhr)
+          if (!isMountedRef.current) {
+            reject(new Error('Component unmounted'))
+            return
+          }
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve()
+          } else {
+            reject(new Error(`R2 upload failed: ${xhr.status}`))
+          }
+        })
+
+        xhr.addEventListener('error', () => {
+          activeXhrsRef.current.delete(xhr)
+          reject(new Error('Network error during R2 upload'))
+        })
+
+        xhr.open('PUT', upload_url)
+        xhr.send(file)
+      })
+
+      // Step 3: Notify backend upload is complete
+      setUploadStates(prev => prev.map((state, i) =>
+        i === index ? { ...state, progress: 98 } : state
+      ))
+
+      const completeResponse = await fetch(apiUrl('/api/upload/complete'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storage_key }),
+      })
+
+      if (!completeResponse.ok) {
+        const errorData = await completeResponse.json().catch(() => ({}))
+        throw new Error(errorData.detail || `Verification failed: ${completeResponse.status}`)
+      }
+
+      const result: UploadedFile = {
+        filename: file.name,
+        path: storage_key,  // Use storage_key as path for webapp
+        size: file.size,
+      }
+
+      setUploadStates(prev => prev.map((state, i) =>
+        i === index ? { ...state, status: 'complete', progress: 100, result } : state
+      ))
+
+      return result
+
+    } catch (error) {
+      if (!isMountedRef.current) return null
+
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed'
+      setUploadStates(prev => prev.map((state, i) =>
+        i === index ? { ...state, status: 'error', error: errorMessage } : state
+      ))
+      return null
+    }
   }
 
   const handleFiles = useCallback(async (files: File[]) => {
