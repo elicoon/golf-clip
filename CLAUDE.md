@@ -22,6 +22,7 @@ golf-clip/
 │   ├── frontend/             # Shared React app (TypeScript + Vite)
 │   │   └── src/
 │   │       ├── App.tsx           # Main app with view routing
+│   │       ├── config.ts         # API URL configuration
 │   │       ├── components/
 │   │       │   ├── VideoDropzone.tsx     # File input
 │   │       │   ├── ProcessingView.tsx    # Progress tracking
@@ -29,10 +30,21 @@ golf-clip/
 │   │       │   ├── ExportComplete.tsx    # Feedback collection
 │   │       │   ├── Scrubber.tsx          # Timeline controls
 │   │       │   ├── TrajectoryEditor.tsx  # Shot tracer canvas overlay
-│   │       │   └── PointStatusTracker.tsx # Four-step marking progress UI
+│   │       │   ├── PointStatusTracker.tsx # Two-step review progress UI
+│   │       │   ├── TracerConfigPanel.tsx  # Tracer adjustment controls
+│   │       │   └── TracerFeedbackModal.tsx # Feedback when tracer is wrong
 │   │       └── stores/
 │   │           └── appStore.ts   # Zustand state management
 │   ├── detection/            # Shared ML/detection code (golfclip-detection)
+│   │   └── src/golfclip_detection/
+│   │       ├── audio.py          # Audio transient detection
+│   │       ├── visual.py         # YOLO ball tracking
+│   │       ├── origin.py         # Ball origin detection
+│   │       ├── tracker.py        # Constraint-based ball tracking
+│   │       ├── early_tracker.py  # Early ball motion detection
+│   │       ├── color_family.py   # Color family classification
+│   │       ├── pipeline.py       # Combined detection pipeline
+│   │       └── ...               # + 10 more detection modules
 │   └── api-schemas/          # Shared Pydantic schemas (golfclip-schemas)
 ├── apps/
 │   ├── desktop/              # Desktop app (golfclip-desktop)
@@ -42,33 +54,43 @@ golf-clip/
 │   │       │   └── schemas.py    # Pydantic request/response models
 │   │       ├── core/             # Database, config, settings
 │   │       │   ├── database.py   # SQLite setup and migrations
-│   │       │   └── config.py     # App settings
+│   │       │   ├── config.py     # App settings
+│   │       │   └── video.py      # Video utilities
 │   │       ├── detection/        # Shot detection algorithms
-│   │       │   ├── audio.py      # Audio transient detection
-│   │       │   ├── visual.py     # YOLO ball tracking
-│   │       │   ├── origin.py     # Ball origin detection (shaft + clubhead)
-│   │       │   ├── tracker.py    # Constraint-based ball tracking
+│   │       │   ├── audio.py          # Audio transient detection
+│   │       │   ├── visual.py         # YOLO ball tracking
+│   │       │   ├── origin.py         # Ball origin detection (shaft + clubhead)
+│   │       │   ├── tracker.py        # Constraint-based ball tracking
 │   │       │   ├── early_tracker.py  # Early ball motion detection (first 200ms)
-│   │       │   ├── color_family.py   # Color family classification for ball detection
-│   │       │   ├── search_expansion.py # Expanding search for ball candidates
-│   │       │   └── pipeline.py   # Combined detection pipeline
+│   │       │   ├── color_family.py   # Color family classification
+│   │       │   ├── search_expansion.py # Expanding search patterns
+│   │       │   ├── pipeline.py       # Combined detection pipeline
+│   │       │   └── ...               # + more detection modules
 │   │       ├── models/           # Database CRUD operations
 │   │       │   ├── job.py        # Job, Shot, Feedback operations
 │   │       │   └── trajectory.py # Trajectory CRUD for shot tracers
 │   │       ├── processing/       # Video processing utilities
-│   │       │   └── tracer.py     # Shot tracer rendering (OpenCV)
-│   │       └── tests/            # Integration tests
-│   │           ├── conftest.py   # Pytest fixtures
-│   │           ├── test_audio_detection.py
-│   │           ├── test_database.py
-│   │           ├── test_download.py
-│   │           ├── test_feedback.py
-│   │           └── test_integration.py
-│   └── webapp/               # Cloud webapp (coming soon)
-│       └── backend/          # FastAPI + PostgreSQL + R2
+│   │       │   ├── tracer.py     # Shot tracer rendering (OpenCV)
+│   │       │   ├── clips.py      # Clip extraction
+│   │       │   └── curves.py     # Bezier curve utilities
+│   │       └── tests/            # Integration tests (30+ test files)
+│   └── webapp/               # Cloud webapp
+│       └── backend/
+│           ├── api/
+│           │   └── routes.py     # Cloud API endpoints
+│           ├── core/
+│           │   ├── config.py     # Cloud settings (PostgreSQL, R2)
+│           │   ├── database.py   # PostgreSQL setup
+│           │   └── storage.py    # Cloudflare R2 storage
+│           ├── models/
+│           │   └── job.py        # Job CRUD
+│           └── main.py           # FastAPI app
 ├── scripts/                  # Development scripts
-│   └── setup-dev.sh          # Setup development environment
+├── tests/                    # Root-level package tests
 ├── docs/                     # Documentation
+│   ├── FEATURES.md           # Feature documentation
+│   ├── PRODUCT-WALKTHROUGH.md # User walkthrough
+│   └── plans/                # Design documents
 └── CLAUDE.md
 ```
 
@@ -117,8 +139,7 @@ cd golf-clip
 /opt/homebrew/bin/python3.11 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies (from apps/desktop)
-cd apps/desktop
+# Install dependencies
 pip install -e ".[dev]"
 ```
 
@@ -203,6 +224,15 @@ class JobCacheProxy:
 - `GET /api/trajectories/{job_id}` - Get all trajectories for a job
 - `GET /api/trajectory/{job_id}/{shot_id}/generate?landing_x=&landing_y=` - SSE endpoint for trajectory generation with user-marked landing point (streams progress, warning, complete, error events)
 
+### Tracer Feedback (for ML improvement)
+- `POST /api/tracer-feedback/{job_id}` - Submit tracer feedback (auto-accepted, configured, skipped, etc.)
+- `GET /api/tracer-feedback/stats` - Get aggregate tracer feedback statistics
+- `GET /api/tracer-feedback/export` - Export all tracer feedback data for ML training
+
+### Origin Feedback (for ML improvement)
+- `GET /api/origin-feedback/stats` - Get aggregate origin detection accuracy statistics
+- `GET /api/origin-feedback/export` - Export origin feedback data for ML training (auto vs manual comparison)
+
 ## Detection Pipeline
 
 1. **Audio Detection**: Analyze audio for transient peaks (golf strike sounds)
@@ -260,11 +290,13 @@ If the detector finds 0 shots, check the logs for diagnostic messages:
 SQLite database at `~/.golfclip/golfclip.db` with schema versioning:
 
 ```sql
--- Schema v4 (current)
+-- Schema v7 (current)
 jobs (id, video_path, output_dir, status, progress, ...)
 shots (id, job_id FK, shot_number, strike_time, confidence, landing_x, landing_y, ...)
 shot_feedback (id, job_id FK, shot_id, feedback_type, notes, confidence_snapshot, ...)
 shot_trajectories (id, job_id FK, shot_id, points JSON, apex_point JSON, confidence, ...)
+tracer_feedback (id, job_id FK, shot_id, feedback_type, auto_params JSON, final_params JSON, ...)
+origin_feedback (id, job_id FK, shot_id, auto_origin vs manual_origin, error metrics, ...)
 ```
 
 ## Feedback Collection System
@@ -296,6 +328,51 @@ curl http://localhost:8420/api/feedback/stats
 1. **Multi-video upload**: Allow users to upload multiple videos at once
 2. **Parallel processing**: Process uploaded videos in parallel instead of sequentially
 
+## ML Improvement Pipeline
+
+The feedback collected during review trains ML models to reduce false positives.
+
+### CLI Commands
+
+```bash
+# View feedback stats and available stages
+python -m backend.ml.feedback_stats
+python -m backend.ml.feedback_stats --trend  # Show weekly FP rate trend
+
+# Run analysis (dry run by default)
+python -m backend.ml.analyze analyze --stage 1  # Threshold tuning
+python -m backend.ml.analyze analyze --stage 2  # Weight optimization
+python -m backend.ml.analyze analyze --stage 3  # Confidence recalibration
+
+# Apply changes
+python -m backend.ml.analyze analyze --stage 1 --apply
+
+# Rollback to previous config
+python -m backend.ml.analyze rollback
+```
+
+### Stage Requirements
+
+| Stage | Min Samples | What It Does |
+|-------|-------------|--------------|
+| 1 | 10 | Finds optimal confidence threshold |
+| 2 | 50 | Learns feature weights via logistic regression |
+| 3 | 200 | Calibrates confidence scores via isotonic regression |
+
+### Config File
+
+ML parameters are stored in `~/.golfclip/ml_config.json`:
+
+```json
+{
+  "version": 1,
+  "confidence_threshold": 0.76,
+  "feature_weights": {"height": 0.20, "decay": 0.25, ...},
+  "calibration_model": {"0.70": 0.65, ...},
+  "update_history": [...]
+}
+```
+
 ## Shot Tracer Feature (Phase 2)
 
 The shot tracer overlays ball flight trajectory on video clips during review and export.
@@ -309,14 +386,18 @@ The shot tracer overlays ball flight trajectory on video clips during review and
 5. **Edit**: Users can drag trajectory points or re-mark landing point to adjust
 6. **Export**: Optionally render tracer overlay onto exported clips using OpenCV
 
-### Landing Point Workflow
+### Review Flow (Direct Click)
 
-The review flow uses click-to-mark for precise trajectory endpoints:
-- User sees shot at impact frame with video playback controls
-- Click on video marks landing point (confirms as true positive)
-- SSE streams progress: `extracting_template` → `detecting_early` → `generating_physics` → `smoothing`
-- Detection warnings (shaft failed, early detection failed) shown to user
-- "No golf shot" marks as false positive, "Next →" requires trajectory generated
+The review flow uses direct click-to-mark for streamlined interaction:
+
+1. **Step 1: Mark Landing** - User clicks directly on video where ball landed (no confirmation step)
+2. **Auto-Generate** - System generates trajectory using origin + landing + early detection
+3. **Step 2: Review Tracer** - "Does this look right?" (Accept / Configure & Regenerate)
+
+The "Is this a golf shot?" confirmation step has been removed - clicking to mark landing implicitly confirms.
+
+SSE streams progress: `extracting_template` → `detecting_early` → `generating_physics` → `smoothing`
+Detection warnings (shaft failed, early detection failed) shown to user for troubleshooting.
 
 ### Video Zoom Controls
 
@@ -337,20 +418,21 @@ The review interface supports zooming for precise marker placement:
 - Safari fallback for canvas blur filter
 
 **ClipReview.tsx** additions:
-- Four-step click-to-mark flow: target → landing → apex → configure
+- Direct click review flow: mark landing → auto-generate → review (no confirmation step)
 - SSE progress bar during trajectory generation
 - Detection warnings display for troubleshooting
 - "Show Tracer" checkbox to toggle trajectory visibility
 - "Render Shot Tracers" checkbox for export
-- "No golf shot" (red) / "Next →" buttons for shot review
-- Markers rendered via TrajectoryEditor: target (⊕), landing (↓), apex (◆)
+- "No golf shot" (red) / "Next" buttons for shot review
+- "Accept" / "Configure" buttons for tracer review
+- Markers rendered via TrajectoryEditor: landing (↓), apex (◆)
 - Custom SVG cursors matching marker icons during placement
 - Autoplay: video seeks to clip start and plays after trajectory generation completes
 - Video zoom (1x-4x) with pan support when zoomed in
 
 **PointStatusTracker.tsx** - Visual step progress indicator:
-- Shows all 4 steps with completion status (pending/done)
-- Current step highlighted, clickable to navigate between steps
+- Shows 2 main steps: "Mark Landing" and "Review Tracer"
+- Current step highlighted with completion status
 - Compact horizontal layout fits in review UI
 
 ### Backend Modules
@@ -394,6 +476,124 @@ When exporting with tracer, you can customize appearance:
 - `glow_enabled`: Add glow effect around line
 - `show_apex_marker`: Circle at highest point
 - `show_landing_marker`: X marker at landing point
+
+## Tracer Feedback System
+
+The tracer feedback system collects user corrections to auto-generated trajectories for ML improvement.
+
+### Review Flow
+
+1. Video auto-plays, user confirms "Is this a golf shot?"
+2. User marks landing point (mandatory)
+3. System auto-generates tracer using origin + landing + early detection
+4. User accepts or configures adjustments
+5. Feedback captured for ML training
+
+### Feedback Types
+
+| Type | When | Data Captured |
+|------|------|---------------|
+| `tracer_auto_accepted` | User accepts auto-generated tracer | auto_params |
+| `tracer_configured` | User adjusts config then accepts | auto_params, final_params, delta |
+| `tracer_reluctant_accept` | User accepts despite issues | auto_params, final_params |
+| `tracer_skip` | User skips shot entirely | auto_params, final_params |
+| `tracer_rejected` | User accepts shot without tracer | auto_params, final_params |
+
+### ML Training Data (The Delta)
+
+The key training signal is the **delta** between auto-generated and user-configured params:
+
+```json
+{
+  "origin": {"x": 0.45, "y": 0.85},
+  "landing": {"x": 0.72, "y": 0.65},
+  "auto_params": {"height": "medium", "shape": "straight", "flight_time": 3.0},
+  "final_params": {"height": "high", "shape": "draw", "flight_time": 4.5},
+  "delta": {
+    "height": {"from": "medium", "to": "high", "change": "+1"},
+    "flight_time": {"from": 3.0, "to": 4.5, "change": 1.5}
+  }
+}
+```
+
+### API Endpoints
+
+- `POST /api/tracer-feedback/{job_id}` - Submit tracer feedback
+- `GET /api/tracer-feedback/stats` - Get aggregate statistics
+- `GET /api/tracer-feedback/export` - Export for ML training
+
+### CLI Analysis Tools
+
+```bash
+# View tracer feedback statistics
+python -m backend.ml.tracer_feedback_stats
+
+# Export feedback for ML training
+curl http://localhost:8420/api/tracer-feedback/export
+```
+
+### Future ML Improvements
+
+1. **Stage 1: Bias correction** - Learn global adjustments (e.g., "always increase height by 1 level")
+2. **Stage 2: Position-based prediction** - Learn from origin/landing positions
+3. **Stage 3: Per-user calibration** - Personalize defaults per user
+
+## Origin Feedback System
+
+The origin feedback system collects user corrections to auto-detected ball origins for ML improvement.
+
+### How It Works
+
+1. When generating a trajectory, the system always runs auto-detection first
+2. If the user manually marks an origin point (via "Mark on Video"), feedback is captured
+3. The system records both auto-detected and manual origins with error metrics
+
+### Database Schema
+
+```sql
+origin_feedback (
+  id, job_id, shot_id, video_path, strike_time,
+  frame_width, frame_height,
+  -- Auto-detection results
+  auto_origin_x, auto_origin_y, auto_confidence, auto_method, shaft_score, clubhead_detected,
+  -- User correction
+  manual_origin_x, manual_origin_y,
+  -- Error metrics (computed)
+  error_dx, error_dy, error_distance,
+  created_at, environment
+)
+```
+
+### API Endpoints
+
+```bash
+# Get origin detection accuracy stats
+curl http://localhost:8420/api/origin-feedback/stats
+
+# Export origin feedback for ML training
+curl http://localhost:8420/api/origin-feedback/export
+```
+
+### Stats Response Example
+
+```json
+{
+  "total_feedback": 42,
+  "correction_rate": 0.38,
+  "mean_error_distance": 0.045,
+  "by_method": {
+    "shaft+clubhead": 35,
+    "clubhead_only": 5,
+    "fallback": 2
+  }
+}
+```
+
+### Future ML Improvements
+
+1. **Stage 1: Calibration offset** - Learn systematic bias per camera angle
+2. **Stage 2: Detection method selection** - Learn when to use shaft vs clubhead-only
+3. **Stage 3: Confidence recalibration** - Improve confidence scoring based on actual errors
 
 ## Constraint-Based Ball Tracking
 
@@ -479,39 +679,44 @@ The tracer doesn't need to follow the actual ball pixel-by-pixel. It needs to:
 
 ### Completed Shot Tracer Features
 
-1. **Detect ball origin accurately** - Shaft + clubhead detection working
-2. **Generate smooth parabolic curve** - Physics model in `track_full_trajectory()`
-3. **Detect trajectory characteristics** - `_extract_launch_params()` analyzes first 200ms
-4. **Four-step marking UI** - Target → Landing → Apex (optional) → Configure
-5. **Professional rendering**:
+1. ✅ **Detect ball origin accurately** - Shaft + clubhead detection working
+2. ✅ **Generate smooth parabolic curve** - Physics model in `track_full_trajectory()`
+3. ✅ **Detect trajectory characteristics** - `_extract_launch_params()` analyzes first 200ms
+4. ✅ **Direct click review UI** - Mark landing → Auto-generate → Review (no confirmation step)
+5. ✅ **Professional rendering**:
    - Smooth quadratic Bezier curves
    - RED tracer line with multi-layer glow effect
    - Physics-based animation timing (research-backed)
-   - Apex marker at highest point (gold diamond)
+   - Apex marker at highest point (gold diamond ◆)
    - Progressive "drawing" effect during playback
    - 60fps animation using requestAnimationFrame
-6. **Early ball detection** - Motion tracking in first 200ms post-impact:
+6. ✅ **Early ball detection** - Motion tracking in first 200ms post-impact:
    - `early_tracker.py` - Constraint-based ball tracking
    - `color_family.py` - Color family classification (white, yellow, orange, etc.)
    - `search_expansion.py` - Expanding search patterns for candidate detection
-7. **PointStatusTracker component** - Visual progress indicator for marking steps
-8. **Autoplay after generation** - Video auto-plays with tracer after trajectory completes
+7. ✅ **PointStatusTracker component** - Visual progress indicator for review steps
+8. ✅ **Autoplay after generation** - Video auto-plays with tracer after trajectory completes
+9. ✅ **Tracer feedback collection** - Captures user corrections for ML training
 
-### Four-Step Marking Flow
+### Direct Click Review Flow
 
-The review UI uses a guided four-step process with visual status tracking (`PointStatusTracker.tsx`):
+The review UI uses direct click-to-mark with visual status tracking (`PointStatusTracker.tsx`):
 
-1. **Step 1: Mark Target** - User clicks where they were aiming (crosshair marker)
-2. **Step 2: Mark Landing** - User clicks where ball actually landed (arrow marker)
-3. **Step 3: Mark Apex** - User clicks highest point of ball flight (gold diamond marker, optional - can skip)
-4. **Step 4: Configure & Generate** - Select trajectory settings:
-   - Starting line: Left / Center / Right
-   - Shot shape: Hook / Draw / Straight / Fade / Slice
-   - Shot height: Low / Medium / High
-   - Flight time: 1.0s - 6.0s slider
-   - Click "Generate" to create trajectory
+1. **Step 1: Mark Landing** - User clicks directly on video where ball landed (↓ arrow marker)
+   - Clicking implicitly confirms this is a golf shot
+   - "No golf shot" button available to mark as false positive
+2. **Auto-Generate** - System generates trajectory using origin + landing + early detection
+3. **Step 2: Review Tracer** - "Does this look right?"
+   - **Accept**: Tracer looks good, move to next shot
+   - **Configure**: Adjust parameters and regenerate:
+     - Starting line: Left / Center / Right
+     - Shot shape: Hook / Draw / Straight / Fade / Slice
+     - Shot height: Low / Medium / High
+     - Flight time: 1.0s - 10.0s slider
 
 **Autoplay**: After trajectory generation completes, the video automatically seeks to clip start and plays the shot with tracer overlay.
+
+**Feedback Collection**: Every interaction is captured for ML training (see Tracer Feedback System below).
 
 ### Trajectory Animation Physics
 

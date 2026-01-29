@@ -431,6 +431,7 @@ def feedback_row_to_dict(row: aiosqlite.Row) -> dict[str, Any]:
         "visual_confidence_snapshot": row["visual_confidence_snapshot"],
         "detection_features": deserialize_json(row["detection_features_json"]),
         "created_at": row["created_at"],
+        "environment": row["environment"],
     }
 
 
@@ -443,6 +444,7 @@ async def create_feedback(
     audio_confidence_snapshot: Optional[float] = None,
     visual_confidence_snapshot: Optional[float] = None,
     detection_features: Optional[dict] = None,
+    environment: str = "prod",
 ) -> dict[str, Any]:
     """Create a feedback record for a shot.
 
@@ -455,6 +457,7 @@ async def create_feedback(
         audio_confidence_snapshot: Audio confidence at feedback time.
         visual_confidence_snapshot: Visual confidence at feedback time.
         detection_features: Full detection feature dict for ML training.
+        environment: Environment tag ('prod' or 'dev'). Defaults to 'prod'.
 
     Returns:
         The created feedback record as a dictionary.
@@ -467,8 +470,9 @@ async def create_feedback(
         INSERT INTO shot_feedback (
             job_id, shot_id, feedback_type, notes,
             confidence_snapshot, audio_confidence_snapshot,
-            visual_confidence_snapshot, detection_features_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            visual_confidence_snapshot, detection_features_json, created_at,
+            environment
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             job_id,
@@ -480,12 +484,13 @@ async def create_feedback(
             visual_confidence_snapshot,
             serialize_json(detection_features),
             created_at,
+            environment,
         ),
     )
     await db.commit()
 
     feedback_id = cursor.lastrowid
-    logger.debug(f"Created feedback {feedback_id} for job {job_id}, shot {shot_id}: {feedback_type}")
+    logger.debug(f"Created feedback {feedback_id} for job {job_id}, shot {shot_id}: {feedback_type} (env={environment})")
 
     return {
         "id": feedback_id,
@@ -498,6 +503,7 @@ async def create_feedback(
         "visual_confidence_snapshot": visual_confidence_snapshot,
         "detection_features": detection_features,
         "created_at": created_at,
+        "environment": environment,
     }
 
 

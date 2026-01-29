@@ -25,12 +25,21 @@ from backend.api.schemas import (
     FeedbackStats,
     HoleInfo,
     JobError,
+    OriginFeedbackExportResponse,
+    OriginFeedbackStats,
     ProcessingStatus,
     ProcessVideoRequest,
     ProcessVideoResponse,
     ProgressEvent,
     ShotFeedbackRequest,
     ShotFeedbackResponse,
+    ShotHeight,
+    ShotShape,
+    StartingLine,
+    TracerFeedbackExportResponse,
+    TracerFeedbackRequest,
+    TracerFeedbackResponse,
+    TracerFeedbackStats,
     TrajectoryData,
     TrajectoryPoint,
     TrajectoryUpdateRequest,
@@ -39,6 +48,7 @@ from backend.api.schemas import (
     VideoInfo,
 )
 from backend.core.config import settings
+from backend.core.environment import get_environment
 from backend.core.video import extract_clip, get_video_info
 from backend.processing.clips import ClipExporter
 from backend.detection.pipeline import ShotDetectionPipeline
@@ -57,6 +67,12 @@ from backend.models.job import (
     update_shot,
 )
 from backend.models.trajectory import (
+    create_origin_feedback,
+    create_tracer_feedback,
+    export_origin_feedback,
+    export_tracer_feedback,
+    get_origin_feedback_stats,
+    get_tracer_feedback_for_job,
     get_trajectory,
     get_trajectories_for_job,
     update_trajectory as update_trajectory_db,
@@ -114,6 +130,60 @@ async def _emit_progress(job_id: str, step: str, progress: float, details: Optio
 
 # Directory for uploaded videos
 _UPLOAD_DIR = Path(tempfile.gettempdir()) / "golfclip_uploads"
+
+# Allowed base directories for video access (security: prevent path traversal)
+# Users can access files in: upload dir, home directory, and common video folders
+_ALLOWED_VIDEO_DIRS = [
+    _UPLOAD_DIR,
+    Path.home(),  # User's home directory
+    Path("/tmp"),  # Temp directory for testing
+]
+
+
+def _is_path_allowed(path: Path) -> bool:
+    """Check if a path is within allowed directories to prevent path traversal attacks.
+
+    Args:
+        path: The path to validate (will be resolved to absolute)
+
+    Returns:
+        True if the path is within an allowed directory, False otherwise.
+    """
+    try:
+        resolved = path.resolve()
+        for allowed_dir in _ALLOWED_VIDEO_DIRS:
+            try:
+                resolved.relative_to(allowed_dir.resolve())
+                return True
+            except ValueError:
+                continue
+        return False
+    except (OSError, RuntimeError):
+        return False
+
+
+def _validate_video_path(path: Path) -> Path:
+    """Validate and resolve a video path, raising HTTPException if invalid.
+
+    Args:
+        path: The path to validate
+
+    Returns:
+        The resolved absolute path
+
+    Raises:
+        HTTPException: If path is outside allowed directories or doesn't exist
+    """
+    resolved = path.resolve()
+
+    if not _is_path_allowed(resolved):
+        logger.warning(f"Path traversal attempt blocked: {path}")
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: path is outside allowed directories"
+        )
+
+    return resolved
 
 
 @router.post("/upload")
@@ -232,17 +302,17 @@ async def upload_videos_batch(files: List[UploadFile] = File(...)):
 @router.post("/process", response_model=ProcessVideoResponse)
 async def process_video(request: ProcessVideoRequest, background_tasks: BackgroundTasks):
     """Start processing a video file to detect shots."""
-    video_path = Path(request.video_path)
+    video_path = _validate_video_path(Path(request.video_path))
 
     if not video_path.exists():
-        raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
+        raise HTTPException(status_code=404, detail="Video file not found")
 
     # Get video info
     try:
         info = get_video_info(video_path)
     except Exception as e:
         logger.exception(f"Failed to read video metadata: {video_path}")
-        raise HTTPException(status_code=400, detail=f"Could not read video: {e}")
+        raise HTTPException(status_code=400, detail="Could not read video file")
 
     # Create job in database
     job_id = str(uuid.uuid4())
@@ -719,8 +789,11 @@ async def run_export_job(export_job_id: str):
         clips = export_job["clips"]
         total_clips = len(clips)
 
-        # Create ClipExporter for tracer rendering if needed
-        clip_exporter = ClipExporter(video_path) if export_job.get("render_tracer") else None
+        # Check if any clip needs tracer rendering (for lazy initialization)
+        any_clip_needs_tracer = any(clip.get("render_tracer", True) for clip in clips)
+
+        # Create ClipExporter for tracer rendering if any clip needs it
+        clip_exporter = ClipExporter(video_path) if any_clip_needs_tracer else None
 
         for i, clip in enumerate(clips):
             export_job["current_clip"] = clip["shot_id"]
@@ -732,7 +805,10 @@ async def run_export_job(export_job_id: str):
             try:
                 loop = asyncio.get_event_loop()
 
-                if export_job.get("render_tracer"):
+                # Check per-shot render_tracer flag (defaults to True for backwards compatibility)
+                should_render_tracer = clip.get("render_tracer", True)
+
+                if should_render_tracer:
                     # Get trajectory for this shot
                     trajectory = await get_trajectory(export_job["job_id"], clip["shot_id"])
 
@@ -775,7 +851,8 @@ async def run_export_job(export_job_id: str):
                         export_job["exported_count"] = len(export_job["exported"])
                         logger.info(f"Exported clip {clip['shot_id']} to {output_path}")
                 else:
-                    # Normal export without tracer
+                    # User explicitly disabled tracer for this shot - export without tracer
+                    logger.info(f"Exporting clip {clip['shot_id']} without tracer (render_tracer=False)")
                     await loop.run_in_executor(
                         None,
                         extract_clip,
@@ -842,7 +919,7 @@ async def get_export_status(export_job_id: str):
 @router.get("/video-info")
 async def get_video_info_endpoint(path: str):
     """Get metadata for a video file."""
-    video_path = Path(path)
+    video_path = _validate_video_path(Path(path))
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found")
 
@@ -851,7 +928,7 @@ async def get_video_info_endpoint(path: str):
         return VideoInfo(path=str(video_path), **info)
     except Exception as e:
         logger.exception(f"Failed to get video info: {video_path}")
-        raise HTTPException(status_code=400, detail=f"Could not read video: {e}")
+        raise HTTPException(status_code=400, detail="Could not read video file")
 
 
 @router.get("/video")
@@ -861,7 +938,7 @@ async def stream_video(path: str, request: Request, download: bool = False):
     Supports HTTP Range requests for seeking.
     Set download=true to trigger browser download instead of playback.
     """
-    video_path = Path(path)
+    video_path = _validate_video_path(Path(path))
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found")
 
@@ -1157,6 +1234,7 @@ async def submit_feedback(job_id: str, request: ShotFeedbackRequest):
             audio_confidence_snapshot=shot.get("audio_confidence"),
             visual_confidence_snapshot=shot.get("visual_confidence"),
             detection_features=shot.get("confidence_reasons"),
+            environment=get_environment(),
         )
 
         created_feedback.append(ShotFeedbackResponse(
@@ -1169,6 +1247,7 @@ async def submit_feedback(job_id: str, request: ShotFeedbackRequest):
             audio_confidence_snapshot=feedback_record["audio_confidence_snapshot"],
             visual_confidence_snapshot=feedback_record["visual_confidence_snapshot"],
             created_at=feedback_record["created_at"],
+            environment=feedback_record["environment"],
         ))
 
     return created_feedback
@@ -1195,6 +1274,7 @@ async def get_job_feedback(job_id: str):
             audio_confidence_snapshot=record["audio_confidence_snapshot"],
             visual_confidence_snapshot=record["visual_confidence_snapshot"],
             created_at=record["created_at"],
+            environment=record["environment"],
         )
         for record in feedback_records
     ]
@@ -1357,12 +1437,14 @@ async def generate_trajectory_sse(
     landing_y: Optional[float] = Query(None, ge=0, le=1, description="Landing Y coordinate (0-1), optional"),
     target_x: Optional[float] = Query(None, ge=0, le=1, description="Target X coordinate (0-1), optional"),
     target_y: Optional[float] = Query(None, ge=0, le=1, description="Target Y coordinate (0-1), optional"),
-    starting_line: str = Query("center", description="Starting line: left, center, right"),
-    shot_shape: str = Query("straight", description="Shot shape: hook, draw, straight, fade, slice"),
-    shot_height: str = Query("medium", description="Shot height: low, medium, high"),
-    flight_time: float = Query(None, ge=1.0, le=6.0, description="Flight time in seconds (1.0-6.0)"),
+    starting_line: StartingLine = Query(StartingLine.CENTER, description="Starting line direction"),
+    shot_shape: ShotShape = Query(ShotShape.STRAIGHT, description="Shot shape (curve direction)"),
+    shot_height: ShotHeight = Query(ShotHeight.MEDIUM, description="Shot height (apex level)"),
+    flight_time: Optional[float] = Query(None, ge=1.0, le=10.0, description="Flight time in seconds (1.0-10.0)"),
     apex_x: Optional[float] = Query(None, ge=0, le=1, description="Apex X coordinate (0-1), optional"),
     apex_y: Optional[float] = Query(None, ge=0, le=1, description="Apex Y coordinate (0-1), optional"),
+    origin_x: Optional[float] = Query(None, ge=0, le=1, description="Manual origin X coordinate (0-1), optional - overrides auto-detection"),
+    origin_y: Optional[float] = Query(None, ge=0, le=1, description="Manual origin Y coordinate (0-1), optional - overrides auto-detection"),
 ):
     """Generate trajectory with SSE progress updates.
 
@@ -1426,48 +1508,97 @@ async def generate_trajectory_sse(
                     "message": "Using auto-generated trajectory..."
                 })
 
-            # Step 2: Detect ball origin
+            # Step 2: Detect ball origin (or use user-provided origin)
+            from backend.detection.origin import OriginDetection
+
+            # Create tracker (needed for trajectory generation)
+            origin_detector = BallOriginDetector()
+            tracker = ConstrainedBallTracker(origin_detector=origin_detector)
+            loop = asyncio.get_event_loop()
+
+            # Always run auto-detection first (for feedback collection when manual origin provided)
             yield sse_event("progress", {
                 "step": "origin",
                 "progress": 10,
                 "message": "Detecting ball origin..."
             })
 
-            origin_detector = BallOriginDetector()
-            tracker = ConstrainedBallTracker(origin_detector=origin_detector)
-
             # Run origin detection in executor (CPU-bound)
-            loop = asyncio.get_event_loop()
-            origin = await loop.run_in_executor(
+            auto_origin = await loop.run_in_executor(
                 None,
                 lambda: origin_detector.detect_origin(video_path, strike_time)
             )
 
-            if origin is None:
-                # Emit warning but continue with fallback origin
-                yield sse_event("warning", {
-                    "code": "origin_detection_failed",
-                    "message": "Could not detect ball origin, using fallback position"
+            # Check if user provided manual origin point
+            if origin_x is not None and origin_y is not None:
+                yield sse_event("progress", {
+                    "step": "origin",
+                    "progress": 15,
+                    "message": "Using manually marked origin point..."
                 })
-                # Use a fallback origin (center-bottom of frame)
-                from backend.detection.origin import OriginDetection
+                # Convert from normalized (0-1) to pixel coordinates
                 origin = OriginDetection(
-                    x=frame_width * 0.5,
-                    y=frame_height * 0.85,
-                    confidence=0.3,
-                    method="fallback"
+                    x=origin_x * frame_width,
+                    y=origin_y * frame_height,
+                    confidence=1.0,
+                    method="manual"
                 )
-            elif origin.confidence < 0.6:
-                yield sse_event("warning", {
-                    "code": "low_origin_confidence",
-                    "message": f"Ball origin detection confidence is low ({origin.confidence:.0%})"
-                })
 
-            yield sse_event("progress", {
-                "step": "origin",
-                "progress": 20,
-                "message": f"Ball origin detected at ({origin.x:.0f}, {origin.y:.0f})"
-            })
+                # Save origin feedback to capture auto vs manual comparison
+                try:
+                    await create_origin_feedback(
+                        job_id=job_id,
+                        shot_id=shot_id,
+                        video_path=str(video_path),
+                        strike_time=strike_time,
+                        frame_width=frame_width,
+                        frame_height=frame_height,
+                        auto_origin_x=auto_origin.x / frame_width if auto_origin else None,
+                        auto_origin_y=auto_origin.y / frame_height if auto_origin else None,
+                        auto_confidence=auto_origin.confidence if auto_origin else None,
+                        auto_method=auto_origin.method if auto_origin else None,
+                        shaft_score=getattr(auto_origin, 'shaft_score', None) if auto_origin else None,
+                        clubhead_detected=getattr(auto_origin, 'clubhead_detected', None) if auto_origin else None,
+                        manual_origin_x=origin_x,
+                        manual_origin_y=origin_y,
+                    )
+                    logger.info(f"Saved origin feedback for job={job_id} shot={shot_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to save origin feedback: {e}")
+
+                yield sse_event("progress", {
+                    "step": "origin",
+                    "progress": 20,
+                    "message": f"Using manual origin at ({origin.x:.0f}, {origin.y:.0f})"
+                })
+            else:
+                # Use auto-detection result
+                if auto_origin is None:
+                    # Emit warning but continue with fallback origin
+                    yield sse_event("warning", {
+                        "code": "origin_detection_failed",
+                        "message": "Could not detect ball origin, using fallback position"
+                    })
+                    # Use a fallback origin (center-bottom of frame)
+                    origin = OriginDetection(
+                        x=frame_width * 0.5,
+                        y=frame_height * 0.85,
+                        confidence=0.3,
+                        method="fallback"
+                    )
+                else:
+                    origin = auto_origin
+                    if origin.confidence < 0.6:
+                        yield sse_event("warning", {
+                            "code": "low_origin_confidence",
+                            "message": f"Ball origin detection confidence is low ({origin.confidence:.0%})"
+                        })
+
+                yield sse_event("progress", {
+                    "step": "origin",
+                    "progress": 20,
+                    "message": f"Ball origin detected at ({origin.x:.0f}, {origin.y:.0f})"
+                })
 
             # Step 3: Generate trajectory with full configuration
             yield sse_event("progress", {
@@ -1520,12 +1651,12 @@ async def generate_trajectory_sse(
             if actual_landing_x is None or actual_landing_y is None:
                 # Calculate default landing based on starting_line and shot_shape
                 # Base X: depends on starting line
-                base_x = {"left": 0.3, "center": 0.5, "right": 0.7}.get(starting_line, 0.5)
+                base_x = {"left": 0.3, "center": 0.5, "right": 0.7}.get(starting_line.value, 0.5)
                 # Adjust for shot shape (draw goes right-to-left, fade goes left-to-right)
-                shape_offset = {"hook": -0.15, "draw": -0.08, "straight": 0, "fade": 0.08, "slice": 0.15}.get(shot_shape, 0)
+                shape_offset = {"hook": -0.15, "draw": -0.08, "straight": 0, "fade": 0.08, "slice": 0.15}.get(shot_shape.value, 0)
                 actual_landing_x = max(0.1, min(0.9, base_x + shape_offset))
                 # Y: higher in frame (towards top) based on shot height
-                actual_landing_y = {"low": 0.25, "medium": 0.15, "high": 0.08}.get(shot_height, 0.15)
+                actual_landing_y = {"low": 0.25, "medium": 0.15, "high": 0.08}.get(shot_height.value, 0.15)
                 yield sse_event("warning", {
                     "code": "auto_landing",
                     "message": "Using auto-generated landing point"
@@ -1546,9 +1677,9 @@ async def generate_trajectory_sse(
                     origin=origin_normalized,
                     target=(actual_target_x, actual_target_y),
                     landing=(actual_landing_x, actual_landing_y),
-                    starting_line=starting_line,
-                    shot_shape=shot_shape,
-                    shot_height=shot_height,
+                    starting_line=starting_line.value,
+                    shot_shape=shot_shape.value,
+                    shot_height=shot_height.value,
                     strike_time=strike_time,
                     flight_time=flight_time,
                     apex=apex,
@@ -1617,4 +1748,161 @@ async def generate_trajectory_sse(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
         }
+    )
+
+
+# =============================================================================
+# Tracer Feedback Endpoints (ML Training Data Collection)
+# NOTE: Specific paths (/tracer-feedback/stats, /tracer-feedback/export) MUST
+# come before parameterized paths (/tracer-feedback/{job_id}) for correct routing.
+# =============================================================================
+
+
+@router.get("/tracer-feedback/stats", response_model=TracerFeedbackStats)
+async def get_tracer_feedback_stats():
+    """Get aggregate statistics on tracer feedback.
+
+    Returns auto-accepted rate, counts by feedback type, and common adjustments.
+    """
+    # Export all feedback to compute stats
+    export_data = await export_tracer_feedback()
+    feedback_list = export_data.get("feedback", [])
+    stats_by_type = export_data.get("stats", {}).get("by_type", {})
+
+    # Count by type
+    auto_accepted = stats_by_type.get("tracer_auto_accepted", 0)
+    configured = stats_by_type.get("tracer_configured", 0)
+    reluctant_accept = stats_by_type.get("tracer_reluctant_accept", 0)
+    skip = stats_by_type.get("tracer_skip", 0)
+    rejected = stats_by_type.get("tracer_rejected", 0)
+    total = len(feedback_list)
+
+    # Compute auto-accepted rate
+    auto_accepted_rate = 0.0
+    if total > 0:
+        auto_accepted_rate = auto_accepted / total
+
+    # Compute common adjustments from configured feedback
+    common_adjustments: dict[str, dict[str, int]] = {}
+    for record in feedback_list:
+        deltas = record.get("deltas")
+        if deltas:
+            for param, change in deltas.items():
+                if param not in common_adjustments:
+                    common_adjustments[param] = {}
+                # Represent the change as "auto->final" or just track that it changed
+                auto_val = change.get("auto")
+                final_val = change.get("final")
+                key = f"{auto_val}->{final_val}"
+                common_adjustments[param][key] = common_adjustments[param].get(key, 0) + 1
+
+    return TracerFeedbackStats(
+        total_feedback=total,
+        auto_accepted=auto_accepted,
+        configured=configured,
+        reluctant_accept=reluctant_accept,
+        skip=skip,
+        rejected=rejected,
+        auto_accepted_rate=auto_accepted_rate,
+        common_adjustments=common_adjustments,
+    )
+
+
+@router.get("/tracer-feedback/export", response_model=TracerFeedbackExportResponse)
+async def export_tracer_feedback_data(environment: Optional[str] = None):
+    """Export tracer feedback for ML training.
+
+    Args:
+        environment: Optional filter by environment ('prod', 'dev', etc.)
+
+    Returns:
+        All tracer feedback records with computed deltas between auto and final params.
+    """
+    export_data = await export_tracer_feedback(environment=environment)
+
+    return TracerFeedbackExportResponse(
+        feedback=export_data.get("feedback", []),
+        stats=export_data.get("stats", {}),
+    )
+
+
+@router.post("/tracer-feedback/{job_id}", response_model=TracerFeedbackResponse)
+async def submit_tracer_feedback(job_id: str, request: TracerFeedbackRequest):
+    """Submit feedback on tracer/trajectory quality for a shot.
+
+    This data is used to improve auto-generated trajectory parameters over time.
+    """
+    # Verify job exists
+    job = _get_cached_job(job_id) or await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    # Create feedback record
+    feedback_record = await create_tracer_feedback(
+        job_id=job_id,
+        shot_id=request.shot_id,
+        feedback_type=request.feedback_type.value,
+        auto_params=request.auto_params,
+        final_params=request.final_params,
+        origin_point=request.origin_point,
+        landing_point=request.landing_point,
+        apex_point=request.apex_point,
+        environment=get_environment(),
+    )
+
+    return TracerFeedbackResponse(
+        id=feedback_record["id"],
+        job_id=feedback_record["job_id"],
+        shot_id=feedback_record["shot_id"],
+        feedback_type=feedback_record["feedback_type"],
+        auto_params=feedback_record["auto_params"],
+        final_params=feedback_record["final_params"],
+        origin_point=feedback_record["origin_point"],
+        landing_point=feedback_record["landing_point"],
+        apex_point=feedback_record["apex_point"],
+        created_at=feedback_record["created_at"],
+        environment=feedback_record["environment"],
+    )
+
+
+# =============================================================================
+# Origin Feedback Endpoints (ML Training Data Collection)
+# NOTE: Specific paths (/origin-feedback/stats, /origin-feedback/export) MUST
+# come before parameterized paths for correct routing.
+# =============================================================================
+
+
+@router.get("/origin-feedback/stats", response_model=OriginFeedbackStats)
+async def get_origin_feedback_statistics():
+    """Get aggregate statistics on origin detection feedback.
+
+    Returns correction rate, mean error distance, and counts by detection method.
+    """
+    stats = await get_origin_feedback_stats()
+
+    return OriginFeedbackStats(
+        total_feedback=stats["total_feedback"],
+        correction_rate=stats["correction_rate"],
+        mean_error_distance=stats.get("mean_error_distance"),
+        by_method=stats.get("by_method", {}),
+    )
+
+
+@router.get("/origin-feedback/export", response_model=OriginFeedbackExportResponse)
+async def export_origin_feedback_data(environment: Optional[str] = None):
+    """Export origin feedback for ML training.
+
+    Args:
+        environment: Optional filter by environment ('prod', 'dev', etc.)
+
+    Returns:
+        All origin feedback records with error metrics.
+    """
+    export_data = await export_origin_feedback(environment=environment)
+
+    return OriginFeedbackExportResponse(
+        exported_at=export_data["exported_at"],
+        total_records=export_data["total_records"],
+        records=export_data["records"],
+        stats=export_data["stats"],
     )

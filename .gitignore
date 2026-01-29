@@ -86,3 +86,4 @@ tmp/
 trajectory-*.png
 trajectory-*.gif
 *.screenshot.png
+.venv

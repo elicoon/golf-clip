@@ -13,7 +13,7 @@ from loguru import logger
 DB_PATH = Path.home() / ".golfclip" / "golfclip.db"
 
 # Current schema version - increment when making schema changes
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 7
 
 # Global connection pool (single connection for SQLite)
 _db_connection: Optional[aiosqlite.Connection] = None
@@ -73,6 +73,12 @@ async def _apply_migrations(current_version: int) -> None:
         await _migrate_v3()
     if current_version < 4:
         await _migrate_v4()
+    if current_version < 5:
+        await _migrate_v5()
+    if current_version < 6:
+        await _migrate_v6()
+    if current_version < 7:
+        await _migrate_v7()
 
 
 async def _migrate_v1() -> None:
@@ -223,6 +229,113 @@ async def _migrate_v4() -> None:
     )
 
     logger.info("Migration v4 applied successfully")
+
+
+async def _migrate_v5() -> None:
+    """Add environment column to shot_feedback for dev/prod tagging."""
+    logger.info("Applying migration v5: Add environment column to shot_feedback")
+
+    await _db_connection.execute(
+        "ALTER TABLE shot_feedback ADD COLUMN environment TEXT DEFAULT 'prod'"
+    )
+    await _db_connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_feedback_environment ON shot_feedback(environment)"
+    )
+
+    await _db_connection.execute(
+        "INSERT OR IGNORE INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
+        (5, datetime.utcnow().isoformat(), "Add environment column to shot_feedback"),
+    )
+
+    logger.info("Migration v5 applied successfully")
+
+
+async def _migrate_v6() -> None:
+    """Add tracer_feedback table for capturing user corrections to auto-generated trajectories."""
+    logger.info("Applying migration v6: Tracer feedback table")
+
+    await _db_connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS tracer_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            shot_id INTEGER NOT NULL,
+            feedback_type TEXT NOT NULL,
+            auto_params_json TEXT,
+            final_params_json TEXT,
+            origin_point_json TEXT,
+            landing_point_json TEXT,
+            apex_point_json TEXT,
+            created_at TEXT NOT NULL,
+            environment TEXT DEFAULT 'prod',
+            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tracer_feedback_job ON tracer_feedback(job_id);
+        CREATE INDEX IF NOT EXISTS idx_tracer_feedback_type ON tracer_feedback(feedback_type);
+        """
+    )
+
+    await _db_connection.execute(
+        "INSERT OR IGNORE INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
+        (6, datetime.utcnow().isoformat(), "Tracer feedback table for trajectory corrections"),
+    )
+
+    logger.info("Migration v6 applied successfully")
+
+
+async def _migrate_v7() -> None:
+    """Add origin_feedback table for collecting user corrections to ball origin detection."""
+    logger.info("Applying migration v7: Origin feedback table")
+
+    await _db_connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS origin_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            shot_id INTEGER NOT NULL,
+            video_path TEXT NOT NULL,
+            strike_time REAL NOT NULL,
+            frame_width INTEGER NOT NULL,
+            frame_height INTEGER NOT NULL,
+
+            -- Auto-detection results (null if detection failed completely)
+            auto_origin_x REAL,
+            auto_origin_y REAL,
+            auto_confidence REAL,
+            auto_method TEXT,
+            shaft_score REAL,
+            clubhead_detected INTEGER,
+
+            -- User-marked origin (normalized 0-1 coordinates)
+            manual_origin_x REAL NOT NULL,
+            manual_origin_y REAL NOT NULL,
+
+            -- Computed error (null if no auto-detection)
+            error_dx REAL,
+            error_dy REAL,
+            error_distance REAL,
+
+            created_at TEXT NOT NULL,
+            environment TEXT DEFAULT 'prod',
+
+            FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_origin_feedback_job ON origin_feedback(job_id);
+        CREATE INDEX IF NOT EXISTS idx_origin_feedback_error ON origin_feedback(error_distance);
+
+        -- Add missing index from v6 for tracer_feedback environment filtering
+        CREATE INDEX IF NOT EXISTS idx_tracer_feedback_environment ON tracer_feedback(environment);
+        """
+    )
+
+    await _db_connection.execute(
+        "INSERT OR IGNORE INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
+        (7, datetime.utcnow().isoformat(), "Origin feedback table for ball origin corrections"),
+    )
+
+    logger.info("Migration v7 applied successfully")
 
 
 async def close_db() -> None:

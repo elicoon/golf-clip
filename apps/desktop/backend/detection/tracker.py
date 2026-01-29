@@ -1666,7 +1666,7 @@ class ConstrainedBallTracker:
         if flight_time is not None:
             flight_duration = flight_time
         else:
-            duration_map = {"low": 1.5, "medium": 3.0, "high": 4.5}
+            duration_map = {"low": 3.0, "medium": 4.5, "high": 6.0}
             flight_duration = duration_map.get(shot_height, 3.0)
 
         # DESIRED apex y position (screen y, lower = higher on screen)

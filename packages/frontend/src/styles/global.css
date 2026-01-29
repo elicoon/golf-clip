@@ -1860,6 +1860,46 @@ kbd {
   font-size: 12px;
 }
 
+.step-badge.generating {
+  background: #f59e0b;
+}
+
+.step-badge.complete {
+  background: #22c55e;
+}
+
+.instruction-text {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.btn-confirm-shot {
+  padding: 8px 16px;
+  background: #22c55e;
+  border: none;
+  color: white;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-confirm-shot:hover {
+  background: #16a34a;
+  transform: translateY(-1px);
+}
+
+.spinner-small {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 .btn-reset-inline {
   margin-left: auto;
   padding: 4px 12px;
@@ -2459,7 +2499,374 @@ kbd {
   border-top: 1px solid var(--color-bg-tertiary);
 }
 
-.btn-large {
-  padding: var(--spacing-md) var(--spacing-xl);
-  font-size: 1.125rem;
+/* ============================================
+   Tracer Config Panel
+   ============================================ */
+
+.tracer-config-panel {
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-bg-tertiary);
+  border-radius: var(--border-radius);
+  margin-top: var(--spacing-md);
+  overflow: hidden;
+}
+
+.config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+  user-select: none;
+}
+
+.config-header:hover {
+  background-color: var(--color-bg-tertiary);
+}
+
+.config-header:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.config-header-title {
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.config-header-icon {
+  font-size: 1.25rem;
+  color: var(--color-text-muted);
+  font-weight: bold;
+  width: 24px;
+  text-align: center;
+}
+
+.config-body {
+  padding: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-bg-tertiary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.config-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.config-row label {
+  min-width: 100px;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.config-row .button-group {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.config-row .slider-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: 1;
+}
+
+.config-row .flight-time-value {
+  font-size: 0.9rem;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  color: var(--color-primary);
+  min-width: 40px;
+  text-align: right;
+}
+
+.btn-apex {
+  min-width: 120px;
+}
+
+.btn-apex.marked {
+  background-color: var(--color-primary-dim);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.optional-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.config-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-bg-tertiary);
+}
+
+.config-hint {
+  font-size: 0.8rem;
+  color: var(--color-warning);
+  margin: 0;
+  text-align: right;
+}
+
+.config-actions .btn-generate {
+  min-width: 140px;
+}
+
+/* Responsive adjustments for config panel */
+@media (max-width: 600px) {
+  .config-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-xs);
+  }
+
+  .config-row label {
+    min-width: auto;
+  }
+
+  .config-row .button-group {
+    width: 100%;
+  }
+
+  .config-row .slider-group {
+    width: 100%;
+  }
+
+  .config-actions {
+    align-items: stretch;
+  }
+
+  .config-actions .btn-generate {
+    width: 100%;
+  }
+}
+
+/* ============================================
+   Tracer Feedback Modal
+   ============================================ */
+
+.tracer-feedback-trigger {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.btn-tracer-feedback {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color var(--transition-fast);
+}
+
+.btn-tracer-feedback:hover:not(:disabled) {
+  color: var(--color-text-secondary);
+}
+
+.btn-tracer-feedback:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tracer-feedback-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.tracer-feedback-modal {
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-width: 420px;
+  width: 90%;
+  padding: var(--spacing-xl);
+  animation: modalSlideIn 0.3s ease;
+  text-align: center;
+}
+
+.tracer-feedback-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-md) 0;
+  color: var(--color-text);
+}
+
+.tracer-feedback-message {
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.tracer-feedback-submessage {
+  color: var(--color-text);
+  margin: 0 0 var(--spacing-lg) 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.tracer-feedback-suggestions {
+  text-align: left;
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--color-bg-elevated);
+}
+
+.suggestions-label {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-sm) 0;
+}
+
+.suggestions-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.suggestion-item {
+  font-size: 0.9rem;
+  color: var(--color-text);
+  padding: var(--spacing-xs) 0;
+  padding-left: var(--spacing-md);
+  position: relative;
+}
+
+.suggestion-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  background-color: var(--color-primary);
+  border-radius: 50%;
+}
+
+.tracer-feedback-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.tracer-feedback-actions.single {
+  align-items: center;
+}
+
+.tracer-feedback-actions .btn-ok {
+  padding: var(--spacing-sm) var(--spacing-xl);
+  min-width: 160px;
+}
+
+.tracer-feedback-actions .btn-accept-anyway {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-weight: 500;
+}
+
+.tracer-feedback-actions .btn-no-tracer {
+  padding: var(--spacing-sm) var(--spacing-lg);
+}
+
+.tracer-feedback-actions .btn-skip-shot {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  padding: var(--spacing-sm);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.tracer-feedback-actions .btn-skip-shot:hover {
+  color: var(--color-danger);
+}
+
+/* ==========================================
+   Inline Feedback UI (in TracerConfigPanel)
+   ========================================== */
+
+/* Feedback message banner at top of config panel */
+.config-feedback-message {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  color: #93c5fd;
+  font-size: 0.9rem;
+}
+
+/* Untried config row indicator */
+.config-row.untried {
+  position: relative;
+}
+
+.config-row.untried::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 0 6px var(--color-primary);
+}
+
+/* Fallback actions section */
+.config-fallback-actions {
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-bg-tertiary);
+}
+
+.config-fallback-actions .fallback-message {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+.config-fallback-actions .fallback-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.config-fallback-actions .btn-small {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.8rem;
 }
