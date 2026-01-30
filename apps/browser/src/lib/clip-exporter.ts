@@ -33,39 +33,47 @@ export async function exportClipWithTracer(
     tracerWidth = 3,
   } = options
 
-  // Write input video
-  await ffmpeg.writeFile('input.mp4', await fetchFile(videoBlob))
+  const inputName = 'input.mp4'
+  const outputName = 'output.mp4'
 
-  // Generate drawtext filter for trajectory (simple approach)
-  // For MVP, we'll burn in a simple line overlay
-  const duration = endTime - startTime
+  try {
+    // Write input video
+    await ffmpeg.writeFile(inputName, await fetchFile(videoBlob))
 
-  // Build FFmpeg filter for trajectory line
-  // This is simplified - a full implementation would use canvas compositing
-  const filterComplex = buildTrajectoryFilter(trajectory, tracerColor, tracerWidth, videoWidth, videoHeight)
+    // Generate drawtext filter for trajectory (simple approach)
+    // For MVP, we'll burn in a simple line overlay
+    const duration = endTime - startTime
 
-  // Export with overlay
-  await ffmpeg.exec([
-    '-i', 'input.mp4',
-    '-ss', startTime.toString(),
-    '-t', duration.toString(),
-    '-vf', filterComplex,
-    '-c:a', 'copy',
-    'output.mp4',
-  ])
+    // Build FFmpeg filter for trajectory line
+    // This is simplified - a full implementation would use canvas compositing
+    const filterComplex = buildTrajectoryFilter(trajectory, tracerColor, tracerWidth, videoWidth, videoHeight)
 
-  const data = await ffmpeg.readFile('output.mp4')
+    // Export with overlay
+    const exitCode = await ffmpeg.exec([
+      '-i', inputName,
+      '-ss', startTime.toString(),
+      '-t', duration.toString(),
+      '-vf', filterComplex,
+      '-c:a', 'copy',
+      outputName,
+    ])
 
-  if (!(data instanceof Uint8Array)) {
-    throw new Error('Unexpected FFmpeg output format')
+    if (exitCode !== 0) {
+      throw new Error(`FFmpeg export failed with exit code ${exitCode}`)
+    }
+
+    const data = await ffmpeg.readFile(outputName)
+
+    if (!(data instanceof Uint8Array)) {
+      throw new Error('Unexpected FFmpeg output format')
+    }
+
+    return new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' })
+  } finally {
+    // Cleanup even on error
+    try { await ffmpeg.deleteFile(inputName) } catch { /* ignore */ }
+    try { await ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
   }
-
-  // Cleanup
-  await ffmpeg.deleteFile('input.mp4')
-  await ffmpeg.deleteFile('output.mp4')
-
-  // Cast to handle TypeScript's strict ArrayBuffer type checking
-  return new Blob([data as unknown as BlobPart], { type: 'video/mp4' })
 }
 
 function buildTrajectoryFilter(
