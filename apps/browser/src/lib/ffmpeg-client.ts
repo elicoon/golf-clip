@@ -134,8 +134,7 @@ export async function extractVideoSegment(
       throw new Error('Unexpected FFmpeg output format')
     }
 
-    // Cast to handle TypeScript's strict ArrayBuffer type checking
-    return new Blob([data as unknown as BlobPart], { type: 'video/mp4' })
+    return new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' })
   } finally {
     try { await ffmpeg.deleteFile(inputName) } catch { /* ignore */ }
     try { await ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
