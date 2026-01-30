@@ -17,7 +17,7 @@ interface EssentiaModule {
     ratioThreshold?: number,
     sampleRate?: number,
     threshold?: number
-  ): { onsets: number[] }
+  ): { onsets: unknown }
   SpectralCentroidTime(array: unknown, sampleRate?: number): { centroid: number }
   Flatness(array: unknown): { flatness: number }
   BandPass(
@@ -62,15 +62,15 @@ export async function loadEssentia(): Promise<void> {
   if (loaded) return
 
   // Dynamic import of Essentia.js modules
-  // Using ES modules for browser compatibility
-  const [{ default: EssentiaWASM }, { default: Essentia }] = await Promise.all([
+  // Using ES modules - EssentiaWASM is a named export (not default) and is the module itself (not a factory)
+  // See: https://mtg.github.io/essentia.js/docs/api/tutorial-1.%20Getting%20started.html
+  const [{ EssentiaWASM }, { default: Essentia }] = await Promise.all([
     import('essentia.js/dist/essentia-wasm.es.js'),
     import('essentia.js/dist/essentia.js-core.es.js'),
   ])
 
-  // Initialize WASM module
-  const wasmModule = await EssentiaWASM()
-  essentia = new Essentia(wasmModule) as EssentiaModule
+  // EssentiaWASM is the WASM module object directly (not a factory function)
+  essentia = new Essentia(EssentiaWASM) as EssentiaModule
 
   loaded = true
 }
@@ -151,7 +151,19 @@ export async function detectStrikes(
     threshold
   )
 
-  const onsetTimes = onsetResult.onsets || []
+  // SuperFluxExtractor returns onsets as an Essentia vector, convert to array
+  // Note: vectorToArray throws "Empty vector input" if the vector is empty,
+  // so we need to catch that case and return an empty array instead
+  let onsetTimes: number[] = []
+  if (onsetResult.onsets) {
+    try {
+      const converted = essentia.vectorToArray(onsetResult.onsets)
+      onsetTimes = Array.from(converted)
+    } catch {
+      // Empty vector - no onsets detected, which is a valid result
+      onsetTimes = []
+    }
+  }
 
   // Filter by minimum interval and calculate confidence for each onset
   const strikes: StrikeDetection[] = []

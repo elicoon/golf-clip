@@ -7,9 +7,10 @@
 
 declare module 'essentia.js/dist/essentia-wasm.es.js' {
   /**
-   * Factory function that returns a Promise resolving to the WASM module instance
+   * WASM module instance (named export, not a factory function)
+   * For ES modules, EssentiaWASM is the module object directly
    */
-  export default function EssentiaWASM(): Promise<unknown>
+  export const EssentiaWASM: unknown
 }
 
 declare module 'essentia.js/dist/essentia.js-core.es.js' {
