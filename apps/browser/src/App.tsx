@@ -15,14 +15,20 @@ export default function App() {
         </div>
       )}
 
-      {status === 'idle' && <VideoDropzone />}
-
-      {status === 'loading' || status === 'processing' ? (
+      {(status === 'idle' || status === 'loading' || status === 'processing') && (
         <VideoDropzone />
-      ) : null}
+      )}
 
       {status === 'ready' && (
         <div>
+          <div style={{ marginBottom: '1rem' }}>
+            <button
+              onClick={() => useProcessingStore.getState().reset()}
+              style={{ padding: '0.5rem 1rem', cursor: 'pointer' }}
+            >
+              Process Another Video
+            </button>
+          </div>
           <h2>Found {strikes.length} shots</h2>
           {segments.map((segment, i) => (
             <div key={segment.id} style={{ marginBottom: '2rem' }}>

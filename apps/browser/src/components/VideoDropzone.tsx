@@ -32,13 +32,34 @@ export function VideoDropzone() {
   const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    if (!file.type.startsWith('video/')) {
+      alert('Please select a video file')
+      return
+    }
+
+    if (file.size > 500_000_000) {
+      const proceed = confirm(
+        `This file is ${(file.size / 1_000_000).toFixed(0)}MB. ` +
+        'Large files may take longer to process. Continue?'
+      )
+      if (!proceed) return
+    }
+
     await processVideoFile(file)
   }, [])
 
   if (status === 'loading' || status === 'processing') {
     return (
       <div style={styles.container}>
-        <div style={styles.progress}>
+        <div
+          style={styles.progress}
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Processing progress"
+        >
           <div style={{ ...styles.progressBar, width: `${progress}%` }} />
         </div>
         <p>{progressMessage || 'Processing...'}</p>
