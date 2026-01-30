@@ -3,6 +3,9 @@
  *
  * Detects golf ball strikes in audio using onset detection and spectral analysis.
  * Essentia.js is a WebAssembly port of the Essentia audio analysis library.
+ *
+ * IMPORTANT: This module requires audio at 44100Hz sample rate.
+ * Essentia.js SuperFluxExtractor does not work correctly with lower sample rates.
  */
 
 // Essentia types (library doesn't have proper TS types for all exports)
@@ -96,8 +99,10 @@ export function unloadEssentia(): void {
  * Uses SuperFluxExtractor for onset detection (optimized for percussive sounds)
  * and spectral analysis to filter for strike-like sounds.
  *
+ * IMPORTANT: Audio must be at 44100Hz sample rate for Essentia.js to work correctly.
+ *
  * @param audioData - Float32Array of audio samples (-1.0 to 1.0)
- * @param sampleRate - Sample rate of the audio (typically 22050 or 44100 Hz)
+ * @param sampleRate - Sample rate of the audio (must be 44100 Hz)
  * @param config - Optional detection configuration
  * @returns Array of detected strikes with timestamps and confidence scores
  */
@@ -113,6 +118,9 @@ export async function detectStrikes(
   if (sampleRate <= 0) {
     throw new Error('Sample rate must be positive')
   }
+  if (sampleRate !== 44100) {
+    console.warn(`[AudioDetector] Warning: Sample rate is ${sampleRate}Hz. Essentia.js works best with 44100Hz.`)
+  }
   if (!essentia || !loaded) {
     throw new Error('Essentia not loaded. Call loadEssentia() first.')
   }
@@ -126,6 +134,7 @@ export async function detectStrikes(
   // Golf ball strikes have significant energy in 1000-8000 Hz range
   const bandwidth = cfg.frequencyHigh - cfg.frequencyLow
   const centerFrequency = (cfg.frequencyLow + cfg.frequencyHigh) / 2
+
   const filtered = essentia.BandPass(
     audioVector,
     bandwidth,
@@ -141,12 +150,13 @@ export async function detectStrikes(
   // Adjust threshold based on sensitivity (lower threshold = more detections)
   const threshold = 0.1 - cfg.sensitivity * 0.08 // Range: 0.02 to 0.10
 
+  // Call SuperFluxExtractor with filtered signal
   const onsetResult = essentia.SuperFluxExtractor(
     filtered.signal,
     20,            // combine: 20ms double onset threshold
     frameSize,
     hopSize,
-    16,            // ratioThreshold
+    16,            // ratioThreshold (default)
     sampleRate,
     threshold
   )
@@ -186,16 +196,35 @@ export async function detectStrikes(
     }
 
     const window = audioData.slice(windowStart, windowEnd)
+
+    // Skip if window is too small for spectral analysis
+    if (window.length < 256) {
+      continue
+    }
+
     const windowVector = essentia.arrayToVector(window)
 
-    // Calculate spectral features
-    const centroidResult = essentia.SpectralCentroidTime(windowVector, sampleRate)
-    const flatnessResult = essentia.Flatness(windowVector)
-    const rmsResult = essentia.RMS(windowVector)
-
-    const centroid = centroidResult.centroid
-    const flatness = flatnessResult.flatness
-    const rms = rmsResult.rms
+    // Calculate spectral features with error handling
+    // Some Essentia algorithms can fail on edge cases
+    let centroid = 3500, flatness = 0.3, rms = 0.1 // defaults
+    try {
+      const centroidResult = essentia.SpectralCentroidTime(windowVector, sampleRate)
+      centroid = centroidResult.centroid
+    } catch {
+      // Use default centroid
+    }
+    try {
+      const flatnessResult = essentia.Flatness(windowVector)
+      flatness = flatnessResult.flatness
+    } catch {
+      // Use default flatness
+    }
+    try {
+      const rmsResult = essentia.RMS(windowVector)
+      rms = rmsResult.rms
+    } catch {
+      // Use default RMS
+    }
 
     // Calculate confidence score based on spectral features
     const confidence = calculateConfidence(centroid, flatness, rms)

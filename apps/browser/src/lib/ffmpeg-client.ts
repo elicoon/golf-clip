@@ -49,10 +49,11 @@ export async function extractAudioFromSegment(
     }
 
     // Extract audio as WAV (PCM for analysis)
+    // NOTE: Essentia.js SuperFluxExtractor requires 44100Hz sample rate
     args.push(
       '-vn',           // No video
       '-acodec', 'pcm_s16le',
-      '-ar', '22050',  // Sample rate (lower for memory efficiency)
+      '-ar', '44100',  // Sample rate - Essentia.js requires 44100Hz
       '-ac', '1',      // Mono
       outputName
     )

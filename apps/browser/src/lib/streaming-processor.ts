@@ -19,7 +19,7 @@ import { getVideoDuration } from './segment-extractor'
 import { useProcessingStore, VideoSegment } from '../stores/processingStore'
 
 const AUDIO_CHUNK_DURATION = 30 // Analyze 30 seconds at a time
-const SAMPLE_RATE = 22050
+const SAMPLE_RATE = 44100  // Essentia.js SuperFluxExtractor requires 44100Hz
 
 export interface ProcessingCallbacks {
   onProgress?: (percent: number, message: string) => void
