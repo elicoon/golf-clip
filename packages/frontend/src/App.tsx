@@ -185,6 +185,7 @@ function App() {
     if (hasMoreVideos) {
       handleNextVideo()
     } else {
+      setIsProcessing(false)
       setView('complete')
     }
   }, [currentQueueIndex, hasMoreVideos, handleNextVideo, updateQueueItem])
