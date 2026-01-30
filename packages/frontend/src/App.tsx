@@ -242,14 +242,15 @@ function App() {
                 <div className="queue-progress-fill" style={{ width: `${((currentQueueIndex + 1) / videoQueue.length) * 100}%` }} />
               </div>
             )}
-            {videoQueue.length > 1 && (
-              <div className="queue-status">
-                Processing video {currentQueueIndex + 1} of {videoQueue.length}
-                {videoQueue.filter(v => v.status === 'pending').length > 0 &&
-                  ` (+${videoQueue.filter(v => v.status === 'pending').length} queued)`
-                }
-              </div>
-            )}
+            {hasMultipleVideos && (() => {
+              const pendingCount = videoQueue.filter(v => v.status === 'pending').length
+              return (
+                <div className="queue-status">
+                  Processing video {currentQueueIndex + 1} of {videoQueue.length}
+                  {pendingCount > 0 && ` (+${pendingCount} queued)`}
+                </div>
+              )
+            })()}
             <ProcessingView
               jobId={currentJob.job_id}
               onComplete={handleProcessingComplete}
