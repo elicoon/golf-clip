@@ -30,4 +30,19 @@ describe('FFmpegClient', () => {
     expect(typeof module.extractAudioFromSegment).toBe('function')
     expect(typeof module.isFFmpegLoaded).toBe('function')
   })
+
+  it('exports extractVideoSegment function', async () => {
+    const module = await import('./ffmpeg-client')
+    expect(typeof module.extractVideoSegment).toBe('function')
+  })
+
+  it('throws when extracting video segment without loading FFmpeg first', async () => {
+    vi.resetModules()
+    const { extractVideoSegment } = await import('./ffmpeg-client')
+    const testBlob = new Blob(['test'], { type: 'video/mp4' })
+
+    await expect(extractVideoSegment(testBlob, 0, 10)).rejects.toThrow(
+      'FFmpeg not loaded. Call loadFFmpeg() first.'
+    )
+  })
 })

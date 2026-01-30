@@ -87,3 +87,56 @@ export async function extractAudioFromSegment(
 export function isFFmpegLoaded(): boolean {
   return loaded
 }
+
+/**
+ * Extract a video segment with proper container format.
+ * Uses FFmpeg for keyframe-aware seeking and container preservation.
+ *
+ * @param videoBlob - The video blob or file
+ * @param startTime - Start time in seconds
+ * @param duration - Duration in seconds
+ * @returns Blob containing playable video segment
+ */
+export async function extractVideoSegment(
+  videoBlob: Blob,
+  startTime: number,
+  duration: number
+): Promise<Blob> {
+  if (!ffmpeg || !loaded) {
+    throw new Error('FFmpeg not loaded. Call loadFFmpeg() first.')
+  }
+
+  const inputName = 'input_video.mp4'
+  const outputName = 'output_segment.mp4'
+
+  try {
+    await ffmpeg.writeFile(inputName, await fetchFile(videoBlob))
+
+    // Use -ss before -i for fast seeking, then -t for duration
+    // -c copy uses stream copy (no re-encoding) for speed
+    // -avoid_negative_ts make_zero fixes timestamp issues from seeking
+    const exitCode = await ffmpeg.exec([
+      '-ss', startTime.toString(),
+      '-i', inputName,
+      '-t', duration.toString(),
+      '-c', 'copy',
+      '-avoid_negative_ts', 'make_zero',
+      outputName
+    ])
+
+    if (exitCode !== 0) {
+      throw new Error(`FFmpeg segment extraction failed with exit code ${exitCode}`)
+    }
+
+    const data = await ffmpeg.readFile(outputName)
+
+    if (!(data instanceof Uint8Array)) {
+      throw new Error('Unexpected FFmpeg output format')
+    }
+
+    return new Blob([data.buffer], { type: 'video/mp4' })
+  } finally {
+    try { await ffmpeg.deleteFile(inputName) } catch { /* ignore */ }
+    try { await ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
+  }
+}
