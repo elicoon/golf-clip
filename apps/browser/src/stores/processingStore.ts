@@ -69,15 +69,20 @@ export const useProcessingStore = create<ProcessingState>((set) => ({
   })),
   setCurrentSegment: (index) => set({ currentSegmentIndex: index }),
   setFileInfo: (name, duration) => set({ fileName: name, fileDuration: duration }),
-  reset: () => set({
-    status: 'idle',
-    error: null,
-    progress: 0,
-    progressMessage: '',
-    strikes: [],
-    segments: [],
-    currentSegmentIndex: 0,
-    fileName: null,
-    fileDuration: null,
-  }),
+  reset: () => {
+    // Revoke object URLs before clearing segments
+    const state = useProcessingStore.getState()
+    state.segments.forEach(seg => URL.revokeObjectURL(seg.objectUrl))
+    set({
+      status: 'idle',
+      error: null,
+      progress: 0,
+      progressMessage: '',
+      strikes: [],
+      segments: [],
+      currentSegmentIndex: 0,
+      fileName: null,
+      fileDuration: null,
+    })
+  },
 }))

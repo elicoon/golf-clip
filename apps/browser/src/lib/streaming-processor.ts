@@ -82,10 +82,13 @@ export async function processVideoFile(
 
       // Adjust timestamps to absolute time
       for (const strike of chunkStrikes) {
-        strike.timestamp += chunkStart
-        allStrikes.push(strike)
-        store.addStrike(strike)
-        callbacks.onStrikeDetected?.(strike)
+        const adjustedStrike = {
+          ...strike,
+          timestamp: strike.timestamp + chunkStart
+        }
+        allStrikes.push(adjustedStrike)
+        store.addStrike(adjustedStrike)
+        callbacks.onStrikeDetected?.(adjustedStrike)
       }
     }
 
