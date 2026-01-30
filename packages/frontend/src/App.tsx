@@ -107,7 +107,7 @@ function App() {
     }])
   }, [handleVideosSelected])
 
-  const handleProcessingComplete = useCallback((needsReview: boolean, totalShots: number) => {
+  const handleProcessingComplete = useCallback((_needsReview: boolean, totalShots: number) => {
     // Mark current video as complete in the queue
     updateQueueItem(currentQueueIndex, { status: 'complete' })
 

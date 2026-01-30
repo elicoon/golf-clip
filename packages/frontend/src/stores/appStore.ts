@@ -72,6 +72,7 @@ interface AppState {
   // Video queue actions
   setVideoQueue: (videos: QueuedVideo[]) => void
   addToQueue: (videos: QueuedVideo[]) => void
+  addVideoToQueue: (video: QueuedVideo) => boolean
   updateQueueItem: (index: number, updates: Partial<QueuedVideo>) => void
   setCurrentQueueIndex: (index: number) => void
   advanceQueue: () => void
@@ -113,6 +114,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   addToQueue: (videos) => set((state) => ({
     videoQueue: [...state.videoQueue, ...videos],
   })),
+
+  addVideoToQueue: (video) => {
+    const state = get()
+    const isFirst = state.videoQueue.length === 0 && state.currentQueueIndex === 0
+
+    set((state) => ({
+      videoQueue: [...state.videoQueue, video],
+    }))
+
+    return isFirst
+  },
 
   updateQueueItem: (index, updates) => set((state) => ({
     videoQueue: state.videoQueue.map((video, i) =>
