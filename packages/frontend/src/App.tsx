@@ -31,12 +31,14 @@ function App() {
     advanceQueue,
     clearQueue,
     getQueueStats,
+    addVideoToQueue,
   } = useAppStore()
 
   const [view, setView] = useState<AppView>('home')
   const [error, setError] = useState<ApiError | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [exportedClips, setExportedClips] = useState<string[]>([])
+  const [isProcessing, setIsProcessing] = useState(false)
 
   const queueStats = getQueueStats()
   const hasMultipleVideos = videoQueue.length > 1
@@ -80,23 +82,39 @@ function App() {
     }
   }, [setCurrentJob, updateQueueItem])
 
-  // Handle videos selected from dropzone
-  const handleVideosSelected = useCallback(async (files: UploadedFile[]) => {
-    // Initialize queue with uploaded files
-    const queueItems = files.map(file => ({
+  // Handle individual video uploaded (streaming upload - fires per-file)
+  const handleVideoUploaded = useCallback(async (file: UploadedFile) => {
+    const queueItem = {
       filename: file.filename,
       path: file.path,
       size: file.size,
       status: 'pending' as const,
-    }))
+    }
 
-    setVideoQueue(queueItems)
+    // Add to queue - returns true if this is the first video
+    const isFirst = addVideoToQueue(queueItem)
 
-    // Start processing the first video
-    if (queueItems.length > 0) {
+    // If this is the first video and we're not already processing, start
+    if (isFirst && !isProcessing) {
+      setIsProcessing(true)
+      await startProcessingVideo(file.path, 0)
+    }
+  }, [addVideoToQueue, isProcessing, startProcessingVideo])
+
+  // Handle videos selected from dropzone (backward compatibility / fallback)
+  const handleVideosSelected = useCallback(async (files: UploadedFile[]) => {
+    // Only start processing if we haven't already via onVideoUploaded
+    if (videoQueue.length === 0 && files.length > 0) {
+      const queueItems = files.map(file => ({
+        filename: file.filename,
+        path: file.path,
+        size: file.size,
+        status: 'pending' as const,
+      }))
+      setVideoQueue(queueItems)
       await startProcessingVideo(queueItems[0].path, 0)
     }
-  }, [setVideoQueue, startProcessingVideo])
+  }, [setVideoQueue, startProcessingVideo, videoQueue.length])
 
   // Backward compatibility: single video selection
   const handleVideoSelected = useCallback(async (filePath: string) => {
@@ -192,6 +210,7 @@ function App() {
             <VideoDropzone
               onVideosSelected={handleVideosSelected}
               onVideoSelected={handleVideoSelected}
+              onVideoUploaded={handleVideoUploaded}
             />
             {isSubmitting && (
               <div className="submitting-overlay">
