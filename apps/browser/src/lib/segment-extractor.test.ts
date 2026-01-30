@@ -67,7 +67,7 @@ describe('SegmentExtractor', () => {
         { type: 'video/mp4' }
       )
 
-      const segment = await extractSegment(mockFile, 100, 0, 10, 60)
+      const segment = await extractSegment(mockFile, 0, 10, 60)
 
       expect(segment).toBeInstanceOf(Blob)
     })
@@ -80,7 +80,6 @@ describe('SegmentExtractor', () => {
       // Extract small segment from middle
       const segment = await extractSegment(
         mockFile,
-        8_000_000, // 8Mbps bitrate
         30, // start at 30s
         35, // end at 35s
         120 // 2 minute video
@@ -99,7 +98,7 @@ describe('SegmentExtractor', () => {
       )
 
       // Request tiny segment
-      const segment = await extractSegment(mockFile, 1000, 0, 0.1, 60)
+      const segment = await extractSegment(mockFile, 0, 0.1, 60)
 
       // Should get at least minimum bytes (1MB or file size, whichever smaller)
       expect(segment.size).toBeGreaterThan(0)
@@ -127,6 +126,13 @@ describe('SegmentExtractor', () => {
 
       expect(bitrate).toBeGreaterThan(0)
       expect(Number.isFinite(bitrate)).toBe(true)
+    })
+
+    it('returns 0 for zero or negative duration', () => {
+      const fileSize = 100_000_000
+
+      expect(estimateBitrate(fileSize, 0)).toBe(0)
+      expect(estimateBitrate(fileSize, -10)).toBe(0)
     })
   })
 

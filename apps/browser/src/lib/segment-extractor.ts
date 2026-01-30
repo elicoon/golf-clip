@@ -34,7 +34,6 @@ export function estimateByteOffset(
  * Uses File.slice() for random access.
  *
  * @param file - The video file
- * @param bitrate - Estimated bitrate in bits per second
  * @param startTime - Segment start time in seconds
  * @param endTime - Segment end time in seconds
  * @param totalDuration - Total video duration in seconds
@@ -42,7 +41,6 @@ export function estimateByteOffset(
  */
 export async function extractSegment(
   file: File,
-  bitrate: number,
   startTime: number,
   endTime: number,
   totalDuration: number
@@ -73,6 +71,7 @@ export async function extractSegment(
  * @returns Estimated bitrate in bits per second
  */
 export function estimateBitrate(fileSize: number, duration: number): number {
+  if (duration <= 0) return 0
   // Assume ~90% of file is video data (rest is audio, metadata)
   const videoBits = fileSize * 8 * 0.9
   return videoBits / duration
@@ -89,12 +88,19 @@ export function getVideoDuration(file: File): Promise<number> {
     const video = document.createElement('video')
     video.preload = 'metadata'
 
+    const timeout = setTimeout(() => {
+      URL.revokeObjectURL(video.src)
+      reject(new Error('Timeout loading video metadata'))
+    }, 10000)
+
     video.onloadedmetadata = () => {
+      clearTimeout(timeout)
       URL.revokeObjectURL(video.src)
       resolve(video.duration)
     }
 
     video.onerror = () => {
+      clearTimeout(timeout)
       URL.revokeObjectURL(video.src)
       reject(new Error('Failed to load video metadata'))
     }
