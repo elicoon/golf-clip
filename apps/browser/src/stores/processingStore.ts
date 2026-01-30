@@ -11,6 +11,8 @@ import { StrikeDetection } from '../lib/audio-detector'
 export interface VideoSegment {
   id: string
   strikeTime: number
+  startTime: number  // segment start time
+  endTime: number    // segment end time
   blob: Blob
   objectUrl: string
 }
