@@ -12,6 +12,8 @@ interface ExportOptions {
   trajectory: TrajectoryPoint[]
   startTime: number
   endTime: number
+  videoWidth: number
+  videoHeight: number
   tracerColor?: string
   tracerWidth?: number
 }
@@ -25,6 +27,8 @@ export async function exportClipWithTracer(
     trajectory,
     startTime,
     endTime,
+    videoWidth,
+    videoHeight,
     tracerColor = 'yellow',
     tracerWidth = 3,
   } = options
@@ -38,7 +42,7 @@ export async function exportClipWithTracer(
 
   // Build FFmpeg filter for trajectory line
   // This is simplified - a full implementation would use canvas compositing
-  const filterComplex = buildTrajectoryFilter(trajectory, tracerColor, tracerWidth)
+  const filterComplex = buildTrajectoryFilter(trajectory, tracerColor, tracerWidth, videoWidth, videoHeight)
 
   // Export with overlay
   await ffmpeg.exec([
@@ -67,7 +71,9 @@ export async function exportClipWithTracer(
 function buildTrajectoryFilter(
   trajectory: TrajectoryPoint[],
   color: string,
-  width: number
+  width: number,
+  videoWidth: number,
+  videoHeight: number
 ): string {
   // For MVP: draw circles at key points
   // Full implementation would interpolate and draw smooth curves
@@ -82,7 +88,7 @@ function buildTrajectoryFilter(
     // Draw line segment (using drawbox as approximation)
     // FFmpeg's drawtext filter is limited; canvas compositing is better
     drawCommands.push(
-      `drawbox=x=${p1.x * 1920}:y=${p1.y * 1080}:w=${width}:h=${width}:color=${color}:t=fill`
+      `drawbox=x=${Math.floor(p1.x * videoWidth)}:y=${Math.floor(p1.y * videoHeight)}:w=${width}:h=${width}:color=${color}:t=fill`
     )
   }
 
