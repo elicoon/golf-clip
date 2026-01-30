@@ -135,6 +135,7 @@ function App() {
     if (totalShots > 0) {
       // Always show review if there are any shots detected
       setView('review')
+      setIsProcessing(false)  // Pause processing while in review
     } else if (currentQueueIndex < videoQueue.length - 1) {
       // No shots but more videos - auto-advance to next video
       const nextIndex = currentQueueIndex + 1
@@ -143,6 +144,7 @@ function App() {
       startProcessingVideo(videoQueue[nextIndex].path, nextIndex)
     } else {
       // No shots and no more videos - show complete
+      setIsProcessing(false)  // Done processing
       setView('complete')
     }
   }, [currentQueueIndex, videoQueue, updateQueueItem, advanceQueue, setShots, startProcessingVideo])
@@ -156,6 +158,7 @@ function App() {
   const handleNextVideo = useCallback(() => {
     const nextIndex = currentQueueIndex + 1
     if (nextIndex < videoQueue.length) {
+      setIsProcessing(true)  // Resume processing
       advanceQueue()
       setShots([])
       setExportedClips([])
@@ -172,6 +175,7 @@ function App() {
     setError(null)
     setExportedClips([])
     clearQueue()
+    setIsProcessing(false)
     setView('home')
   }, [setCurrentJob, setShots, clearQueue])
 
