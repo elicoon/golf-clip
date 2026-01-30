@@ -14,6 +14,8 @@ interface VideoDropzoneProps {
   onVideosSelected: (files: UploadedFile[]) => void
   // Keep backward compatibility with single file selection
   onVideoSelected?: (filePath: string) => void
+  // NEW: fires per-file immediately after each upload completes
+  onVideoUploaded?: (file: UploadedFile) => void
 }
 
 const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime', 'video/x-m4v']
@@ -28,7 +30,7 @@ interface FileUploadState {
   result?: UploadedFile
 }
 
-export function VideoDropzone({ onVideosSelected, onVideoSelected }: VideoDropzoneProps) {
+export function VideoDropzone({ onVideosSelected, onVideoSelected, onVideoUploaded }: VideoDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -289,6 +291,11 @@ export function VideoDropzone({ onVideosSelected, onVideoSelected }: VideoDropzo
       const result = await uploadSingleFile(validFiles[i], i)
       if (result) {
         results.push(result)
+
+        // Notify parent immediately when each file completes
+        if (onVideoUploaded) {
+          onVideoUploaded(result)
+        }
       }
     }
 
@@ -310,7 +317,7 @@ export function VideoDropzone({ onVideosSelected, onVideoSelected }: VideoDropzo
     setTimeout(() => {
       setUploadStates([])
     }, 2000)
-  }, [onVideosSelected, onVideoSelected])
+  }, [onVideosSelected, onVideoSelected, onVideoUploaded])
 
   // Note: handleFile was removed as we now use handleFiles directly
   // Single files are handled via handleFiles([file])
