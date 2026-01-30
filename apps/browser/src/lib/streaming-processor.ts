@@ -14,7 +14,7 @@
  */
 
 import { loadFFmpeg, extractAudioFromSegment, extractVideoSegment } from './ffmpeg-client'
-import { loadEssentia, detectStrikes, StrikeDetection } from './audio-detector'
+import { loadEssentia, detectStrikes, StrikeDetection, unloadEssentia } from './audio-detector'
 import { getVideoDuration } from './segment-extractor'
 import { useProcessingStore, VideoSegment } from '../stores/processingStore'
 
@@ -132,6 +132,9 @@ export async function processVideoFile(
     store.setError(err.message)
     callbacks.onError?.(err)
     throw err
+  } finally {
+    // Cleanup WASM resources
+    unloadEssentia()
   }
 }
 
