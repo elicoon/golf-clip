@@ -83,6 +83,14 @@ export function isEssentiaLoaded(): boolean {
 }
 
 /**
+ * Unload Essentia module for cleanup
+ */
+export function unloadEssentia(): void {
+  essentia = null
+  loaded = false
+}
+
+/**
  * Detect golf ball strikes in audio data
  *
  * Uses SuperFluxExtractor for onset detection (optimized for percussive sounds)
@@ -178,7 +186,7 @@ export async function detectStrikes(
     const rms = rmsResult.rms
 
     // Calculate confidence score based on spectral features
-    const confidence = calculateConfidence(centroid, flatness, rms, cfg)
+    const confidence = calculateConfidence(centroid, flatness, rms)
 
     // Only include detections above minimum confidence
     if (confidence > 0.3) {
@@ -207,8 +215,7 @@ export async function detectStrikes(
 function calculateConfidence(
   centroid: number,
   flatness: number,
-  rms: number,
-  _config: DetectionConfig
+  rms: number
 ): number {
   // Centroid score: golf strikes typically have centroid around 3500 Hz
   // Score decreases as centroid deviates from target
@@ -229,7 +236,7 @@ function calculateConfidence(
 
   // RMS score: need sufficient energy for a real strike
   // Normalize RMS (typical range 0.01-0.3 for strikes)
-  const rmsScore = Math.min(1, rms / 0.1)
+  const rmsScore = Number.isFinite(rms) ? Math.min(1, rms / 0.1) : 0
 
   // Weighted combination
   // Centroid is most important, followed by RMS, then flatness
