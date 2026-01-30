@@ -13,9 +13,9 @@
  * 5. Update the store with progress, strikes, and segments
  */
 
-import { loadFFmpeg, extractAudioFromSegment } from './ffmpeg-client'
+import { loadFFmpeg, extractAudioFromSegment, extractVideoSegment } from './ffmpeg-client'
 import { loadEssentia, detectStrikes, StrikeDetection } from './audio-detector'
-import { extractSegment, getVideoDuration } from './segment-extractor'
+import { getVideoDuration } from './segment-extractor'
 import { useProcessingStore, VideoSegment } from '../stores/processingStore'
 
 const AUDIO_CHUNK_DURATION = 30 // Analyze 30 seconds at a time
@@ -70,12 +70,9 @@ export async function processVideoFile(
       store.setProgress(progressPercent, `Analyzing audio chunk ${i + 1}/${numChunks}...`)
       callbacks.onProgress?.(progressPercent, `Analyzing chunk ${i + 1}/${numChunks}`)
 
-      // Extract video segment for this chunk (uses File.slice for efficiency)
-      const chunkBlob = await extractSegment(file, chunkStart, chunkEnd, duration)
-
-      // Extract audio from this chunk blob
-      // Pass 0 for startTime since the blob already starts at chunkStart
-      const audioData = await extractAudioFromSegment(chunkBlob, 0, chunkDuration)
+      // Extract audio directly from original file with time offsets
+      // FFmpeg handles seeking properly - no need for byte-level slicing
+      const audioData = await extractAudioFromSegment(file, chunkStart, chunkDuration)
 
       // Detect strikes in this chunk
       const chunkStrikes = await detectStrikes(audioData, SAMPLE_RATE)
@@ -92,7 +89,7 @@ export async function processVideoFile(
       }
     }
 
-    // Phase 4: Extract video segments for each strike
+    // Phase 4: Extract video segments for each strike using FFmpeg
     store.setProgress(85, 'Extracting video segments...')
 
     for (let i = 0; i < allStrikes.length; i++) {
@@ -101,12 +98,16 @@ export async function processVideoFile(
       // Extract 20-second segment: 5 seconds before to 15 seconds after
       const segmentStart = Math.max(0, strike.timestamp - 5)
       const segmentEnd = Math.min(duration, strike.timestamp + 15)
+      const segmentDuration = segmentEnd - segmentStart
 
-      const segmentBlob = await extractSegment(file, segmentStart, segmentEnd, duration)
+      // Use FFmpeg for proper segment extraction with keyframe seeking
+      const segmentBlob = await extractVideoSegment(file, segmentStart, segmentDuration)
 
       const segment: VideoSegment = {
         id: `segment-${i}`,
         strikeTime: strike.timestamp,
+        startTime: segmentStart,
+        endTime: segmentEnd,
         blob: segmentBlob,
         objectUrl: URL.createObjectURL(segmentBlob),
       }
