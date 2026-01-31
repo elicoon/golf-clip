@@ -9,11 +9,13 @@ interface ClipReviewProps {
 }
 
 // Generate a trajectory curve from landing point and config
+// startTimeOffset: when the trajectory starts relative to the video segment timeline
 function generateTrajectory(
   landingPoint: { x: number; y: number },
   config: TracerConfig,
   originPoint?: { x: number; y: number },
-  apexPoint?: { x: number; y: number }
+  apexPoint?: { x: number; y: number },
+  startTimeOffset: number = 0
 ): TrajectoryData {
   const origin = originPoint || { x: 0.5, y: 0.85 }
 
@@ -50,7 +52,7 @@ function generateTrajectory(
 
   for (let i = 0; i <= numPoints; i++) {
     const t = i / numPoints
-    const timestamp = t * config.flightTime
+    const timestamp = startTimeOffset + t * config.flightTime
 
     // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
     // Using controlPoint (not apex) so the curve passes through apex at t=0.5
@@ -117,19 +119,70 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [autoLoopEnabled, setAutoLoopEnabled] = useState(true)
   const loopTimeoutRef = useRef<number | null>(null)
 
+  // Track which shot we've already autoplayed for (to avoid re-triggering on canplay)
+  const autoplayedShotIdRef = useRef<string | null>(null)
+  // Track when we last seeked to prevent auto-loop from triggering immediately
+  const lastSeekTimeRef = useRef<number>(0)
+
   // Filter to shots needing review (confidence < 0.7 and not yet approved/rejected)
   const shotsNeedingReview = segments.filter(s => s.confidence < 0.7 && s.approved === 'pending')
   const currentShot = shotsNeedingReview[currentIndex]
   const totalShots = shotsNeedingReview.length
 
-  // Seek to clip start when shot changes
-  // Note: objectUrl is an extracted segment blob starting at 0, not the original video
-  // clipStart is relative to original video, so offset by segment.startTime
-  useEffect(() => {
-    if (videoRef.current && currentShot) {
-      videoRef.current.currentTime = currentShot.clipStart - currentShot.startTime
+  // Autoplay handler - called when video can play
+  const handleVideoCanPlay = useCallback(() => {
+    const video = videoRef.current
+    if (!video || !currentShot) return
+
+    // Only autoplay once per shot (avoid retriggering on every canplay event)
+    if (autoplayedShotIdRef.current === currentShot.id) return
+    autoplayedShotIdRef.current = currentShot.id
+
+    // Seek to clip start (offset by segment start time since blob starts at 0)
+    const targetTime = currentShot.clipStart - currentShot.startTime
+
+    // Function to start playback after seek
+    const startPlayback = () => {
+      lastSeekTimeRef.current = Date.now()
+      video.play().then(() => {
+        setIsPlaying(true)
+      }).catch(() => {
+        // Autoplay blocked by browser policy - user must click to play
+        setIsPlaying(false)
+      })
     }
-  }, [currentShot?.id, currentShot?.clipStart, currentShot?.startTime])
+
+    // If already near target time, play immediately (seeked won't fire)
+    if (Math.abs(video.currentTime - targetTime) < 0.1) {
+      startPlayback()
+    } else {
+      // Wait for seek to complete before playing (avoids race with auto-loop)
+      const handleSeeked = () => {
+        video.removeEventListener('seeked', handleSeeked)
+        startPlayback()
+      }
+      video.addEventListener('seeked', handleSeeked)
+      video.currentTime = targetTime
+    }
+  }, [currentShot])
+
+  // Reset autoplay tracking when shot changes
+  useEffect(() => {
+    if (currentShot?.id !== autoplayedShotIdRef.current) {
+      autoplayedShotIdRef.current = null
+    }
+  }, [currentShot?.id])
+
+  // Trigger autoplay when navigating between shots (video already loaded)
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !currentShot) return
+
+    // If video is already loaded and we haven't autoplayed this shot, do it now
+    if (video.readyState >= 3 && autoplayedShotIdRef.current !== currentShot.id) {
+      handleVideoCanPlay()
+    }
+  }, [currentShot?.id, handleVideoCanPlay])
 
   // Track video time for trajectory animation and auto-loop
   useEffect(() => {
@@ -140,8 +193,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       setCurrentTime(video.currentTime)
 
       // Auto-loop: pause at clip end, wait 750ms, restart
+      // Skip if we just seeked (within 500ms) to avoid race condition with initial autoplay
       const clipEndInVideo = currentShot.clipEnd - currentShot.startTime
-      if (video.currentTime >= clipEndInVideo && !video.paused && autoLoopEnabled) {
+      const timeSinceSeek = Date.now() - lastSeekTimeRef.current
+      if (video.currentTime >= clipEndInVideo && !video.paused && autoLoopEnabled && timeSinceSeek > 500) {
         video.pause()
         setIsPlaying(false)
 
@@ -149,6 +204,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         loopTimeoutRef.current = window.setTimeout(() => {
           if (videoRef.current && autoLoopEnabled) {
             const clipStartInVideo = currentShot.clipStart - currentShot.startTime
+            lastSeekTimeRef.current = Date.now()
             videoRef.current.currentTime = clipStartInVideo
             videoRef.current.play().catch(() => {})
             setIsPlaying(true)
@@ -185,7 +241,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       setHasUnsavedChanges(true)
     } else if (reviewStep === 'marking_landing') {
       setLandingPoint({ x, y })
-      const traj = generateTrajectory({ x, y }, tracerConfig)
+      // Start trajectory animation from when the ball is struck in the video segment
+      const strikeOffset = currentShot ? currentShot.strikeTime - currentShot.startTime : 0
+      const traj = generateTrajectory({ x, y }, tracerConfig, undefined, undefined, strikeOffset)
       setTrajectory(traj)
       setReviewStep('reviewing')
       if (currentShot) {
@@ -206,7 +264,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     try {
       // Small delay to ensure UI updates before generation
       await new Promise(resolve => setTimeout(resolve, 50))
-      const traj = generateTrajectory(landingPoint, tracerConfig, originPoint || undefined, apexPoint || undefined)
+      // Start trajectory animation from when the ball is struck in the video segment
+      const strikeOffset = currentShot ? currentShot.strikeTime - currentShot.startTime : 0
+      const traj = generateTrajectory(landingPoint, tracerConfig, originPoint || undefined, apexPoint || undefined, strikeOffset)
       setTrajectory(traj)
       setHasUnsavedChanges(false)
       if (currentShot) {
@@ -485,7 +545,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           ref={videoRef}
           src={currentShot.objectUrl}
           className="review-video"
+          muted
+          playsInline
           onClick={togglePlayPause}
+          onCanPlay={handleVideoCanPlay}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
         />
