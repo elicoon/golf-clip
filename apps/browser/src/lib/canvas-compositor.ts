@@ -1,18 +1,15 @@
 // apps/browser/src/lib/canvas-compositor.ts
 
+import { TracerStyle } from '../types/tracer'
+
 export interface TrajectoryPoint {
   x: number  // 0-1 normalized
   y: number  // 0-1 normalized
   timestamp: number
 }
 
-export interface TracerStyle {
-  color: string
-  lineWidth: number
-  glowEnabled?: boolean
-  glowColor?: string
-  glowRadius?: number
-}
+// Re-export TracerStyle for convenience
+export type { TracerStyle } from '../types/tracer'
 
 export interface CompositeOptions {
   trajectory: TrajectoryPoint[]
@@ -59,14 +56,14 @@ export class CanvasCompositor {
     // Draw tracer path up to current time
     this.drawTracer(trajectory, currentTime, startTime, endTime, tracerStyle, width, height)
 
-    // Draw markers if provided
-    if (originPoint) {
+    // Draw markers if provided and enabled in style
+    if (originPoint && tracerStyle.showOriginMarker) {
       this.drawMarker(originPoint.x * width, originPoint.y * height, '#00ff00', 'Origin')
     }
-    if (apexPoint) {
+    if (apexPoint && tracerStyle.showApexMarker) {
       this.drawMarker(apexPoint.x * width, apexPoint.y * height, '#ffff00', 'Apex')
     }
-    if (landingPoint) {
+    if (landingPoint && tracerStyle.showLandingMarker) {
       this.drawMarker(landingPoint.x * width, landingPoint.y * height, '#ff0000', 'Landing')
     }
 

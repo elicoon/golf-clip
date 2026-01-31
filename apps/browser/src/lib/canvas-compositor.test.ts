@@ -1,5 +1,6 @@
 // apps/browser/src/lib/canvas-compositor.test.ts
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
+import { DEFAULT_TRACER_STYLE } from '../types/tracer'
 
 // Mock ImageData class for non-browser environment
 class MockImageData {
@@ -96,7 +97,7 @@ describe('CanvasCompositor', () => {
       currentTime: 1.0,
       startTime: 0,
       endTime: 2,
-      tracerStyle: { color: '#ff0000', lineWidth: 3 },
+      tracerStyle: { ...DEFAULT_TRACER_STYLE, color: '#ff0000', lineWidth: 3 },
     })
 
     expect(frame).toBeInstanceOf(ImageData)
@@ -120,6 +121,7 @@ describe('CanvasCompositor', () => {
       startTime: 0,
       endTime: 1,
       tracerStyle: {
+        ...DEFAULT_TRACER_STYLE,
         color: '#ff0000',
         lineWidth: 3,
         glowEnabled: true,
