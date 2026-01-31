@@ -1,7 +1,7 @@
 // apps/browser/src/lib/video-frame-pipeline.ts
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
-import { CanvasCompositor, CompositeOptions, TracerStyle, TrajectoryPoint } from './canvas-compositor'
+import { CanvasCompositor, TracerStyle, TrajectoryPoint } from './canvas-compositor'
 
 export interface ExportProgress {
   phase: 'extracting' | 'compositing' | 'encoding' | 'complete'
@@ -97,7 +97,7 @@ export class VideoFramePipeline {
       const frameData = await this.ffmpeg.readFile(frameFile)
 
       // Decode PNG to ImageBitmap
-      const blob = new Blob([frameData as Uint8Array], { type: 'image/png' })
+      const blob = new Blob([new Uint8Array(frameData as Uint8Array)], { type: 'image/png' })
       const bitmap = await createImageBitmap(blob)
 
       // Calculate current time for this frame
@@ -163,11 +163,11 @@ export class VideoFramePipeline {
 
     onProgress?.({ phase: 'complete', progress: 100 })
 
-    return new Blob([result as Uint8Array], { type: 'video/mp4' })
+    return new Blob([new Uint8Array(result as Uint8Array)], { type: 'video/mp4' })
   }
 
   private async getImageDimensions(data: Uint8Array): Promise<{ width: number; height: number }> {
-    const blob = new Blob([data], { type: 'image/png' })
+    const blob = new Blob([new Uint8Array(data)], { type: 'image/png' })
     const bitmap = await createImageBitmap(blob)
     const dims = { width: bitmap.width, height: bitmap.height }
     bitmap.close()

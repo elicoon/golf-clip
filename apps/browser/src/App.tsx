@@ -1,5 +1,5 @@
 // apps/browser/src/App.tsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { VideoDropzone } from './components/VideoDropzone'
 import { ClipReview } from './components/ClipReview'
 import { useProcessingStore } from './stores/processingStore'
@@ -20,9 +20,11 @@ export default function App() {
   }
 
   // Auto-transition to review when processing completes
-  if (status === 'ready' && view === 'upload' && segments.length > 0) {
-    setView('review')
-  }
+  useEffect(() => {
+    if (status === 'ready' && view === 'upload' && segments.length > 0) {
+      setView('review')
+    }
+  }, [status, view, segments.length])
 
   return (
     <div className="app">
@@ -61,7 +63,7 @@ export default function App() {
             <div className="review-complete-icon">✓</div>
             <h2>Review Complete!</h2>
             <p className="export-message">
-              {segments.filter(s => s.approved).length} shots approved
+              {segments.filter(s => s.approved === 'approved').length} shots approved
             </p>
             <button onClick={handleReset} className="btn-primary btn-large">
               Process Another Video

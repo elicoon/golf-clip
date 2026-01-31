@@ -79,6 +79,13 @@ export function TrajectoryEditor({
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
+  // Video content bounds within the canvas (accounting for object-fit: contain letterboxing)
+  const [videoContentBounds, setVideoContentBounds] = useState<{
+    offsetX: number
+    offsetY: number
+    width: number
+    height: number
+  } | null>(null)
   // Dragging disabled - state not used for now
   // const [draggingPoint, setDraggingPoint] = useState<number | null>(null)
   // Hover effect disabled - dragging not supported for now
@@ -95,6 +102,7 @@ export function TrajectoryEditor({
   }, [trajectory?.points])
 
   // Resize canvas to match video with devicePixelRatio scaling for crisp rendering
+  // Also calculate video content bounds to account for object-fit: contain letterboxing
   useEffect(() => {
     const video = videoRef.current
     const canvas = canvasRef.current
@@ -115,17 +123,54 @@ export function TrajectoryEditor({
       }
 
       setCanvasSize({ width: rect.width, height: rect.height })
+
+      // Calculate video content bounds (where the actual video renders within the container)
+      // This accounts for object-fit: contain letterboxing
+      const containerWidth = rect.width
+      const containerHeight = rect.height
+      const videoWidth = video.videoWidth
+      const videoHeight = video.videoHeight
+
+      if (videoWidth && videoHeight) {
+        const containerRatio = containerWidth / containerHeight
+        const videoRatio = videoWidth / videoHeight
+
+        let contentWidth: number
+        let contentHeight: number
+        let offsetX: number
+        let offsetY: number
+
+        if (videoRatio > containerRatio) {
+          // Video is wider than container - letterbox top/bottom
+          contentWidth = containerWidth
+          contentHeight = containerWidth / videoRatio
+          offsetX = 0
+          offsetY = (containerHeight - contentHeight) / 2
+        } else {
+          // Video is taller than container - letterbox left/right
+          contentHeight = containerHeight
+          contentWidth = containerHeight * videoRatio
+          offsetX = (containerWidth - contentWidth) / 2
+          offsetY = 0
+        }
+
+        setVideoContentBounds({ offsetX, offsetY, width: contentWidth, height: contentHeight })
+      }
     }
 
     updateSize()
     const observer = new ResizeObserver(updateSize)
     observer.observe(video)
 
+    // Update when video metadata loads (to get videoWidth/videoHeight)
+    video.addEventListener('loadedmetadata', updateSize)
+
     // Also update on window resize for DPR changes (e.g., moving between monitors)
     window.addEventListener('resize', updateSize)
 
     return () => {
       observer.disconnect()
+      video.removeEventListener('loadedmetadata', updateSize)
       window.removeEventListener('resize', updateSize)
     }
   }, [videoRef])
@@ -203,10 +248,12 @@ export function TrajectoryEditor({
       return Math.min(1, Math.max(0, progress))
     }
 
-    // Helper to convert normalized coords to canvas coords
+    // Helper to convert normalized coords (0-1) to canvas coords
+    // Uses video content bounds to account for object-fit: contain letterboxing
+    const bounds = videoContentBounds || { offsetX: 0, offsetY: 0, width: canvasSize.width, height: canvasSize.height }
     const toCanvas = (x: number, y: number) => ({
-      x: x * canvasSize.width,
-      y: y * canvasSize.height,
+      x: bounds.offsetX + x * bounds.width,
+      y: bounds.offsetY + y * bounds.height,
     })
 
     // Helper to draw smooth curve using quadratic Bezier spline
@@ -243,8 +290,9 @@ export function TrajectoryEditor({
 
       // Draw landing marker (downward arrow)
       if (landingPoint) {
-        const markerX = landingPoint.x * canvasSize.width
-        const markerY = landingPoint.y * canvasSize.height
+        const markerPos = toCanvas(landingPoint.x, landingPoint.y)
+        const markerX = markerPos.x
+        const markerY = markerPos.y
         const arrowWidth = 12
         const arrowHeight = 14
         const lineWidth = 24
@@ -274,8 +322,9 @@ export function TrajectoryEditor({
 
       // Draw user-marked apex point (gold diamond)
       if (apexPoint) {
-        const apexX = apexPoint.x * canvasSize.width
-        const apexY = apexPoint.y * canvasSize.height
+        const apexPos = toCanvas(apexPoint.x, apexPoint.y)
+        const apexX = apexPos.x
+        const apexY = apexPos.y
         const diamondSize = 10
 
         ctx.save()
@@ -299,8 +348,9 @@ export function TrajectoryEditor({
 
       // Draw user-marked origin point (green circle with dot)
       if (originPoint) {
-        const originX = originPoint.x * canvasSize.width
-        const originY = originPoint.y * canvasSize.height
+        const originPos = toCanvas(originPoint.x, originPoint.y)
+        const originX = originPos.x
+        const originY = originPos.y
         const outerRadius = 12
         const innerRadius = 4
 
@@ -459,7 +509,7 @@ export function TrajectoryEditor({
     return () => {
       cancelAnimationFrame(animationFrameId)
     }
-  }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, apexPoint, originPoint, videoRef])
+  }, [localPoints, canvasSize, videoContentBounds, showTracer, disabled, trajectory?.apex_point, landingPoint, apexPoint, originPoint, videoRef])
 
   // Suppress unused parameter warnings - kept for API compatibility
   void currentTime
@@ -492,15 +542,23 @@ export function TrajectoryEditor({
 
     const canvas = canvasRef.current
     const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX - rect.left) / rect.width
-    const y = (e.clientY - rect.top) / rect.height
+
+    // Get click position relative to canvas
+    const clickX = e.clientX - rect.left
+    const clickY = e.clientY - rect.top
+
+    // Convert to normalized coordinates relative to video content area (not full canvas)
+    // This accounts for object-fit: contain letterboxing
+    const bounds = videoContentBounds || { offsetX: 0, offsetY: 0, width: rect.width, height: rect.height }
+    const x = (clickX - bounds.offsetX) / bounds.width
+    const y = (clickY - bounds.offsetY) / bounds.height
 
     // All clicks trigger marker placement (tracer is not selectable for now)
     onCanvasClick(
       Math.max(0, Math.min(1, x)),
       Math.max(0, Math.min(1, y))
     )
-  }, [disabled, onCanvasClick])
+  }, [disabled, onCanvasClick, videoContentBounds])
 
   if (!showTracer) return null
 
