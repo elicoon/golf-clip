@@ -41,6 +41,7 @@ export interface StrikeDetection {
   spectralCentroid: number
   spectralFlatness: number
   onsetStrength: number
+  decayRatio: number // Ratio of energy decay: lower = sharper transient (real ball strike), higher = slower decay (practice swing)
 }
 
 export interface DetectionConfig {
@@ -226,8 +227,13 @@ export async function detectStrikes(
       // Use default RMS
     }
 
-    // Calculate confidence score based on spectral features
-    const confidence = calculateConfidence(centroid, flatness, rms)
+    // Calculate decay ratio: compare energy after onset to peak energy
+    // Lower decay ratio = faster decay = sharper transient = more likely real ball strike
+    // Higher decay ratio = slower decay = whoosh sound = more likely practice swing
+    const decayRatio = calculateDecayRatio(audioData, onsetSample, sampleRate, essentia)
+
+    // Calculate confidence score based on spectral features and decay ratio
+    const confidence = calculateConfidence(centroid, flatness, rms, decayRatio)
 
     // Only include detections above minimum confidence
     if (confidence > 0.3) {
@@ -237,6 +243,7 @@ export async function detectStrikes(
         spectralCentroid: centroid,
         spectralFlatness: flatness,
         onsetStrength: rms,
+        decayRatio,
       })
       lastOnsetTime = onsetTime
     }
@@ -246,17 +253,90 @@ export async function detectStrikes(
 }
 
 /**
+ * Calculate decay ratio: ratio of energy after onset to peak energy
+ *
+ * Real ball strikes have fast decay (sharp transient) -> low decay ratio
+ * Practice swings have slower decay (whoosh sound) -> high decay ratio
+ *
+ * @param audioData - Full audio buffer
+ * @param onsetSample - Sample index of the onset
+ * @param sampleRate - Audio sample rate
+ * @param essentia - Essentia module for RMS calculation
+ * @returns Decay ratio between 0 and 1 (lower = sharper transient)
+ */
+function calculateDecayRatio(
+  audioData: Float32Array,
+  onsetSample: number,
+  sampleRate: number,
+  essentia: EssentiaModule
+): number {
+  // Measure energy in a window around the onset (peak window: 0-25ms after onset)
+  const peakWindowMs = 25
+  const peakWindowSamples = Math.floor((peakWindowMs / 1000) * sampleRate)
+
+  // Measure energy in a decay window (50-100ms after onset)
+  const decayStartMs = 50
+  const decayEndMs = 100
+  const decayStartSamples = Math.floor((decayStartMs / 1000) * sampleRate)
+  const decayEndSamples = Math.floor((decayEndMs / 1000) * sampleRate)
+
+  // Extract peak window
+  const peakStart = onsetSample
+  const peakEnd = Math.min(audioData.length, onsetSample + peakWindowSamples)
+
+  // Extract decay window
+  const decayStart = Math.min(audioData.length, onsetSample + decayStartSamples)
+  const decayEnd = Math.min(audioData.length, onsetSample + decayEndSamples)
+
+  // Need sufficient samples for both windows
+  if (peakEnd - peakStart < 100 || decayEnd - decayStart < 100) {
+    return 0.5 // Default to middle value if not enough samples
+  }
+
+  const peakWindow = audioData.slice(peakStart, peakEnd)
+  const decayWindow = audioData.slice(decayStart, decayEnd)
+
+  // Calculate RMS for each window
+  let peakRms = 0.1, decayRms = 0.05 // defaults
+  try {
+    const peakVector = essentia.arrayToVector(peakWindow)
+    const peakResult = essentia.RMS(peakVector)
+    peakRms = peakResult.rms
+  } catch {
+    // Use default
+  }
+  try {
+    const decayVector = essentia.arrayToVector(decayWindow)
+    const decayResult = essentia.RMS(decayVector)
+    decayRms = decayResult.rms
+  } catch {
+    // Use default
+  }
+
+  // Calculate ratio (clamp to 0-1 range)
+  // Avoid division by zero
+  if (peakRms <= 0 || !Number.isFinite(peakRms)) {
+    return 0.5
+  }
+
+  const ratio = decayRms / peakRms
+  return Math.min(1, Math.max(0, ratio))
+}
+
+/**
  * Calculate confidence score for a potential strike
  *
  * Golf ball strikes have characteristic spectral properties:
  * - Spectral centroid around 3000-4000 Hz (bright, percussive)
  * - Moderate spectral flatness (not pure tone, not white noise)
  * - Sufficient energy (RMS)
+ * - Fast decay (low decay ratio) - distinguishes from practice swings
  */
 function calculateConfidence(
   centroid: number,
   flatness: number,
-  rms: number
+  rms: number,
+  decayRatio: number
 ): number {
   // Centroid score: golf strikes typically have centroid around 3500 Hz
   // Score decreases as centroid deviates from target
@@ -279,7 +359,12 @@ function calculateConfidence(
   // Normalize RMS (typical range 0.01-0.3 for strikes)
   const rmsScore = Number.isFinite(rms) ? Math.min(1, rms / 0.1) : 0
 
+  // Decay score: lower decay ratio = faster decay = more likely real strike
+  // Real ball strikes typically have decay ratio < 0.4
+  // Practice swings (whoosh) typically have decay ratio > 0.6
+  const decayScore = 1 - decayRatio
+
   // Weighted combination
-  // Centroid is most important, followed by RMS, then flatness
-  return centroidScore * 0.4 + rmsScore * 0.4 + flatnessScore * 0.2
+  // Centroid and decay are most important, followed by RMS, then flatness
+  return centroidScore * 0.3 + decayScore * 0.3 + rmsScore * 0.25 + flatnessScore * 0.15
 }
