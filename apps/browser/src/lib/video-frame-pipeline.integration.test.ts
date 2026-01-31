@@ -141,7 +141,6 @@ beforeAll(() => {
   globalThis.OffscreenCanvas = MockOffscreenCanvas
   // @ts-expect-error - polyfilling for tests
   globalThis.ImageData = MockImageData
-  // @ts-expect-error - polyfilling for tests
   globalThis.createImageBitmap = vi.fn(() => Promise.resolve(new MockImageBitmap()))
 })
 
