@@ -121,7 +121,7 @@ export function Scrubber({
         onTimeUpdate(newStart, endTime)
       } else if (isDragging === 'end') {
         // Ensure minimum 0.5s clip duration and clamp to bounds
-        const newEnd = Math.min(duration, Math.max(time, startTime + 0.5))
+        const newEnd = Math.min(duration || Infinity, Math.max(time, startTime + 0.5))
         onTimeUpdate(startTime, newEnd)
       } else if (isDragging === 'playhead') {
         if (videoRef.current) {

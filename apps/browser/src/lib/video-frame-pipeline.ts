@@ -1,7 +1,7 @@
 // apps/browser/src/lib/video-frame-pipeline.ts
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
-import { CanvasCompositor, CompositeOptions, TracerStyle, TrajectoryPoint } from './canvas-compositor'
+import { CanvasCompositor, TracerStyle, TrajectoryPoint } from './canvas-compositor'
 
 export interface ExportProgress {
   phase: 'extracting' | 'compositing' | 'encoding' | 'complete'
@@ -97,7 +97,7 @@ export class VideoFramePipeline {
       const frameData = await this.ffmpeg.readFile(frameFile)
 
       // Decode PNG to ImageBitmap
-      const blob = new Blob([frameData as Uint8Array], { type: 'image/png' })
+      const blob = new Blob([new Uint8Array(frameData as Uint8Array)], { type: 'image/png' })
       const bitmap = await createImageBitmap(blob)
 
       // Calculate current time for this frame
@@ -163,11 +163,11 @@ export class VideoFramePipeline {
 
     onProgress?.({ phase: 'complete', progress: 100 })
 
-    return new Blob([result as Uint8Array], { type: 'video/mp4' })
+    return new Blob([new Uint8Array(result as Uint8Array)], { type: 'video/mp4' })
   }
 
   private async getImageDimensions(data: Uint8Array): Promise<{ width: number; height: number }> {
-    const blob = new Blob([data], { type: 'image/png' })
+    const blob = new Blob([new Uint8Array(data)], { type: 'image/png' })
     const bitmap = await createImageBitmap(blob)
     const dims = { width: bitmap.width, height: bitmap.height }
     bitmap.close()
@@ -176,17 +176,18 @@ export class VideoFramePipeline {
 
   private async imageDataToBlob(imageData: ImageData): Promise<Blob> {
     const canvas = new OffscreenCanvas(imageData.width, imageData.height)
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Failed to get 2D context from OffscreenCanvas')
     ctx.putImageData(imageData, 0, 0)
     return canvas.convertToBlob({ type: 'image/png' })
   }
 
   private async cleanup(inputName: string, outputName: string, totalFrames: number): Promise<void> {
-    try { await this.ffmpeg.deleteFile(inputName) } catch { /* ignore */ }
-    try { await this.ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
+    try { await this.ffmpeg.deleteFile(inputName) } catch (e) { console.debug('[VideoFramePipeline] Cleanup failed:', e) }
+    try { await this.ffmpeg.deleteFile(outputName) } catch (e) { console.debug('[VideoFramePipeline] Cleanup failed:', e) }
     for (let i = 1; i <= totalFrames; i++) {
       const frameFile = `frame_${i.toString().padStart(4, '0')}.png`
-      try { await this.ffmpeg.deleteFile(frameFile) } catch { /* ignore */ }
+      try { await this.ffmpeg.deleteFile(frameFile) } catch (e) { console.debug('[VideoFramePipeline] Cleanup failed:', e) }
     }
   }
 }

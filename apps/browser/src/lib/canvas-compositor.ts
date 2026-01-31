@@ -127,7 +127,7 @@ export class CanvasCompositor {
     }
   }
 
-  private drawMarker(x: number, y: number, color: string, _label: string): void {
+  private drawMarker(x: number, y: number, color: string, label: string): void {
     // Draw circle marker
     this.ctx.beginPath()
     this.ctx.arc(x, y, 8, 0, Math.PI * 2)
@@ -142,5 +142,10 @@ export class CanvasCompositor {
     this.ctx.moveTo(x, y - 12)
     this.ctx.lineTo(x, y + 12)
     this.ctx.stroke()
+
+    // Draw label text
+    this.ctx.fillStyle = color
+    this.ctx.font = '12px sans-serif'
+    this.ctx.fillText(label, x + 14, y + 4)
   }
 }

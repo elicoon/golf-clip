@@ -5,6 +5,8 @@ import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
+import { VideoFramePipeline, ExportConfig } from '../lib/video-frame-pipeline'
+import { loadFFmpeg, getFFmpegInstance } from '../lib/ffmpeg-client'
 
 interface ClipReviewProps {
   onComplete: () => void
@@ -353,23 +355,56 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     exportCancelledRef.current = false
 
     try {
-      // Download each approved clip
+      // Load FFmpeg for tracer export
+      await loadFFmpeg()
+      const ffmpeg = getFFmpegInstance()
+      const pipeline = new VideoFramePipeline(ffmpeg)
+
       for (let i = 0; i < approved.length; i++) {
-        // Check for cancellation
-        if (exportCancelledRef.current) {
-          break
-        }
+        if (exportCancelledRef.current) break
 
         const segment = approved[i]
         setExportProgress({ current: i + 1, total: approved.length })
 
-        // Create download link
-        const a = document.createElement('a')
-        a.href = segment.objectUrl
-        a.download = `shot_${i + 1}.webm`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
+        // Check if segment has trajectory data for tracer overlay
+        if (segment.trajectory && segment.trajectory.points.length > 0) {
+          // Export with tracer overlay using VideoFramePipeline
+          const exportConfig: ExportConfig = {
+            videoBlob: segment.blob,
+            trajectory: segment.trajectory.points,
+            startTime: segment.clipStart - segment.startTime,
+            endTime: segment.clipEnd - segment.startTime,
+            fps: 30,
+            quality: exportQuality,
+            tracerStyle: tracerStyle,
+            landingPoint: segment.landingPoint ?? undefined,
+            apexPoint: apexPoint ?? undefined,
+            originPoint: originPoint ?? undefined,
+            onProgress: (progress) => {
+              console.log(`Export progress: ${progress.phase} ${progress.progress}%`)
+            }
+          }
+
+          const exportedBlob = await pipeline.exportWithTracer(exportConfig)
+
+          // Download the exported MP4
+          const url = URL.createObjectURL(exportedBlob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `shot_${i + 1}.mp4`
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          URL.revokeObjectURL(url)
+        } else {
+          // No trajectory - download raw segment as WebM
+          const a = document.createElement('a')
+          a.href = segment.objectUrl
+          a.download = `shot_${i + 1}.webm`
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+        }
 
         // Small delay between downloads to avoid browser throttling
         await new Promise(r => setTimeout(r, 500))
@@ -381,7 +416,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'An error occurred during export')
     }
-  }, [onComplete])
+  }, [onComplete, exportQuality, tracerStyle, apexPoint, originPoint])
 
   const handlePrevious = useCallback(() => {
     if (currentIndex > 0) {
@@ -428,7 +463,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           height: tracerConfig.height,
           flightTime: tracerConfig.flightTime,
         },
-        tracerStyle: tracerStyle as unknown as Record<string, unknown>,
+        tracerStyle: tracerStyle,
       })
     } else {
       // User approved without setting up tracer - skip feedback
