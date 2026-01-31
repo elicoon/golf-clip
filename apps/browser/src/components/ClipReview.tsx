@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useProcessingStore, TrajectoryData, TrajectoryPoint, TracerConfig } from '../stores/processingStore'
+import { useProcessingStore, TrajectoryData, TracerConfig } from '../stores/processingStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
@@ -7,84 +7,10 @@ import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
 import { VideoFramePipeline, ExportConfig } from '../lib/video-frame-pipeline'
 import { loadFFmpeg, getFFmpegInstance } from '../lib/ffmpeg-client'
+import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
 
 interface ClipReviewProps {
   onComplete: () => void
-}
-
-// Generate a trajectory curve from landing point and config
-// startTimeOffset: when the trajectory starts relative to the video segment timeline
-function generateTrajectory(
-  landingPoint: { x: number; y: number },
-  config: TracerConfig,
-  originPoint?: { x: number; y: number },
-  apexPoint?: { x: number; y: number },
-  startTimeOffset: number = 0
-): TrajectoryData {
-  const origin = originPoint || { x: 0.5, y: 0.85 }
-
-  // Calculate apex based on config
-  const heightMultiplier = config.height === 'low' ? 0.15 : config.height === 'medium' ? 0.25 : 0.35
-  const defaultApex = {
-    x: (origin.x + landingPoint.x) / 2,
-    y: Math.min(origin.y, landingPoint.y) - heightMultiplier
-  }
-  const apex = apexPoint || defaultApex
-
-  // Apply shape curve offset
-  const shapeCurve = {
-    hook: -0.15,
-    draw: -0.08,
-    straight: 0,
-    fade: 0.08,
-    slice: 0.15
-  }[config.shape]
-
-  // Calculate the control point that makes the bezier pass THROUGH the apex at t=0.5
-  // For a quadratic bezier B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
-  // At t=0.5: B(0.5) = 0.25*P0 + 0.5*P1 + 0.25*P2
-  // To make B(0.5) = apex, we solve for P1:
-  // P1 = 2*apex - 0.5*(P0 + P2) = 2*apex - 0.5*origin - 0.5*landing
-  const controlPoint = {
-    x: 2 * apex.x - 0.5 * origin.x - 0.5 * landingPoint.x,
-    y: 2 * apex.y - 0.5 * origin.y - 0.5 * landingPoint.y
-  }
-
-  // Generate points along quadratic bezier
-  const numPoints = 30
-  const points: TrajectoryPoint[] = []
-
-  for (let i = 0; i <= numPoints; i++) {
-    const t = i / numPoints
-    const timestamp = startTimeOffset + t * config.flightTime
-
-    // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
-    // Using controlPoint (not apex) so the curve passes through apex at t=0.5
-    const mt = 1 - t
-    const x = mt * mt * origin.x + 2 * mt * t * (controlPoint.x + shapeCurve * t) + t * t * landingPoint.x
-    const y = mt * mt * origin.y + 2 * mt * t * controlPoint.y + t * t * landingPoint.y
-
-    points.push({
-      timestamp,
-      x: Math.max(0, Math.min(1, x)),
-      y: Math.max(0, Math.min(1, y)),
-      confidence: 1.0,
-      interpolated: false
-    })
-  }
-
-  return {
-    shot_id: 'generated',
-    points,
-    confidence: 1.0,
-    apex_point: {
-      ...points[Math.floor(numPoints / 2)],
-      x: apex.x,
-      y: apex.y
-    },
-    frame_width: 1920,
-    frame_height: 1080
-  }
 }
 
 export function ClipReview({ onComplete }: ClipReviewProps) {
@@ -96,9 +22,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   // Trajectory state
   const [showTracer, setShowTracer] = useState(true)
   const [currentTime, setCurrentTime] = useState(0)
-  const [landingPoint, setLandingPoint] = useState<{ x: number; y: number } | null>(null)
-  const [apexPoint, setApexPoint] = useState<{ x: number; y: number } | null>(null)
-  const [originPoint, setOriginPoint] = useState<{ x: number; y: number } | null>(null)
+  const [landingPoint, setLandingPoint] = useState<Point2D | null>(null)
+  const [apexPoint, setApexPoint] = useState<Point2D | null>(null)
+  const [originPoint, setOriginPoint] = useState<Point2D | null>(null)
   const [reviewStep, setReviewStep] = useState<'marking_landing' | 'generating' | 'reviewing'>('marking_landing')
   const [trajectory, setTrajectory] = useState<TrajectoryData | null>(null)
   const [tracerConfig, setTracerConfig] = useState<TracerConfig>({
