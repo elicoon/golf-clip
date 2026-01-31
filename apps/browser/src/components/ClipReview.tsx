@@ -3,6 +3,7 @@ import { useProcessingStore, TrajectoryData, TrajectoryPoint, TracerConfig } fro
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
+import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 
 interface ClipReviewProps {
   onComplete: () => void
@@ -102,6 +103,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     shape: 'straight',
     flightTime: 3.0
   })
+  const [tracerStyle, setTracerStyle] = useState<TracerStyle>(DEFAULT_TRACER_STYLE)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [isMarkingApex, setIsMarkingApex] = useState(false)
@@ -255,6 +257,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   // TracerConfigPanel handlers
   const handleConfigChange = useCallback((config: TracerConfig) => {
     setTracerConfig(config)
+    setHasUnsavedChanges(true)
+  }, [])
+
+  const handleStyleChange = useCallback((style: TracerStyle) => {
+    setTracerStyle(style)
     setHasUnsavedChanges(true)
   }, [])
 
@@ -592,6 +599,8 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <TracerConfigPanel
           config={tracerConfig}
           onChange={handleConfigChange}
+          style={tracerStyle}
+          onStyleChange={handleStyleChange}
           onGenerate={handleGenerate}
           onMarkApex={handleMarkApex}
           onMarkOrigin={handleMarkOrigin}

@@ -2894,3 +2894,166 @@ kbd {
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: 0.8rem;
 }
+
+/* ============================================
+   Tracer Style Controls
+   ============================================ */
+
+.color-picker-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.color-picker {
+  width: 40px;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid var(--color-bg-elevated);
+  border-radius: var(--border-radius-sm);
+  background-color: var(--color-bg-tertiary);
+  cursor: pointer;
+}
+
+.color-picker::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.color-picker::-webkit-color-swatch {
+  border-radius: 2px;
+  border: none;
+}
+
+.color-picker:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.color-picker:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.color-value {
+  font-size: 0.8rem;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.style-slider {
+  width: 120px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.style-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.style-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.style-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--color-primary);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.style-slider:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.slider-value {
+  font-size: 0.85rem;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  color: var(--color-primary);
+  min-width: 45px;
+  text-align: right;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+}
+
+.toggle-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.toggle-checkbox:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toggle-text {
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.config-row-indent {
+  padding-left: var(--spacing-lg);
+  position: relative;
+}
+
+.config-row-indent::before {
+  content: '';
+  position: absolute;
+  left: var(--spacing-sm);
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  background-color: var(--color-bg-elevated);
+}
+
+.marker-toggles {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.marker-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.marker-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.marker-toggle input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.marker-toggle input[type="checkbox"]:disabled + span {
+  opacity: 0.5;
+}

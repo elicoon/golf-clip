@@ -1,10 +1,13 @@
 // Browser app TracerConfigPanel - simplified version without API dependencies
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { TracerConfig } from '../stores/processingStore'
+import { TracerStyle } from '../types/tracer'
 
 interface TracerConfigPanelProps {
   config: TracerConfig
   onChange: (config: TracerConfig) => void
+  style: TracerStyle
+  onStyleChange: (style: TracerStyle) => void
   onGenerate: () => void
   onMarkApex: () => void
   onMarkOrigin: () => void
@@ -22,6 +25,8 @@ type ShapeOption = 'hook' | 'draw' | 'straight' | 'fade' | 'slice'
 export function TracerConfigPanel({
   config,
   onChange,
+  style,
+  onStyleChange,
   onGenerate,
   onMarkApex,
   onMarkOrigin,
@@ -32,6 +37,7 @@ export function TracerConfigPanel({
   isCollapsed,
   onToggleCollapse,
 }: TracerConfigPanelProps) {
+  const [showStyleOptions, setShowStyleOptions] = useState(false)
   const handleHeightChange = useCallback(
     (height: HeightOption) => {
       onChange({ ...config, height })
@@ -52,6 +58,46 @@ export function TracerConfigPanel({
       onChange({ ...config, flightTime })
     },
     [config, onChange]
+  )
+
+  // Style handlers
+  const handleColorChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      onStyleChange({ ...style, color: e.target.value })
+    },
+    [style, onStyleChange]
+  )
+
+  const handleLineWidthChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      onStyleChange({ ...style, lineWidth: parseInt(e.target.value, 10) })
+    },
+    [style, onStyleChange]
+  )
+
+  const handleGlowToggle = useCallback(() => {
+    onStyleChange({ ...style, glowEnabled: !style.glowEnabled })
+  }, [style, onStyleChange])
+
+  const handleGlowColorChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      onStyleChange({ ...style, glowColor: e.target.value })
+    },
+    [style, onStyleChange]
+  )
+
+  const handleGlowRadiusChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      onStyleChange({ ...style, glowRadius: parseInt(e.target.value, 10) })
+    },
+    [style, onStyleChange]
+  )
+
+  const handleMarkerToggle = useCallback(
+    (marker: 'showApexMarker' | 'showLandingMarker' | 'showOriginMarker') => {
+      onStyleChange({ ...style, [marker]: !style[marker] })
+    },
+    [style, onStyleChange]
   )
 
   const heightOptions: { value: HeightOption; label: string }[] = [
@@ -174,6 +220,142 @@ export function TracerConfigPanel({
             </button>
             <span className="optional-hint">(optional)</span>
           </div>
+
+          {/* Style Options Toggle */}
+          <div className="config-row">
+            <button
+              type="button"
+              className="btn-link"
+              onClick={() => setShowStyleOptions(!showStyleOptions)}
+              style={{ marginLeft: 0 }}
+            >
+              {showStyleOptions ? 'Hide Style Options' : 'Show Style Options'}
+            </button>
+          </div>
+
+          {showStyleOptions && (
+            <>
+              {/* Tracer Color */}
+              <div className="config-row">
+                <label>Tracer Color</label>
+                <div className="color-picker-group">
+                  <input
+                    type="color"
+                    value={style.color}
+                    onChange={handleColorChange}
+                    disabled={isGenerating}
+                    className="color-picker"
+                    title="Choose tracer color"
+                  />
+                  <span className="color-value">{style.color}</span>
+                </div>
+              </div>
+
+              {/* Line Width */}
+              <div className="config-row">
+                <label>Line Width</label>
+                <div className="slider-group">
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={style.lineWidth}
+                    onChange={handleLineWidthChange}
+                    disabled={isGenerating}
+                    className="style-slider"
+                  />
+                  <span className="slider-value">{style.lineWidth}px</span>
+                </div>
+              </div>
+
+              {/* Glow Toggle */}
+              <div className="config-row">
+                <label>Glow Effect</label>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={style.glowEnabled}
+                    onChange={handleGlowToggle}
+                    disabled={isGenerating}
+                    className="toggle-checkbox"
+                  />
+                  <span className="toggle-text">{style.glowEnabled ? 'On' : 'Off'}</span>
+                </label>
+              </div>
+
+              {/* Glow Settings (conditional) */}
+              {style.glowEnabled && (
+                <>
+                  <div className="config-row config-row-indent">
+                    <label>Glow Color</label>
+                    <div className="color-picker-group">
+                      <input
+                        type="color"
+                        value={style.glowColor}
+                        onChange={handleGlowColorChange}
+                        disabled={isGenerating}
+                        className="color-picker"
+                        title="Choose glow color"
+                      />
+                      <span className="color-value">{style.glowColor}</span>
+                    </div>
+                  </div>
+
+                  <div className="config-row config-row-indent">
+                    <label>Glow Radius</label>
+                    <div className="slider-group">
+                      <input
+                        type="range"
+                        min={2}
+                        max={20}
+                        step={1}
+                        value={style.glowRadius}
+                        onChange={handleGlowRadiusChange}
+                        disabled={isGenerating}
+                        className="style-slider"
+                      />
+                      <span className="slider-value">{style.glowRadius}px</span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Marker Visibility */}
+              <div className="config-row">
+                <label>Show Markers</label>
+                <div className="marker-toggles">
+                  <label className="marker-toggle">
+                    <input
+                      type="checkbox"
+                      checked={style.showOriginMarker}
+                      onChange={() => handleMarkerToggle('showOriginMarker')}
+                      disabled={isGenerating}
+                    />
+                    <span>Origin</span>
+                  </label>
+                  <label className="marker-toggle">
+                    <input
+                      type="checkbox"
+                      checked={style.showApexMarker}
+                      onChange={() => handleMarkerToggle('showApexMarker')}
+                      disabled={isGenerating}
+                    />
+                    <span>Apex</span>
+                  </label>
+                  <label className="marker-toggle">
+                    <input
+                      type="checkbox"
+                      checked={style.showLandingMarker}
+                      onChange={() => handleMarkerToggle('showLandingMarker')}
+                      disabled={isGenerating}
+                    />
+                    <span>Landing</span>
+                  </label>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Generate Button */}
           <div className="config-actions">
