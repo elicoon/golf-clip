@@ -16,7 +16,7 @@
 import { loadFFmpeg, extractAudioFromSegment, extractVideoSegment } from './ffmpeg-client'
 import { loadEssentia, detectStrikes, StrikeDetection, unloadEssentia } from './audio-detector'
 import { getVideoDuration } from './segment-extractor'
-import { useProcessingStore, VideoSegment } from '../stores/processingStore'
+import { useProcessingStore } from '../stores/processingStore'
 
 const AUDIO_CHUNK_DURATION = 30 // Analyze 30 seconds at a time
 const SAMPLE_RATE = 44100  // Essentia.js SuperFluxExtractor requires 44100Hz
@@ -103,16 +103,14 @@ export async function processVideoFile(
       // Use FFmpeg for proper segment extraction with keyframe seeking
       const segmentBlob = await extractVideoSegment(file, segmentStart, segmentDuration)
 
-      const segment: VideoSegment = {
+      store.addSegment({
         id: `segment-${i}`,
         strikeTime: strike.timestamp,
         startTime: segmentStart,
         endTime: segmentEnd,
         blob: segmentBlob,
         objectUrl: URL.createObjectURL(segmentBlob),
-      }
-
-      store.addSegment(segment)
+      })
       callbacks.onSegmentReady?.(segmentBlob, strike.timestamp)
 
       // Update progress during segment extraction
