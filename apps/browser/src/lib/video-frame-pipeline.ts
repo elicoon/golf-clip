@@ -176,17 +176,18 @@ export class VideoFramePipeline {
 
   private async imageDataToBlob(imageData: ImageData): Promise<Blob> {
     const canvas = new OffscreenCanvas(imageData.width, imageData.height)
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Failed to get 2D context from OffscreenCanvas')
     ctx.putImageData(imageData, 0, 0)
     return canvas.convertToBlob({ type: 'image/png' })
   }
 
   private async cleanup(inputName: string, outputName: string, totalFrames: number): Promise<void> {
-    try { await this.ffmpeg.deleteFile(inputName) } catch { /* ignore */ }
-    try { await this.ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
+    try { await this.ffmpeg.deleteFile(inputName) } catch (e) { console.debug('[VideoFramePipeline] Cleanup failed:', e) }
+    try { await this.ffmpeg.deleteFile(outputName) } catch (e) { console.debug('[VideoFramePipeline] Cleanup failed:', e) }
     for (let i = 1; i <= totalFrames; i++) {
       const frameFile = `frame_${i.toString().padStart(4, '0')}.png`
-      try { await this.ffmpeg.deleteFile(frameFile) } catch { /* ignore */ }
+      try { await this.ffmpeg.deleteFile(frameFile) } catch (e) { console.debug('[VideoFramePipeline] Cleanup failed:', e) }
     }
   }
 }
