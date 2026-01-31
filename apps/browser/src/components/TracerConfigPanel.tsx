@@ -18,7 +18,6 @@ interface TracerConfigPanelProps {
 
 type HeightOption = 'low' | 'medium' | 'high'
 type ShapeOption = 'hook' | 'draw' | 'straight' | 'fade' | 'slice'
-type LineOption = 'left' | 'center' | 'right'
 
 export function TracerConfigPanel({
   config,
@@ -47,13 +46,6 @@ export function TracerConfigPanel({
     [config, onChange]
   )
 
-  const handleLineChange = useCallback(
-    (startingLine: LineOption) => {
-      onChange({ ...config, startingLine })
-    },
-    [config, onChange]
-  )
-
   const handleFlightTimeChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const flightTime = parseFloat(e.target.value)
@@ -74,12 +66,6 @@ export function TracerConfigPanel({
     { value: 'straight', label: 'Straight' },
     { value: 'fade', label: 'Fade' },
     { value: 'slice', label: 'Slice' },
-  ]
-
-  const lineOptions: { value: LineOption; label: string }[] = [
-    { value: 'left', label: 'Left' },
-    { value: 'center', label: 'Center' },
-    { value: 'right', label: 'Right' },
   ]
 
   return (
@@ -141,33 +127,15 @@ export function TracerConfigPanel({
             </div>
           </div>
 
-          {/* Starting Line */}
-          <div className="config-row">
-            <label>Starting Line</label>
-            <div className="button-group">
-              {lineOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={`btn-option ${config.startingLine === opt.value ? 'active' : ''}`}
-                  onClick={() => handleLineChange(opt.value)}
-                  disabled={isGenerating}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Flight Time */}
           <div className="config-row">
             <label>Flight Time</label>
             <div className="slider-group">
               <input
                 type="range"
-                min="1.0"
-                max="10.0"
-                step="0.1"
+                min={1}
+                max={10}
+                step={0.1}
                 value={config.flightTime}
                 onChange={handleFlightTimeChange}
                 disabled={isGenerating}

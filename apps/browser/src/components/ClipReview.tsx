@@ -87,7 +87,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [tracerConfig, setTracerConfig] = useState<TracerConfig>({
     height: 'medium',
     shape: 'straight',
-    startingLine: 'center',
     flightTime: 3.0
   })
   const [showConfigPanel, setShowConfigPanel] = useState(false)
@@ -99,6 +98,8 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 })
   const [exportComplete, setExportComplete] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const exportCancelledRef = useRef(false)
 
   // Auto-loop state
   const [autoLoopEnabled, setAutoLoopEnabled] = useState(true)
@@ -116,7 +117,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (videoRef.current && currentShot) {
       videoRef.current.currentTime = currentShot.clipStart - currentShot.startTime
     }
-  }, [currentShot?.id])
+  }, [currentShot?.id, currentShot?.clipStart, currentShot?.startTime])
 
   // Track video time for trajectory animation and auto-loop
   useEffect(() => {
@@ -218,25 +219,38 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setShowExportModal(true)
     setExportProgress({ current: 0, total: approved.length })
     setExportComplete(false)
+    setExportError(null)
+    exportCancelledRef.current = false
 
-    // Download each approved clip
-    for (let i = 0; i < approved.length; i++) {
-      const segment = approved[i]
-      setExportProgress({ current: i + 1, total: approved.length })
+    try {
+      // Download each approved clip
+      for (let i = 0; i < approved.length; i++) {
+        // Check for cancellation
+        if (exportCancelledRef.current) {
+          break
+        }
 
-      // Create download link
-      const a = document.createElement('a')
-      a.href = segment.objectUrl
-      a.download = `shot_${i + 1}.webm`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+        const segment = approved[i]
+        setExportProgress({ current: i + 1, total: approved.length })
 
-      // Small delay between downloads to avoid browser throttling
-      await new Promise(r => setTimeout(r, 500))
+        // Create download link
+        const a = document.createElement('a')
+        a.href = segment.objectUrl
+        a.download = `shot_${i + 1}.webm`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+
+        // Small delay between downloads to avoid browser throttling
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      if (!exportCancelledRef.current) {
+        setExportComplete(true)
+      }
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'An error occurred during export')
     }
-
-    setExportComplete(true)
   }, [segments, onComplete])
 
   const handlePrevious = useCallback(() => {
@@ -293,7 +307,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         clipEnd: newEnd,
       })
     }
-  }, [currentShot?.id, updateSegment])
+  }, [currentShot, updateSegment])
 
   // Keyboard shortcuts for clip review
   useEffect(() => {
@@ -347,7 +361,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           }
           break
         case 'Escape':
-        case 'Backspace':
           e.preventDefault()
           handleReject()
           break
@@ -541,10 +554,21 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <div className="export-modal-overlay">
           <div className="export-modal">
             <div className="export-modal-header">
-              <h3>{exportComplete ? 'Export Complete!' : 'Exporting Clips'}</h3>
+              <h3>{exportError ? 'Export Failed' : exportComplete ? 'Export Complete!' : 'Exporting Clips'}</h3>
             </div>
             <div className="export-modal-content">
-              {!exportComplete ? (
+              {exportError ? (
+                <>
+                  <div className="export-error-icon">!</div>
+                  <p className="export-error-message">{exportError}</p>
+                  <button
+                    onClick={() => { setShowExportModal(false); setExportError(null) }}
+                    className="btn-secondary"
+                  >
+                    Close
+                  </button>
+                </>
+              ) : !exportComplete ? (
                 <>
                   <div className="export-progress-bar">
                     <div
@@ -555,6 +579,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                   <p className="export-status">
                     Downloading {exportProgress.current} of {exportProgress.total}...
                   </p>
+                  <button
+                    onClick={() => { exportCancelledRef.current = true; setShowExportModal(false) }}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
                 </>
               ) : (
                 <>

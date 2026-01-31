@@ -28,7 +28,6 @@ export interface TrajectoryData {
 export interface TracerConfig {
   height: 'low' | 'medium' | 'high'
   shape: 'hook' | 'draw' | 'straight' | 'fade' | 'slice'
-  startingLine: 'left' | 'center' | 'right'
   flightTime: number
 }
 
@@ -42,7 +41,7 @@ export interface VideoSegment {
   confidence: number        // detection confidence (0-1)
   clipStart: number         // trimmed start time
   clipEnd: number           // trimmed end time
-  approved: boolean         // user approved this shot
+  approved: 'pending' | 'approved' | 'rejected'  // user approval state
   landingPoint?: { x: number; y: number }  // marked landing point
   trajectory?: TrajectoryData              // generated trajectory
 }
@@ -105,7 +104,7 @@ export const useProcessingStore = create<ProcessingState>((set) => ({
       confidence: segment.confidence ?? 0.5,
       clipStart: segment.clipStart ?? segment.startTime,
       clipEnd: segment.clipEnd ?? segment.endTime,
-      approved: segment.approved ?? false,
+      approved: segment.approved ?? 'pending',
     }]
   })),
   setCurrentSegment: (index) => set({ currentSegmentIndex: index }),
@@ -116,12 +115,12 @@ export const useProcessingStore = create<ProcessingState>((set) => ({
   })),
   approveSegment: (id) => set((state) => ({
     segments: state.segments.map(seg =>
-      seg.id === id ? { ...seg, confidence: 1.0, approved: true } : seg
+      seg.id === id ? { ...seg, approved: 'approved' } : seg
     )
   })),
   rejectSegment: (id) => set((state) => ({
     segments: state.segments.map(seg =>
-      seg.id === id ? { ...seg, confidence: 0, approved: false } : seg
+      seg.id === id ? { ...seg, approved: 'rejected' } : seg
     )
   })),
   setFileInfo: (name, duration) => set({ fileName: name, fileDuration: duration }),
