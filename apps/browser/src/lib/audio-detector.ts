@@ -53,7 +53,7 @@ export interface DetectionConfig {
 export const DEFAULT_CONFIG: DetectionConfig = {
   frequencyLow: 1000,
   frequencyHigh: 8000,
-  minStrikeInterval: 0.025, // 25ms minimum between strikes
+  minStrikeInterval: 25.0, // 25 seconds minimum between strikes (golf swing interval)
   sensitivity: 0.5,
 }
 
