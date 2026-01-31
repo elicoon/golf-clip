@@ -1,17 +1,36 @@
 // apps/browser/src/App.tsx
+import { useState } from 'react'
 import { VideoDropzone } from './components/VideoDropzone'
+import { ClipReview } from './components/ClipReview'
 import { useProcessingStore } from './stores/processingStore'
 
+type AppView = 'upload' | 'review' | 'export'
+
 export default function App() {
-  const { status, strikes, segments, error, reset } = useProcessingStore()
+  const { status, segments, error, reset } = useProcessingStore()
+  const [view, setView] = useState<AppView>('upload')
+
+  const handleReviewComplete = () => {
+    setView('export')
+  }
+
+  const handleReset = () => {
+    reset()
+    setView('upload')
+  }
+
+  // Auto-transition to review when processing completes
+  if (status === 'ready' && view === 'upload' && segments.length > 0) {
+    setView('review')
+  }
 
   return (
     <div className="app">
       <header className="app-header">
         <h1>GolfClip</h1>
         <div className="header-actions">
-          {status === 'ready' && (
-            <button onClick={reset} className="btn-secondary">
+          {view !== 'upload' && (
+            <button onClick={handleReset} className="btn-secondary">
               New Video
             </button>
           )}
@@ -23,52 +42,30 @@ export default function App() {
           <div className="app-error">
             <h3>Error</h3>
             <p>{error}</p>
-            <button onClick={reset} className="btn-secondary">
+            <button onClick={handleReset} className="btn-secondary">
               Try Again
             </button>
           </div>
         )}
 
-        {(status === 'idle' || status === 'loading' || status === 'processing') && !error && (
+        {view === 'upload' && !error && (
           <VideoDropzone />
         )}
 
-        {status === 'ready' && (
-          <div className="results-container">
-            <div className="results-header">
-              <h2>Found {strikes.length} shot{strikes.length !== 1 ? 's' : ''}</h2>
-              <p className="results-subtitle">Click to play each detected shot</p>
-            </div>
+        {view === 'review' && (
+          <ClipReview onComplete={handleReviewComplete} />
+        )}
 
-            <div className="shots-grid">
-              {segments.map((segment, i) => (
-                <div key={segment.id} className="shot-card">
-                  <div className="shot-header">
-                    <span className="shot-number">Shot {i + 1}</span>
-                    <span className="shot-time">{strikes[i].timestamp.toFixed(1)}s</span>
-                  </div>
-                  <video
-                    src={segment.objectUrl}
-                    controls
-                    className="shot-video"
-                  />
-                  <div className="shot-footer">
-                    <span className="confidence-badge">
-                      {(strikes[i].confidence * 100).toFixed(0)}% confidence
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {strikes.length === 0 && (
-              <div className="no-shots">
-                <p>No golf shots detected in this video.</p>
-                <button onClick={reset} className="btn-primary">
-                  Try Another Video
-                </button>
-              </div>
-            )}
+        {view === 'export' && (
+          <div className="export-complete">
+            <div className="review-complete-icon">✓</div>
+            <h2>Review Complete!</h2>
+            <p className="export-message">
+              {segments.filter(s => s.approved).length} shots approved
+            </p>
+            <button onClick={handleReset} className="btn-primary btn-large">
+              Process Another Video
+            </button>
           </div>
         )}
       </main>
