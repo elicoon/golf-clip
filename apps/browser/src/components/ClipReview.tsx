@@ -203,15 +203,18 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const handleGenerate = useCallback(async () => {
     if (!landingPoint) return
     setIsGenerating(true)
-    // Small delay to ensure UI updates before generation
-    await new Promise(resolve => setTimeout(resolve, 50))
-    const traj = generateTrajectory(landingPoint, tracerConfig, originPoint || undefined, apexPoint || undefined)
-    setTrajectory(traj)
-    setHasUnsavedChanges(false)
-    if (currentShot) {
-      updateSegment(currentShot.id, { trajectory: traj })
+    try {
+      // Small delay to ensure UI updates before generation
+      await new Promise(resolve => setTimeout(resolve, 50))
+      const traj = generateTrajectory(landingPoint, tracerConfig, originPoint || undefined, apexPoint || undefined)
+      setTrajectory(traj)
+      setHasUnsavedChanges(false)
+      if (currentShot) {
+        updateSegment(currentShot.id, { trajectory: traj })
+      }
+    } finally {
+      setIsGenerating(false)
     }
-    setIsGenerating(false)
   }, [landingPoint, tracerConfig, originPoint, apexPoint, currentShot, updateSegment])
 
   const handleMarkApex = useCallback(() => {
@@ -409,16 +412,24 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   }, [togglePlayPause, handlePrevious, handleNext, handleApprove, handleReject, reviewStep, trajectory, currentShot, handleTrimUpdate])
 
   if (!currentShot) {
+    const approvedCount = segments.filter(s => s.approved === 'approved').length
     return (
       <div className="clip-review-complete">
         <div className="review-complete-icon">✓</div>
         <h2>All shots have been reviewed!</h2>
         <p className="review-complete-summary">
-          {segments.filter(s => s.approved === 'approved').length} shots approved
+          {approvedCount} shots approved
         </p>
-        <button onClick={onComplete} className="btn-primary btn-large">
-          Continue to Export
-        </button>
+        <div className="review-complete-actions">
+          {approvedCount > 0 && (
+            <button onClick={handleExport} className="btn-primary btn-large">
+              Export {approvedCount} Clip{approvedCount !== 1 ? 's' : ''}
+            </button>
+          )}
+          <button onClick={onComplete} className="btn-secondary">
+            Process Another Video
+          </button>
+        </div>
       </div>
     )
   }
