@@ -34,6 +34,16 @@ function generateTrajectory(
     slice: 0.15
   }[config.shape]
 
+  // Calculate the control point that makes the bezier pass THROUGH the apex at t=0.5
+  // For a quadratic bezier B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+  // At t=0.5: B(0.5) = 0.25*P0 + 0.5*P1 + 0.25*P2
+  // To make B(0.5) = apex, we solve for P1:
+  // P1 = 2*apex - 0.5*(P0 + P2) = 2*apex - 0.5*origin - 0.5*landing
+  const controlPoint = {
+    x: 2 * apex.x - 0.5 * origin.x - 0.5 * landingPoint.x,
+    y: 2 * apex.y - 0.5 * origin.y - 0.5 * landingPoint.y
+  }
+
   // Generate points along quadratic bezier
   const numPoints = 30
   const points: TrajectoryPoint[] = []
@@ -43,9 +53,10 @@ function generateTrajectory(
     const timestamp = t * config.flightTime
 
     // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+    // Using controlPoint (not apex) so the curve passes through apex at t=0.5
     const mt = 1 - t
-    const x = mt * mt * origin.x + 2 * mt * t * (apex.x + shapeCurve * t) + t * t * landingPoint.x
-    const y = mt * mt * origin.y + 2 * mt * t * apex.y + t * t * landingPoint.y
+    const x = mt * mt * origin.x + 2 * mt * t * (controlPoint.x + shapeCurve * t) + t * t * landingPoint.x
+    const y = mt * mt * origin.y + 2 * mt * t * controlPoint.y + t * t * landingPoint.y
 
     points.push({
       timestamp,
@@ -93,6 +104,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [isMarkingApex, setIsMarkingApex] = useState(false)
   const [isMarkingOrigin, setIsMarkingOrigin] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
 
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
@@ -188,14 +200,18 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setHasUnsavedChanges(true)
   }, [])
 
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
     if (!landingPoint) return
+    setIsGenerating(true)
+    // Small delay to ensure UI updates before generation
+    await new Promise(resolve => setTimeout(resolve, 50))
     const traj = generateTrajectory(landingPoint, tracerConfig, originPoint || undefined, apexPoint || undefined)
     setTrajectory(traj)
     setHasUnsavedChanges(false)
     if (currentShot) {
       updateSegment(currentShot.id, { trajectory: traj })
     }
+    setIsGenerating(false)
   }, [landingPoint, tracerConfig, originPoint, apexPoint, currentShot, updateSegment])
 
   const handleMarkApex = useCallback(() => {
@@ -209,8 +225,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   }, [])
 
   // Export approved clips
+  // Note: Get segments directly from store to avoid stale closure issue
+  // when handleExport is called immediately after approveSegment
   const handleExport = useCallback(async () => {
-    const approved = segments.filter(s => s.approved === 'approved')
+    const currentSegments = useProcessingStore.getState().segments
+    const approved = currentSegments.filter(s => s.approved === 'approved')
     if (approved.length === 0) {
       onComplete()
       return
@@ -251,7 +270,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'An error occurred during export')
     }
-  }, [segments, onComplete])
+  }, [onComplete])
 
   const handlePrevious = useCallback(() => {
     if (currentIndex > 0) {
@@ -505,7 +524,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           hasChanges={hasUnsavedChanges}
           apexMarked={!!apexPoint}
           originMarked={!!originPoint}
-          isGenerating={false}
+          isGenerating={isGenerating}
           isCollapsed={!showConfigPanel}
           onToggleCollapse={() => setShowConfigPanel(!showConfigPanel)}
         />
