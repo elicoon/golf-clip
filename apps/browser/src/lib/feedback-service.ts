@@ -1,5 +1,6 @@
 // apps/browser/src/lib/feedback-service.ts
-import { supabase, isSupabaseConfigured } from './supabase-client'
+import { getSupabaseClient } from './supabase-client'
+import { TracerStyle } from '../types/tracer'
 
 interface ShotFeedback {
   sessionId: string
@@ -20,7 +21,7 @@ interface TracerFeedback {
   feedbackType: 'AUTO_ACCEPTED' | 'CONFIGURED' | 'RELUCTANT_ACCEPT' | 'SKIP' | 'REJECTED'
   autoParams?: TracerParams
   finalParams: TracerParams
-  tracerStyle?: Record<string, unknown>
+  tracerStyle?: TracerStyle
 }
 
 interface TracerParams {
@@ -40,12 +41,13 @@ interface TracerParams {
 const SESSION_ID = crypto.randomUUID()
 
 export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId'>): Promise<void> {
-  if (!isSupabaseConfigured()) {
+  const client = getSupabaseClient()
+  if (!client) {
     console.warn('Supabase not configured, skipping feedback submission')
     return
   }
 
-  const { error } = await supabase!.from('shot_feedback').insert({
+  const { error } = await client.from('shot_feedback').insert({
     session_id: SESSION_ID,
     video_hash: feedback.videoHash,
     shot_index: feedback.shotIndex,
@@ -64,12 +66,13 @@ export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId
 }
 
 export async function submitTracerFeedback(feedback: Omit<TracerFeedback, 'sessionId'>): Promise<void> {
-  if (!isSupabaseConfigured()) {
+  const client = getSupabaseClient()
+  if (!client) {
     console.warn('Supabase not configured, skipping feedback submission')
     return
   }
 
-  const { error } = await supabase!.from('tracer_feedback').insert({
+  const { error } = await client.from('tracer_feedback').insert({
     session_id: SESSION_ID,
     shot_index: feedback.shotIndex,
     feedback_type: feedback.feedbackType,

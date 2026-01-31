@@ -170,8 +170,9 @@ export async function detectStrikes(
     try {
       const converted = essentia.vectorToArray(onsetResult.onsets)
       onsetTimes = Array.from(converted)
-    } catch {
+    } catch (e) {
       // Empty vector - no onsets detected, which is a valid result
+      console.debug('[AudioDetector] Empty onset vector:', e)
       onsetTimes = []
     }
   }
@@ -211,20 +212,20 @@ export async function detectStrikes(
     try {
       const centroidResult = essentia.SpectralCentroidTime(windowVector, sampleRate)
       centroid = centroidResult.centroid
-    } catch {
-      // Use default centroid
+    } catch (e) {
+      console.debug('[AudioDetector] SpectralCentroidTime failed, using default:', e)
     }
     try {
       const flatnessResult = essentia.Flatness(windowVector)
       flatness = flatnessResult.flatness
-    } catch {
-      // Use default flatness
+    } catch (e) {
+      console.debug('[AudioDetector] Flatness calculation failed, using default:', e)
     }
     try {
       const rmsResult = essentia.RMS(windowVector)
       rms = rmsResult.rms
-    } catch {
-      // Use default RMS
+    } catch (e) {
+      console.debug('[AudioDetector] RMS calculation failed, using default:', e)
     }
 
     // Calculate decay ratio: compare energy after onset to peak energy
@@ -302,15 +303,15 @@ function calculateDecayRatio(
     const peakVector = essentia.arrayToVector(peakWindow)
     const peakResult = essentia.RMS(peakVector)
     peakRms = peakResult.rms
-  } catch {
-    // Use default
+  } catch (e) {
+    console.debug('[AudioDetector] Peak RMS calculation failed:', e)
   }
   try {
     const decayVector = essentia.arrayToVector(decayWindow)
     const decayResult = essentia.RMS(decayVector)
     decayRms = decayResult.rms
-  } catch {
-    // Use default
+  } catch (e) {
+    console.debug('[AudioDetector] Decay RMS calculation failed:', e)
   }
 
   // Calculate ratio (clamp to 0-1 range)

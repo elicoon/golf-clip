@@ -90,6 +90,17 @@ export function isFFmpegLoaded(): boolean {
 }
 
 /**
+ * Get the FFmpeg instance. Must call loadFFmpeg() first.
+ * @throws Error if FFmpeg is not loaded
+ */
+export function getFFmpegInstance(): FFmpeg {
+  if (!ffmpeg || !loaded) {
+    throw new Error('FFmpeg not loaded. Call loadFFmpeg() first.')
+  }
+  return ffmpeg
+}
+
+/**
  * Extract a video segment with proper container format.
  * Uses FFmpeg for keyframe-aware seeking and container preservation.
  *
