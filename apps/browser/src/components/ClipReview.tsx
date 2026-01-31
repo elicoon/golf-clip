@@ -4,6 +4,7 @@ import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
+import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
 
 interface ClipReviewProps {
   onComplete: () => void
@@ -115,6 +116,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 })
   const [exportComplete, setExportComplete] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [exportQuality, setExportQuality] = useState<'draft' | 'preview' | 'final'>('preview')
   const exportCancelledRef = useRef(false)
 
   // Auto-loop state
@@ -125,6 +127,22 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const autoplayedShotIdRef = useRef<string | null>(null)
   // Track when we last seeked to prevent auto-loop from triggering immediately
   const lastSeekTimeRef = useRef<number>(0)
+
+  // Feedback tracking - store initial values for comparison
+  const initialTracerParamsRef = useRef<{
+    originX?: number
+    originY?: number
+    landingX?: number
+    landingY?: number
+    apexX?: number
+    apexY?: number
+    shape?: string
+    height?: string
+    flightTime?: number
+  } | null>(null)
+  const initialClipTimingRef = useRef<{ clipStart: number; clipEnd: number } | null>(null)
+  // Track whether user made any tracer modifications
+  const tracerModifiedRef = useRef(false)
 
   // Filter to shots needing review (confidence < 0.7 and not yet approved/rejected)
   const shotsNeedingReview = segments.filter(s => s.confidence < 0.7 && s.approved === 'pending')
@@ -229,6 +247,16 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setOriginPoint(null)
     setReviewStep('marking_landing')
     setTrajectory(null)
+    // Reset feedback tracking for new shot
+    initialTracerParamsRef.current = null
+    tracerModifiedRef.current = false
+    // Store initial clip timing for feedback
+    if (currentShot) {
+      initialClipTimingRef.current = {
+        clipStart: currentShot.clipStart,
+        clipEnd: currentShot.clipEnd
+      }
+    }
   }, [currentShot?.id])
 
   // Handle canvas click for marking points
@@ -237,10 +265,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       setApexPoint({ x, y })
       setIsMarkingApex(false)
       setHasUnsavedChanges(true)
+      tracerModifiedRef.current = true
     } else if (isMarkingOrigin) {
       setOriginPoint({ x, y })
       setIsMarkingOrigin(false)
       setHasUnsavedChanges(true)
+      tracerModifiedRef.current = true
     } else if (reviewStep === 'marking_landing') {
       setLandingPoint({ x, y })
       // Start trajectory animation from when the ball is struck in the video segment
@@ -248,6 +278,16 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       const traj = generateTrajectory({ x, y }, tracerConfig, undefined, undefined, strikeOffset)
       setTrajectory(traj)
       setReviewStep('reviewing')
+      // Store initial tracer params for feedback comparison
+      initialTracerParamsRef.current = {
+        originX: 0.5,  // Default origin
+        originY: 0.85,
+        landingX: x,
+        landingY: y,
+        shape: tracerConfig.shape,
+        height: tracerConfig.height,
+        flightTime: tracerConfig.flightTime
+      }
       if (currentShot) {
         updateSegment(currentShot.id, { landingPoint: { x, y }, trajectory: traj })
       }
@@ -258,6 +298,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const handleConfigChange = useCallback((config: TracerConfig) => {
     setTracerConfig(config)
     setHasUnsavedChanges(true)
+    tracerModifiedRef.current = true
   }, [])
 
   const handleStyleChange = useCallback((style: TracerStyle) => {
@@ -356,6 +397,48 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
   const handleApprove = useCallback(() => {
     if (!currentShot) return
+
+    // Submit shot feedback (TRUE_POSITIVE = user confirmed this is a real golf shot)
+    const initialTiming = initialClipTimingRef.current
+    submitShotFeedback({
+      shotIndex: currentIndex,
+      feedbackType: 'TRUE_POSITIVE',
+      confidence: currentShot.confidence,
+      clipStart: initialTiming?.clipStart,
+      clipEnd: initialTiming?.clipEnd,
+      userAdjustedStart: currentShot.clipStart !== initialTiming?.clipStart ? currentShot.clipStart : undefined,
+      userAdjustedEnd: currentShot.clipEnd !== initialTiming?.clipEnd ? currentShot.clipEnd : undefined,
+    })
+
+    // Submit tracer feedback if user set a landing point
+    if (landingPoint && trajectory) {
+      const feedbackType = tracerModifiedRef.current ? 'CONFIGURED' : 'AUTO_ACCEPTED'
+      submitTracerFeedback({
+        shotIndex: currentIndex,
+        feedbackType,
+        autoParams: initialTracerParamsRef.current || undefined,
+        finalParams: {
+          originX: originPoint?.x ?? 0.5,
+          originY: originPoint?.y ?? 0.85,
+          landingX: landingPoint.x,
+          landingY: landingPoint.y,
+          apexX: apexPoint?.x,
+          apexY: apexPoint?.y,
+          shape: tracerConfig.shape,
+          height: tracerConfig.height,
+          flightTime: tracerConfig.flightTime,
+        },
+        tracerStyle: tracerStyle as unknown as Record<string, unknown>,
+      })
+    } else {
+      // User approved without setting up tracer - skip feedback
+      submitTracerFeedback({
+        shotIndex: currentIndex,
+        feedbackType: 'SKIP',
+        finalParams: {},
+      })
+    }
+
     approveSegment(currentShot.id)
 
     if (currentIndex >= shotsNeedingReview.length - 1) {
@@ -365,10 +448,21 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       // Stay at same index - approved shot will filter out
       setCurrentIndex(Math.min(currentIndex, shotsNeedingReview.length - 2))
     }
-  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, handleExport])
+  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, handleExport, landingPoint, trajectory, originPoint, apexPoint, tracerConfig, tracerStyle])
 
   const handleReject = useCallback(() => {
     if (!currentShot) return
+
+    // Submit shot feedback (FALSE_POSITIVE = detector incorrectly identified this as a golf shot)
+    const initialTiming = initialClipTimingRef.current
+    submitShotFeedback({
+      shotIndex: currentIndex,
+      feedbackType: 'FALSE_POSITIVE',
+      confidence: currentShot.confidence,
+      clipStart: initialTiming?.clipStart,
+      clipEnd: initialTiming?.clipEnd,
+    })
+
     rejectSegment(currentShot.id)
 
     if (currentIndex >= shotsNeedingReview.length - 1) {
@@ -487,6 +581,37 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <p className="review-complete-summary">
           {approvedCount} shots approved
         </p>
+        {approvedCount > 0 && (
+          <div className="export-quality-selector">
+            <label className="quality-label">Export Quality:</label>
+            <div className="quality-options">
+              <button
+                className={`quality-option ${exportQuality === 'draft' ? 'active' : ''}`}
+                onClick={() => setExportQuality('draft')}
+                title="Fast export, lower quality"
+              >
+                <span className="quality-name">Draft</span>
+                <span className="quality-desc">Fast</span>
+              </button>
+              <button
+                className={`quality-option ${exportQuality === 'preview' ? 'active' : ''}`}
+                onClick={() => setExportQuality('preview')}
+                title="Balanced quality and speed"
+              >
+                <span className="quality-name">Preview</span>
+                <span className="quality-desc">Balanced</span>
+              </button>
+              <button
+                className={`quality-option ${exportQuality === 'final' ? 'active' : ''}`}
+                onClick={() => setExportQuality('final')}
+                title="Best quality, slower export"
+              >
+                <span className="quality-name">Final</span>
+                <span className="quality-desc">Best</span>
+              </button>
+            </div>
+          </div>
+        )}
         <div className="review-complete-actions">
           {approvedCount > 0 && (
             <button onClick={handleExport} className="btn-primary btn-large">
