@@ -459,7 +459,7 @@ export function TrajectoryEditor({
     return () => {
       cancelAnimationFrame(animationFrameId)
     }
-  }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, apexPoint, videoRef])
+  }, [localPoints, canvasSize, showTracer, disabled, trajectory?.apex_point, landingPoint, apexPoint, originPoint, videoRef])
 
   // Suppress unused parameter warnings - kept for API compatibility
   void currentTime
