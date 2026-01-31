@@ -12,6 +12,15 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { DEFAULT_TRACER_STYLE } from '../types/tracer'
 
+// Mock @ffmpeg/util before importing VideoFramePipeline
+vi.mock('@ffmpeg/util', () => ({
+  fetchFile: vi.fn(async (blob: Blob) => {
+    // Return a Uint8Array from the blob
+    const buffer = await blob.arrayBuffer()
+    return new Uint8Array(buffer)
+  }),
+}))
+
 // Mock ImageData for Node environment
 class MockImageData {
   width: number
@@ -50,6 +59,7 @@ class MockOffscreenCanvas {
       restore: vi.fn(),
       putImageData: vi.fn(),
       getImageData: vi.fn(() => new MockImageData(this.width, this.height)),
+      fillText: vi.fn(),
       fillStyle: '',
       strokeStyle: '',
       lineWidth: 1,
@@ -57,6 +67,7 @@ class MockOffscreenCanvas {
       lineJoin: 'miter',
       shadowColor: '',
       shadowBlur: 0,
+      font: '',
     } as unknown as CanvasRenderingContext2D
   }
 
