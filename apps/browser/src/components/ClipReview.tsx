@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useProcessingStore } from '../stores/processingStore'
+import { Scrubber } from './Scrubber'
 
 interface ClipReviewProps {
   onComplete: () => void
 }
 
 export function ClipReview({ onComplete }: ClipReviewProps) {
-  const { segments, approveSegment, rejectSegment } = useProcessingStore()
+  const { segments, updateSegment, approveSegment, rejectSegment } = useProcessingStore()
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -68,6 +69,15 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setIsPlaying(!isPlaying)
   }, [isPlaying])
 
+  const handleTimeUpdate = useCallback((newStart: number, newEnd: number) => {
+    if (currentShot) {
+      updateSegment(currentShot.id, {
+        clipStart: newStart,
+        clipEnd: newEnd,
+      })
+    }
+  }, [currentShot, updateSegment])
+
   if (!currentShot) {
     return (
       <div className="clip-review-complete">
@@ -123,6 +133,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           onPause={() => setIsPlaying(false)}
         />
       </div>
+
+      <Scrubber
+        videoRef={videoRef}
+        startTime={currentShot.clipStart}
+        endTime={currentShot.clipEnd}
+        onTimeUpdate={handleTimeUpdate}
+      />
 
       <div className="confidence-info">
         <span
