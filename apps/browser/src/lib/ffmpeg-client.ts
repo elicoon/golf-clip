@@ -373,3 +373,71 @@ export async function extractVideoSegment(
     try { await ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
   }
 }
+
+// Transcoding time estimates (based on benchmarks)
+// WASM FFmpeg with ultrafast preset - conservative estimates
+export const TRANSCODE_ESTIMATE = {
+  RATIO_4K_60FPS: 4,   // 4K 60fps: ~4 min per min of video
+  RATIO_4K_30FPS: 3,   // 4K 30fps: ~3 min per min of video
+  RATIO_1080P: 2,      // 1080p: ~2 min per min of video
+  RATIO_DEFAULT: 3,    // Default fallback
+}
+
+export const SUPPORTED_CODECS = ['H.264', 'VP8', 'VP9']
+export const SUPPORTED_CONTAINERS = ['MP4', 'MOV', 'M4V']
+
+/**
+ * Estimate transcoding time based on file size.
+ * Uses conservative estimates for WASM FFmpeg.
+ *
+ * @param fileSizeMB - File size in megabytes
+ * @returns Object with min/max minutes and formatted string
+ */
+export function estimateTranscodeTime(fileSizeMB: number): {
+  minMinutes: number
+  maxMinutes: number
+  formatted: string
+} {
+  // Rough estimate: 200MB HEVC ≈ 30 seconds of 4K 60fps
+  // So 1 minute of video ≈ 400MB
+  const estimatedDurationMinutes = fileSizeMB / 400
+
+  // Use 4K 60fps ratio (most conservative)
+  const ratio = TRANSCODE_ESTIMATE.RATIO_4K_60FPS
+
+  const minMinutes = Math.max(1, Math.floor(estimatedDurationMinutes * (ratio - 1)))
+  const maxMinutes = Math.ceil(estimatedDurationMinutes * (ratio + 1))
+
+  let formatted: string
+  if (maxMinutes <= 1) {
+    formatted = 'less than a minute'
+  } else if (minMinutes === maxMinutes) {
+    formatted = `about ${minMinutes} minute${minMinutes > 1 ? 's' : ''}`
+  } else {
+    formatted = `${minMinutes}-${maxMinutes} minutes`
+  }
+
+  return { minMinutes, maxMinutes, formatted }
+}
+
+/**
+ * Format remaining time based on progress percentage and elapsed time.
+ *
+ * @param progress - Current progress 0-100
+ * @param elapsedMs - Elapsed time in milliseconds
+ * @returns Formatted remaining time string
+ */
+export function formatRemainingTime(progress: number, elapsedMs: number): string {
+  if (progress <= 0 || progress >= 100) return ''
+
+  const estimatedTotalMs = elapsedMs / (progress / 100)
+  const remainingMs = estimatedTotalMs - elapsedMs
+  const remainingSeconds = Math.ceil(remainingMs / 1000)
+
+  if (remainingSeconds < 60) {
+    return `${remainingSeconds}s remaining`
+  }
+
+  const remainingMinutes = Math.ceil(remainingSeconds / 60)
+  return `${remainingMinutes} min remaining`
+}
