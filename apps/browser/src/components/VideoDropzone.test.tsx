@@ -125,12 +125,14 @@ describe('VideoDropzone', () => {
         isPlayable: false,
       })
 
-      // Simulate slow transcode with progress
+      // Simulate slow transcode with progress - use a promise we can control
+      let resolveTranscode: (value: Blob) => void
       vi.mocked(transcodeHevcToH264).mockImplementation(async (_blob, onProgress) => {
         onProgress?.(25)
-        await new Promise(r => setTimeout(r, 100))
-        onProgress?.(50)
-        return new Blob(['transcoded'], { type: 'video/mp4' })
+        // Wait for external resolution to keep transcoding state active
+        return new Promise<Blob>((resolve) => {
+          resolveTranscode = resolve
+        })
       })
 
       render(<VideoDropzone />)
@@ -149,7 +151,63 @@ describe('VideoDropzone', () => {
         expect(screen.getByText('Converting video...')).toBeInTheDocument()
       })
 
+      // Verify the progress percentage is displayed in the DOM
+      expect(screen.getByText('25%')).toBeInTheDocument()
       expect(screen.getByText('Cancel')).toBeInTheDocument()
+
+      // Complete the transcode to clean up
+      resolveTranscode!(new Blob(['transcoded'], { type: 'video/mp4' }))
+    })
+
+    it('cancels transcoding and returns to initial modal state', async () => {
+      const { detectVideoCodec, transcodeHevcToH264 } = await import('../lib/ffmpeg-client')
+      vi.mocked(detectVideoCodec).mockResolvedValue({
+        codec: 'hevc',
+        isHevc: true,
+        isPlayable: false,
+      })
+
+      // Simulate transcode that waits for abort signal
+      vi.mocked(transcodeHevcToH264).mockImplementation(async (_blob, onProgress, signal) => {
+        onProgress?.(25)
+        // Wait until aborted
+        return new Promise<Blob>((resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            const error = new Error('Aborted')
+            error.name = 'AbortError'
+            reject(error)
+          })
+        })
+      })
+
+      render(<VideoDropzone />)
+
+      const file = new File(['video'], 'test.mov', { type: 'video/quicktime' })
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement
+      fireEvent.change(input, { target: { files: [file] } })
+
+      await waitFor(() => {
+        expect(screen.getByText('Start Transcoding')).toBeInTheDocument()
+      })
+
+      // Start transcoding
+      fireEvent.click(screen.getByText('Start Transcoding'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Converting video...')).toBeInTheDocument()
+      })
+
+      // Click Cancel
+      fireEvent.click(screen.getByText('Cancel'))
+
+      // Verify modal returns to non-transcoding state
+      await waitFor(() => {
+        expect(screen.getByText('Start Transcoding')).toBeInTheDocument()
+      })
+
+      // Verify transcoding UI is gone
+      expect(screen.queryByText('Converting video...')).not.toBeInTheDocument()
+      expect(screen.getByText('Upload Different Video')).toBeInTheDocument()
     })
   })
 })
