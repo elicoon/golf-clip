@@ -496,7 +496,7 @@ export function TrajectoryEditor({
 
       // Draw apex marker if visible
       if (trajectory?.apex_point && videoTime >= trajectory.apex_point.timestamp) {
-        const apex = toCanvas(trajectory.apex_point.x, trajectory.apex_point.y)
+        const apex = clampedToCanvas(trajectory.apex_point.x, trajectory.apex_point.y)
         ctx.save()
         ctx.fillStyle = '#ff0000'
         ctx.shadowColor = '#ff0000'
