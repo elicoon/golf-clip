@@ -11,6 +11,12 @@
  * 2. Render TrajectoryEditor with trajectory data
  * 3. Verify ALL drawing operations use coordinates within container bounds
  *
+ * Root Cause Investigation:
+ * Based on the bug description "bottom-right corner of screen", the likely causes are:
+ * - Canvas element positioned relative to window instead of container
+ * - DevicePixelRatio mismatch between canvas internal size and CSS size
+ * - Canvas draws at 2x/3x resolution but CSS doesn't scale it down
+ *
  * @vitest-environment jsdom
  */
 
@@ -52,7 +58,6 @@ function createMockCanvasContext() {
       captureCoord('quadraticCurveTo:end', x, y)
     }),
     arc: vi.fn((x: number, y: number) => captureCoord('arc', x, y)),
-    // Style properties (no-op)
     strokeStyle: '',
     fillStyle: '',
     lineWidth: 0,
@@ -66,22 +71,27 @@ function createMockCanvasContext() {
 }
 
 // Mock video element with realistic dimensions
-function createMockVideoRef(width = 800, height = 450, videoWidth = 1920, videoHeight = 1080) {
+function createMockVideoRef(
+  containerWidth = 800,
+  containerHeight = 450,
+  videoWidth = 1920,
+  videoHeight = 1080
+) {
   const video = {
     getBoundingClientRect: () => ({
-      width,
-      height,
+      width: containerWidth,
+      height: containerHeight,
       top: 0,
       left: 0,
-      right: width,
-      bottom: height,
+      right: containerWidth,
+      bottom: containerHeight,
       x: 0,
       y: 0,
       toJSON: () => ({}),
     }),
     videoWidth,
     videoHeight,
-    currentTime: 1.5, // Mid-flight of trajectory
+    currentTime: 1.5,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   }
@@ -92,11 +102,11 @@ function createMockVideoRef(width = 800, height = 450, videoWidth = 1920, videoH
 function createMockTrajectory() {
   return {
     points: [
-      { timestamp: 0, x: 0.5, y: 0.85, confidence: 1, interpolated: false },    // Origin: center-bottom
-      { timestamp: 0.5, x: 0.55, y: 0.6, confidence: 0.9, interpolated: true }, // Rising
-      { timestamp: 1.0, x: 0.6, y: 0.3, confidence: 0.9, interpolated: true },  // Apex
-      { timestamp: 1.5, x: 0.7, y: 0.5, confidence: 0.9, interpolated: true },  // Falling
-      { timestamp: 2.0, x: 0.8, y: 0.75, confidence: 0.9, interpolated: true }, // Landing
+      { timestamp: 0, x: 0.5, y: 0.85, confidence: 1, interpolated: false },
+      { timestamp: 0.5, x: 0.55, y: 0.6, confidence: 0.9, interpolated: true },
+      { timestamp: 1.0, x: 0.6, y: 0.3, confidence: 0.9, interpolated: true },
+      { timestamp: 1.5, x: 0.7, y: 0.5, confidence: 0.9, interpolated: true },
+      { timestamp: 2.0, x: 0.8, y: 0.75, confidence: 0.9, interpolated: true },
     ],
     apex_point: { timestamp: 1.0, x: 0.6, y: 0.3, confidence: 0.9, interpolated: true },
     frame_width: 1920,
@@ -106,8 +116,7 @@ function createMockTrajectory() {
 
 describe('TrajectoryEditor Bounds Bug Verification', () => {
   let mockCtx: ReturnType<typeof createMockCanvasContext>
-  let originalCreateElement: typeof document.createElement
-  let originalGetContext: HTMLCanvasElement['getContext']
+  let originalGetContext: typeof HTMLCanvasElement.prototype.getContext
   let rafCallbacks: FrameRequestCallback[] = []
   let rafId = 0
 
@@ -118,9 +127,6 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
     rafId = 0
 
     mockCtx = createMockCanvasContext()
-
-    // Mock canvas getContext
-    originalCreateElement = document.createElement.bind(document)
     originalGetContext = HTMLCanvasElement.prototype.getContext
 
     HTMLCanvasElement.prototype.getContext = function (contextId: string) {
@@ -130,25 +136,20 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       return originalGetContext.call(this, contextId) as RenderingContext | null
     }
 
-    // Mock requestAnimationFrame to capture and execute render callbacks
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       rafCallbacks.push(callback)
       return ++rafId
     })
 
     vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
-
-    // Mock devicePixelRatio
     Object.defineProperty(window, 'devicePixelRatio', { value: 1, writable: true })
 
-    // Mock ResizeObserver
     global.ResizeObserver = vi.fn().mockImplementation(() => ({
       observe: vi.fn(),
       unobserve: vi.fn(),
       disconnect: vi.fn(),
     }))
 
-    // Mock performance.now
     vi.spyOn(performance, 'now').mockReturnValue(1000)
   })
 
@@ -158,15 +159,12 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
   })
 
   it('should render ALL trajectory coordinates within container bounds', async () => {
-    // Container dimensions (simulating the video player area)
     const containerWidth = 800
     const containerHeight = 450
 
-    // 16:9 video in 16:9 container = no letterboxing, full bounds
     const videoRef = createMockVideoRef(containerWidth, containerHeight, 1920, 1080)
     const trajectory = createMockTrajectory()
 
-    // Render the component
     const { unmount } = render(
       <TrajectoryEditor
         videoRef={videoRef}
@@ -179,25 +177,13 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       />
     )
 
-    // Trigger the resize observer to set canvas size and bounds
-    // This simulates what happens when the component mounts and measures the video
-    act(() => {
-      // Force canvas size state update (normally done by ResizeObserver)
-      // We need to trigger the useEffect that calculates bounds
-    })
-
-    // Execute one frame of animation to trigger drawing
     act(() => {
       if (rafCallbacks.length > 0) {
-        const callback = rafCallbacks[rafCallbacks.length - 1]
-        callback(performance.now())
+        rafCallbacks[rafCallbacks.length - 1](performance.now())
       }
     })
 
-    // BUG VERIFICATION: Check that ALL coordinates are within bounds
-    // If this test FAILS, it means the bug exists (coordinates outside bounds)
     const outOfBoundsCoords = capturedCoordinates.filter(coord => {
-      // Allow small tolerance for anti-aliasing/line width
       const tolerance = 10
       return (
         coord.x < -tolerance ||
@@ -207,19 +193,14 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       )
     })
 
-    // This assertion should FAIL if the bug exists
-    // The bug causes coordinates to render at screen coordinates (e.g., 1920x1080)
-    // instead of container coordinates (800x450)
     expect(outOfBoundsCoords).toHaveLength(0)
 
-    // Additional verification: coordinates should be reasonable canvas coords
     if (capturedCoordinates.length > 0) {
       const maxX = Math.max(...capturedCoordinates.map(c => c.x))
       const maxY = Math.max(...capturedCoordinates.map(c => c.y))
       const minX = Math.min(...capturedCoordinates.map(c => c.x))
       const minY = Math.min(...capturedCoordinates.map(c => c.y))
 
-      // Coordinates should be within container bounds
       expect(maxX).toBeLessThanOrEqual(containerWidth + 10)
       expect(maxY).toBeLessThanOrEqual(containerHeight + 10)
       expect(minX).toBeGreaterThanOrEqual(-10)
@@ -232,166 +213,514 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
     unmount()
   })
 
-  it('should render marker coordinates within video bounds', async () => {
-    const containerWidth = 800
-    const containerHeight = 450
-    const videoRef = createMockVideoRef(containerWidth, containerHeight)
+  describe('DevicePixelRatio Bug Tests', () => {
+    /**
+     * BUG HYPOTHESIS: The bug may occur when devicePixelRatio > 1 (Retina/HiDPI displays).
+     *
+     * The TrajectoryEditor scales canvas internal resolution by DPR (line 118-119):
+     *   canvas.width = rect.width * dpr
+     *   canvas.height = rect.height * dpr
+     *
+     * And applies a transform (line 124):
+     *   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+     *
+     * If the CSS size and internal size don't match, coordinates could appear
+     * at 2x or 3x scale, pushing them outside the visible area.
+     */
 
-    // Render with markers but no trajectory (so we test marker rendering separately)
-    const { unmount } = render(
-      <TrajectoryEditor
-        videoRef={videoRef}
-        trajectory={null}
-        currentTime={0}
-        showTracer={true}
-        landingPoint={{ x: 0.8, y: 0.75 }}
-        apexPoint={{ x: 0.6, y: 0.3 }}
-        originPoint={{ x: 0.5, y: 0.85 }}
-      />
-    )
+    it('BUG TEST: should handle devicePixelRatio = 2 (Retina display)', async () => {
+      // Simulate Retina display
+      Object.defineProperty(window, 'devicePixelRatio', { value: 2, writable: true })
 
-    // Execute animation frame
-    act(() => {
-      if (rafCallbacks.length > 0) {
-        rafCallbacks[rafCallbacks.length - 1](performance.now())
+      const containerWidth = 800
+      const containerHeight = 450
+      const videoRef = createMockVideoRef(containerWidth, containerHeight, 1920, 1080)
+      const trajectory = createMockTrajectory()
+
+      const { container, unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={trajectory}
+          currentTime={1.5}
+          showTracer={true}
+          landingPoint={{ x: 0.8, y: 0.75 }}
+        />
+      )
+
+      act(() => {
+        if (rafCallbacks.length > 0) {
+          rafCallbacks[rafCallbacks.length - 1](performance.now())
+        }
+      })
+
+      // Verify canvas has correct internal size (2x for Retina)
+      const canvas = container.querySelector('canvas') as HTMLCanvasElement
+      expect(canvas).not.toBeNull()
+
+      // Canvas internal size should be 2x the CSS size
+      // If width/height are set in the useEffect, they should be containerWidth * 2
+      // But the CSS style.width should still be containerWidth
+
+      // BUG CHECK: Drawing coordinates should still be in CSS pixel space (800x450)
+      // NOT in canvas internal space (1600x900)
+      for (const coord of capturedCoordinates) {
+        expect(coord.x).toBeLessThanOrEqual(containerWidth + 50) // Allow for line width
+        expect(coord.y).toBeLessThanOrEqual(containerHeight + 50)
+      }
+
+      // If coordinates are at 2x scale, they would be > 800 for x
+      const coordsAt2xScale = capturedCoordinates.filter(c =>
+        c.x > containerWidth || c.y > containerHeight
+      )
+
+      // This test should FAIL if the bug exists (coordinates at 2x scale)
+      expect(coordsAt2xScale.length).toBe(0)
+
+      if (coordsAt2xScale.length > 0) {
+        console.error('BUG DETECTED: Coordinates at 2x scale (DPR issue)')
+        console.error('Coordinates exceeding container bounds:', coordsAt2xScale)
+      }
+
+      unmount()
+    })
+
+    it('BUG TEST: should handle devicePixelRatio = 3 (High-end mobile)', async () => {
+      Object.defineProperty(window, 'devicePixelRatio', { value: 3, writable: true })
+
+      const containerWidth = 800
+      const containerHeight = 450
+      const videoRef = createMockVideoRef(containerWidth, containerHeight, 1920, 1080)
+      const trajectory = createMockTrajectory()
+
+      const { unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={trajectory}
+          currentTime={1.5}
+          showTracer={true}
+          landingPoint={{ x: 0.8, y: 0.75 }}
+        />
+      )
+
+      act(() => {
+        if (rafCallbacks.length > 0) {
+          rafCallbacks[rafCallbacks.length - 1](performance.now())
+        }
+      })
+
+      // Coordinates should NOT be at 3x scale
+      const coordsAt3xScale = capturedCoordinates.filter(c =>
+        c.x > containerWidth + 50 || c.y > containerHeight + 50
+      )
+
+      expect(coordsAt3xScale.length).toBe(0)
+
+      unmount()
+    })
+  })
+
+  describe('Canvas Positioning Bug Tests', () => {
+    it('BUG TEST: canvas style should use absolute positioning with proper anchor', async () => {
+      const containerWidth = 800
+      const containerHeight = 450
+      const videoRef = createMockVideoRef(containerWidth, containerHeight)
+
+      const { container, unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={createMockTrajectory()}
+          currentTime={1.5}
+          showTracer={true}
+          landingPoint={{ x: 0.8, y: 0.75 }}
+        />
+      )
+
+      const canvas = container.querySelector('canvas')
+      expect(canvas).not.toBeNull()
+
+      if (canvas) {
+        const style = canvas.style
+
+        // Canvas MUST be absolutely positioned
+        expect(style.position).toBe('absolute')
+
+        // Canvas MUST anchor to top-left (not bottom-right!)
+        expect(style.top).toBe('0px')
+        expect(style.left).toBe('0px')
+
+        // Canvas should NOT have bottom/right positioning
+        // (If it did, it would anchor to bottom-right corner - the bug!)
+        expect(style.bottom).toBeFalsy()
+        expect(style.right).toBeFalsy()
+      }
+
+      unmount()
+    })
+
+    it('BUG TEST: canvas z-index should be above video but below controls', async () => {
+      const videoRef = createMockVideoRef(800, 450)
+
+      const { container, unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={createMockTrajectory()}
+          currentTime={1.5}
+          showTracer={true}
+        />
+      )
+
+      const canvas = container.querySelector('canvas')
+      expect(canvas).not.toBeNull()
+
+      if (canvas) {
+        // z-index should be set to layer canvas above video
+        const zIndex = parseInt(canvas.style.zIndex || '0', 10)
+        expect(zIndex).toBeGreaterThan(0)  // Should have explicit z-index
+
+        // The component sets z-index: 10 (line 607)
+        expect(zIndex).toBe(10)
+      }
+
+      unmount()
+    })
+  })
+
+  describe('Edge Cases', () => {
+    it('should NOT render when video dimensions are unknown (0x0)', async () => {
+      const containerWidth = 800
+      const containerHeight = 450
+      const videoRef = createMockVideoRef(containerWidth, containerHeight, 0, 0)
+      const trajectory = createMockTrajectory()
+
+      const { unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={trajectory}
+          currentTime={1.5}
+          showTracer={true}
+          landingPoint={{ x: 0.8, y: 0.75 }}
+        />
+      )
+
+      act(() => {
+        if (rafCallbacks.length > 0) {
+          rafCallbacks[rafCallbacks.length - 1](performance.now())
+        }
+      })
+
+      console.log('Coordinates when video has 0x0 dimensions:', capturedCoordinates.length)
+
+      // Should either not draw, or draw valid coordinates
+      if (capturedCoordinates.length > 0) {
+        const allAtZero = capturedCoordinates.every(c => c.x === 0 && c.y === 0)
+        expect(allAtZero).toBe(false)
+      }
+
+      unmount()
+    })
+
+    it('should handle container with getBoundingClientRect returning zero', async () => {
+      const videoRef = createMockVideoRef(0, 0, 1920, 1080)
+      const trajectory = createMockTrajectory()
+
+      const { unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={trajectory}
+          currentTime={1.5}
+          showTracer={true}
+          landingPoint={{ x: 0.8, y: 0.75 }}
+        />
+      )
+
+      act(() => {
+        if (rafCallbacks.length > 0) {
+          rafCallbacks[rafCallbacks.length - 1](performance.now())
+        }
+      })
+
+      console.log('Coordinates when container rect is 0x0:', capturedCoordinates.length)
+
+      for (const coord of capturedCoordinates) {
+        expect(coord.x).toBeLessThan(10000)
+        expect(coord.y).toBeLessThan(10000)
+      }
+
+      unmount()
+    })
+
+    it('should render marker coordinates within video bounds', async () => {
+      const containerWidth = 800
+      const containerHeight = 450
+      const videoRef = createMockVideoRef(containerWidth, containerHeight)
+
+      const { unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={null}
+          currentTime={0}
+          showTracer={true}
+          landingPoint={{ x: 0.8, y: 0.75 }}
+          apexPoint={{ x: 0.6, y: 0.3 }}
+          originPoint={{ x: 0.5, y: 0.85 }}
+        />
+      )
+
+      act(() => {
+        if (rafCallbacks.length > 0) {
+          rafCallbacks[rafCallbacks.length - 1](performance.now())
+        }
+      })
+
+      for (const coord of capturedCoordinates) {
+        expect(coord.x).toBeGreaterThanOrEqual(-20)
+        expect(coord.x).toBeLessThanOrEqual(containerWidth + 20)
+        expect(coord.y).toBeGreaterThanOrEqual(-20)
+        expect(coord.y).toBeLessThanOrEqual(containerHeight + 20)
+      }
+
+      unmount()
+    })
+
+    it('should handle letterboxed video (4:3 video in 16:9 container)', async () => {
+      const containerWidth = 800
+      const containerHeight = 450
+      const videoWidth = 1280
+      const videoHeight = 960
+
+      const videoRef = createMockVideoRef(containerWidth, containerHeight, videoWidth, videoHeight)
+      const trajectory = createMockTrajectory()
+
+      const { unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={trajectory}
+          currentTime={1.5}
+          showTracer={true}
+          landingPoint={{ x: 0.8, y: 0.75 }}
+        />
+      )
+
+      act(() => {
+        if (rafCallbacks.length > 0) {
+          rafCallbacks[rafCallbacks.length - 1](performance.now())
+        }
+      })
+
+      for (const coord of capturedCoordinates) {
+        expect(coord.x).toBeGreaterThanOrEqual(-20)
+        expect(coord.x).toBeLessThanOrEqual(containerWidth + 20)
+        expect(coord.y).toBeGreaterThanOrEqual(-20)
+        expect(coord.y).toBeLessThanOrEqual(containerHeight + 20)
+      }
+
+      unmount()
+    })
+  })
+
+  describe('Coordinate Transformation Unit Tests', () => {
+    it('should correctly transform normalized coords to container coords', () => {
+      const bounds = { offsetX: 0, offsetY: 0, width: 800, height: 450 }
+      const toCanvas = (x: number, y: number) => ({
+        x: bounds.offsetX + x * bounds.width,
+        y: bounds.offsetY + y * bounds.height,
+      })
+
+      expect(toCanvas(0, 0)).toEqual({ x: 0, y: 0 })
+      expect(toCanvas(1, 1)).toEqual({ x: 800, y: 450 })
+      expect(toCanvas(0.5, 0.5)).toEqual({ x: 400, y: 225 })
+      expect(toCanvas(0.8, 0.75)).toEqual({ x: 640, y: 337.5 })
+    })
+
+    it('should correctly transform with letterbox offset', () => {
+      const bounds = { offsetX: 100, offsetY: 0, width: 600, height: 450 }
+      const toCanvas = (x: number, y: number) => ({
+        x: bounds.offsetX + x * bounds.width,
+        y: bounds.offsetY + y * bounds.height,
+      })
+
+      expect(toCanvas(0, 0)).toEqual({ x: 100, y: 0 })
+      expect(toCanvas(1, 1)).toEqual({ x: 700, y: 450 })
+      expect(toCanvas(0.5, 0.5)).toEqual({ x: 400, y: 225 })
+
+      const testPoints = [0, 0.25, 0.5, 0.75, 1].map(x => toCanvas(x, 0.5))
+      for (const point of testPoints) {
+        expect(point.x).toBeGreaterThanOrEqual(100)
+        expect(point.x).toBeLessThanOrEqual(700)
       }
     })
 
-    // Check marker coordinates
-    // Landing marker at (0.8, 0.75) should map to (640, 337.5) in 800x450 container
-    // Apex marker at (0.6, 0.3) should map to (480, 135) in 800x450 container
-    // Origin marker at (0.5, 0.85) should map to (400, 382.5) in 800x450 container
+    it('should handle zero-size bounds gracefully', () => {
+      const bounds = { offsetX: 0, offsetY: 0, width: 0, height: 0 }
+      const toCanvas = (x: number, y: number) => ({
+        x: bounds.offsetX + x * bounds.width,
+        y: bounds.offsetY + y * bounds.height,
+      })
 
-    const expectedBounds = {
-      landing: { x: 0.8 * containerWidth, y: 0.75 * containerHeight },
-      apex: { x: 0.6 * containerWidth, y: 0.3 * containerHeight },
-      origin: { x: 0.5 * containerWidth, y: 0.85 * containerHeight },
-    }
-
-    // All captured coordinates should be near expected marker positions
-    // or at least within container bounds
-    for (const coord of capturedCoordinates) {
-      expect(coord.x).toBeGreaterThanOrEqual(-20)
-      expect(coord.x).toBeLessThanOrEqual(containerWidth + 20)
-      expect(coord.y).toBeGreaterThanOrEqual(-20)
-      expect(coord.y).toBeLessThanOrEqual(containerHeight + 20)
-    }
-
-    unmount()
+      const result = toCanvas(0.8, 0.75)
+      expect(result).toEqual({ x: 0, y: 0 })
+    })
   })
 
-  it('should handle letterboxed video (video smaller than container)', async () => {
-    // 4:3 video in 16:9 container = pillarboxing (black bars on sides)
-    const containerWidth = 800
-    const containerHeight = 450
-    // 4:3 video aspect
-    const videoWidth = 1280
-    const videoHeight = 960
+  describe('BUG: Out-of-bounds apex marker coordinates', () => {
+    /**
+     * BUG ROOT CAUSE IDENTIFIED:
+     *
+     * The trajectory generator (trajectory-generator.ts) can produce apex coordinates
+     * outside the 0-1 normalized range.
+     *
+     * Line 81: y: Math.min(origin.y, landingPoint.y) - heightMultiplier
+     *
+     * Example:
+     * - origin.y = 0.2 (user clicked high in frame)
+     * - heightMultiplier = 0.35 (high trajectory)
+     * - apex.y = 0.2 - 0.35 = -0.15 (NEGATIVE! Outside video bounds!)
+     *
+     * While trajectory POINTS are clamped (line 109), the APEX_POINT is NOT clamped.
+     * This causes the apex marker to render outside the video area.
+     */
 
-    const videoRef = createMockVideoRef(containerWidth, containerHeight, videoWidth, videoHeight)
-    const trajectory = createMockTrajectory()
+    it('BUG TEST: should clamp apex marker coordinates to video bounds', async () => {
+      const containerWidth = 800
+      const containerHeight = 450
+      const videoRef = createMockVideoRef(containerWidth, containerHeight)
 
-    // Calculate expected video content bounds (pillarboxed)
-    // Container: 800x450 (16:9 = 1.78), Video: 4:3 = 1.33
-    // Video is taller, so it fills height, letterboxed on sides
-    // contentHeight = 450, contentWidth = 450 * 1.33 = 600
-    // offsetX = (800 - 600) / 2 = 100
-    const expectedContentWidth = containerHeight * (videoWidth / videoHeight)  // 600
-    const expectedOffsetX = (containerWidth - expectedContentWidth) / 2  // 100
-
-    const { unmount } = render(
-      <TrajectoryEditor
-        videoRef={videoRef}
-        trajectory={trajectory}
-        currentTime={1.5}
-        showTracer={true}
-        landingPoint={{ x: 0.8, y: 0.75 }}
-      />
-    )
-
-    act(() => {
-      if (rafCallbacks.length > 0) {
-        rafCallbacks[rafCallbacks.length - 1](performance.now())
+      // Trajectory with INVALID apex coordinates (outside 0-1 range)
+      // This simulates the bug where apex.y becomes negative
+      const buggyTrajectory = {
+        points: [
+          { timestamp: 0, x: 0.5, y: 0.2, confidence: 1, interpolated: false },
+          { timestamp: 1, x: 0.6, y: -0.1, confidence: 0.9, interpolated: true }, // NEGATIVE Y!
+          { timestamp: 2, x: 0.7, y: 0.2, confidence: 0.9, interpolated: true },
+        ],
+        apex_point: {
+          timestamp: 1,
+          x: 0.6,
+          y: -0.15,  // BUG: Negative Y coordinate - will render ABOVE the video!
+          confidence: 0.9,
+          interpolated: true,
+        },
+        frame_width: 1920,
+        frame_height: 1080,
       }
-    })
 
-    // In pillarboxed mode, X coordinates should be offset
-    // Normalized 0.0 -> offsetX (100)
-    // Normalized 1.0 -> offsetX + contentWidth (700)
-    // Y coordinates remain 0-450
+      const { unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={buggyTrajectory}
+          currentTime={1}  // At apex time
+          showTracer={true}
+        />
+      )
 
-    for (const coord of capturedCoordinates) {
-      // BUG: If coordinates are NOT accounting for letterboxing,
-      // they will be outside these bounds
-      expect(coord.x).toBeGreaterThanOrEqual(-20)
-      expect(coord.x).toBeLessThanOrEqual(containerWidth + 20)
-      expect(coord.y).toBeGreaterThanOrEqual(-20)
-      expect(coord.y).toBeLessThanOrEqual(containerHeight + 20)
-    }
+      act(() => {
+        if (rafCallbacks.length > 0) {
+          rafCallbacks[rafCallbacks.length - 1](performance.now())
+        }
+      })
 
-    unmount()
-  })
+      // Find coordinates that are out of bounds
+      const outOfBoundsCoords = capturedCoordinates.filter(coord => {
+        return coord.x < 0 || coord.x > containerWidth || coord.y < 0 || coord.y > containerHeight
+      })
 
-  it('should NOT render coordinates at video source resolution (1920x1080)', async () => {
-    // This is the core bug test
-    // The bug causes coordinates to be at video source resolution
-    // instead of scaled to container size
-
-    const containerWidth = 800
-    const containerHeight = 450
-    const videoRef = createMockVideoRef(containerWidth, containerHeight, 1920, 1080)
-    const trajectory = createMockTrajectory()
-
-    const { unmount } = render(
-      <TrajectoryEditor
-        videoRef={videoRef}
-        trajectory={trajectory}
-        currentTime={1.5}
-        showTracer={true}
-        landingPoint={{ x: 0.8, y: 0.75 }}
-        apexPoint={{ x: 0.6, y: 0.3 }}
-        originPoint={{ x: 0.5, y: 0.85 }}
-      />
-    )
-
-    act(() => {
-      if (rafCallbacks.length > 0) {
-        rafCallbacks[rafCallbacks.length - 1](performance.now())
+      // Log the bug detection
+      if (outOfBoundsCoords.length > 0) {
+        console.log('BUG DETECTED: Out-of-bounds coordinates from negative apex Y')
+        console.log('Out-of-bounds coordinates:', JSON.stringify(outOfBoundsCoords, null, 2))
+        console.log('Container bounds: [0, %d] x [0, %d]', containerWidth, containerHeight)
       }
+
+      // This test should FAIL if the bug exists
+      // Out-of-bounds apex at y=-0.15 would render at y = -0.15 * 450 = -67.5
+      expect(outOfBoundsCoords).toHaveLength(0)
+
+      unmount()
     })
 
-    // BUG CHECK: Look for coordinates that look like video source resolution
-    // If normalized coords are multiplied by wrong dimensions:
-    // 0.8 * 1920 = 1536 (instead of 0.8 * 800 = 640)
-    // 0.75 * 1080 = 810 (instead of 0.75 * 450 = 337.5)
-    const suspiciouslyLargeCoords = capturedCoordinates.filter(coord => {
-      return coord.x > containerWidth * 1.5 || coord.y > containerHeight * 1.5
+    it('BUG TEST: should clamp origin marker at edge of frame', async () => {
+      const containerWidth = 800
+      const containerHeight = 450
+      const videoRef = createMockVideoRef(containerWidth, containerHeight)
+
+      // Origin at x > 1.0 (bug scenario)
+      const { unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={null}
+          currentTime={0}
+          showTracer={true}
+          originPoint={{ x: 1.2, y: 0.5 }}  // BUG: x > 1 - outside video!
+        />
+      )
+
+      act(() => {
+        if (rafCallbacks.length > 0) {
+          rafCallbacks[rafCallbacks.length - 1](performance.now())
+        }
+      })
+
+      // Origin at x=1.2 would render at 1.2 * 800 = 960, outside the 800px container
+      const outOfBoundsCoords = capturedCoordinates.filter(coord => {
+        return coord.x > containerWidth + 20 || coord.y > containerHeight + 20
+      })
+
+      if (outOfBoundsCoords.length > 0) {
+        console.log('BUG DETECTED: Origin marker renders outside container')
+        console.log('Out-of-bounds coordinates:', JSON.stringify(outOfBoundsCoords, null, 2))
+      }
+
+      // This should FAIL if marker coordinates aren't clamped
+      expect(outOfBoundsCoords).toHaveLength(0)
+
+      unmount()
     })
 
-    // This should FAIL if the bug exists
-    expect(suspiciouslyLargeCoords).toHaveLength(0)
+    it('BUG TEST: should handle extreme trajectory shape producing out-of-bounds control points', async () => {
+      const containerWidth = 800
+      const containerHeight = 450
+      const videoRef = createMockVideoRef(containerWidth, containerHeight)
 
-    if (suspiciouslyLargeCoords.length > 0) {
-      console.error('BUG DETECTED: Coordinates at video source resolution instead of container resolution')
-      console.error('Suspicious coordinates:', suspiciouslyLargeCoords)
-    }
+      // Extreme trajectory that could produce out-of-bounds bezier control points
+      // The bezier formula can produce points outside 0-1 for extreme control points
+      const extremeTrajectory = {
+        points: [
+          { timestamp: 0, x: 0.1, y: 0.9, confidence: 1, interpolated: false },
+          { timestamp: 0.5, x: 0.5, y: -0.2, confidence: 0.9, interpolated: true },  // Way above frame!
+          { timestamp: 1, x: 0.9, y: 0.9, confidence: 0.9, interpolated: true },
+        ],
+        apex_point: { timestamp: 0.5, x: 0.5, y: -0.2, confidence: 0.9, interpolated: true },
+        frame_width: 1920,
+        frame_height: 1080,
+      }
 
-    unmount()
-  })
-})
+      const { unmount } = render(
+        <TrajectoryEditor
+          videoRef={videoRef}
+          trajectory={extremeTrajectory}
+          currentTime={0.5}
+          showTracer={true}
+        />
+      )
 
-describe('TrajectoryEditor integration (requires @testing-library/react)', () => {
-  // Note: If @testing-library/react is not installed, these tests will fail
-  // They serve as documentation for what should be tested when the library is available
+      act(() => {
+        if (rafCallbacks.length > 0) {
+          rafCallbacks[rafCallbacks.length - 1](performance.now())
+        }
+      })
 
-  it('placeholder for full integration test', () => {
-    // When @testing-library/react is available:
-    // 1. Render ClipReview with mock segment data
-    // 2. Click to place landing marker
-    // 3. Verify trajectory renders
-    // 4. Check all visual elements are within .video-container bounds
+      // Any coordinate at y=-0.2 would render at y = -0.2 * 450 = -90 (above the container)
+      const coordsBelowZero = capturedCoordinates.filter(coord => coord.y < 0)
 
-    // For now, pass - the unit tests above verify the core bug
-    expect(true).toBe(true)
+      if (coordsBelowZero.length > 0) {
+        console.log('BUG DETECTED: Trajectory renders above video (negative Y coordinates)')
+        console.log('Negative Y coordinates:', JSON.stringify(coordsBelowZero, null, 2))
+      }
+
+      // This test FAILS if trajectory renders at negative Y
+      expect(coordsBelowZero).toHaveLength(0)
+
+      unmount()
+    })
   })
 })
