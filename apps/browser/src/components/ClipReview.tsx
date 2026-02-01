@@ -49,6 +49,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [exportQuality, setExportQuality] = useState<'draft' | 'preview' | 'final'>('preview')
   const exportCancelledRef = useRef(false)
 
+  // Video playback error state
+  const [videoError, setVideoError] = useState<string | null>(null)
+
   // Auto-loop state
   const [autoLoopEnabled, setAutoLoopEnabled] = useState(true)
   const loopTimeoutRef = useRef<number | null>(null)
@@ -177,6 +180,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setOriginPoint(null)
     setReviewStep('marking_landing')
     setTrajectory(null)
+    setVideoError(null) // Clear video error on shot change
     // Reset feedback tracking for new shot
     initialTracerParamsRef.current = null
     tracerModifiedRef.current = false
@@ -188,6 +192,33 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       }
     }
   }, [currentShot?.id])
+
+  // Handle video playback errors
+  const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget
+    const error = video.error
+
+    console.error('Video playback error:', error)
+
+    let message = 'This video format is not supported by your browser.'
+    if (error) {
+      switch (error.code) {
+        case MediaError.MEDIA_ERR_ABORTED:
+          message = 'Video playback was aborted.'
+          break
+        case MediaError.MEDIA_ERR_NETWORK:
+          message = 'A network error occurred while loading the video.'
+          break
+        case MediaError.MEDIA_ERR_DECODE:
+          message = 'This video format cannot be decoded. It may use an unsupported codec like HEVC.'
+          break
+        case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+          message = 'This video format is not supported. Try re-exporting as H.264.'
+          break
+      }
+    }
+    setVideoError(message)
+  }, [])
 
   // Handle canvas click for marking points
   const handleCanvasClick = useCallback((x: number, y: number) => {
@@ -718,17 +749,35 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       </div>
 
       <div className="video-container">
-        <video
-          ref={videoRef}
-          src={currentShot.objectUrl}
-          className="review-video"
-          muted
-          playsInline
-          onClick={togglePlayPause}
-          onCanPlay={handleVideoCanPlay}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-        />
+        {videoError ? (
+          <div className="video-error-overlay">
+            <div className="video-error-content">
+              <span className="video-error-icon">⚠</span>
+              <h3>Video Cannot Play</h3>
+              <p>{videoError}</p>
+              <p className="video-error-hint">
+                The video may use HEVC/H.265 encoding which browsers cannot play natively.
+                Try processing a different video or re-export the original as H.264.
+              </p>
+              <button onClick={handleReject} className="btn-secondary">
+                Skip This Clip
+              </button>
+            </div>
+          </div>
+        ) : (
+          <video
+            ref={videoRef}
+            src={currentShot.objectUrl}
+            className="review-video"
+            muted
+            playsInline
+            onClick={togglePlayPause}
+            onCanPlay={handleVideoCanPlay}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onError={handleVideoError}
+          />
+        )}
         <TrajectoryEditor
           videoRef={videoRef as React.RefObject<HTMLVideoElement>}
           trajectory={trajectory}

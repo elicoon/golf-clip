@@ -3119,3 +3119,172 @@ kbd {
 .marker-toggle input[type="checkbox"]:disabled + span {
   opacity: 0.5;
 }
+
+/* ============================================
+   HEVC Warning Modal
+   ============================================ */
+
+.hevc-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+  padding: var(--spacing-md);
+}
+
+.hevc-modal {
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-width: 540px;
+  width: 100%;
+  overflow: hidden;
+  animation: modalSlideIn 0.3s ease;
+}
+
+.hevc-modal-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background-color: var(--color-warning-dim);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.hevc-warning-icon {
+  font-size: 2rem;
+  color: var(--color-warning);
+}
+
+.hevc-modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--color-text);
+}
+
+.hevc-modal-content {
+  padding: var(--spacing-lg);
+}
+
+.hevc-modal-content > p {
+  margin: 0 0 var(--spacing-md) 0;
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+.hevc-modal-hint {
+  color: var(--color-text-secondary) !important;
+  font-size: 0.9rem;
+}
+
+.hevc-modal-options {
+  margin-top: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.hevc-option {
+  padding: var(--spacing-md);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--color-bg-elevated);
+}
+
+.hevc-option h4 {
+  margin: 0 0 var(--spacing-sm) 0;
+  font-size: 1rem;
+  color: var(--color-text);
+}
+
+.hevc-option p {
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.hevc-option ol {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.hevc-option ol li {
+  margin-bottom: var(--spacing-xs);
+}
+
+.hevc-option .btn-primary {
+  width: 100%;
+}
+
+.hevc-option-divider {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  padding: var(--spacing-xs) 0;
+}
+
+.hevc-modal-footer {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--color-bg-tertiary);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ============================================
+   Video Error Overlay
+   ============================================ */
+
+.video-error-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--color-bg-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+}
+
+.video-error-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.video-error-icon {
+  font-size: 3rem;
+  color: var(--color-warning);
+  margin-bottom: var(--spacing-md);
+}
+
+.video-error-content h3 {
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: 1.25rem;
+  color: var(--color-text);
+}
+
+.video-error-content p {
+  margin: 0 0 var(--spacing-md) 0;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.video-error-hint {
+  font-size: 0.875rem !important;
+  color: var(--color-text-muted) !important;
+  margin-bottom: var(--spacing-lg) !important;
+}
+
+.video-error-content .btn-secondary {
+  margin-top: var(--spacing-md);
+}
