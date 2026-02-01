@@ -11,9 +11,12 @@ interface TracerConfigPanelProps {
   onGenerate: () => void
   onMarkApex: () => void
   onMarkOrigin: () => void
+  onMarkLanding?: () => void
   hasChanges: boolean
   apexMarked: boolean
   originMarked: boolean
+  landingMarked?: boolean
+  isMarkingLanding?: boolean
   isGenerating: boolean
   isCollapsed: boolean
   onToggleCollapse: () => void
@@ -30,9 +33,12 @@ export function TracerConfigPanel({
   onGenerate,
   onMarkApex,
   onMarkOrigin,
+  onMarkLanding,
   hasChanges,
   apexMarked,
   originMarked,
+  landingMarked,
+  isMarkingLanding,
   isGenerating,
   isCollapsed,
   onToggleCollapse,
@@ -205,6 +211,22 @@ export function TracerConfigPanel({
             </button>
             <span className="optional-hint">(if auto wrong)</span>
           </div>
+
+          {/* Landing Point */}
+          {onMarkLanding && (
+            <div className="config-row">
+              <label>Landing Point</label>
+              <button
+                type="button"
+                className={`btn-option btn-landing ${landingMarked ? 'marked' : ''}`}
+                onClick={onMarkLanding}
+                disabled={isGenerating || isMarkingLanding}
+                title={landingMarked ? 'Click to re-mark where ball landed' : 'Click to mark where ball landed on video'}
+              >
+                {isMarkingLanding ? 'Click on video...' : landingMarked ? 'Re-mark Landing' : 'Mark on Video'}
+              </button>
+            </div>
+          )}
 
           {/* Apex Point */}
           <div className="config-row">

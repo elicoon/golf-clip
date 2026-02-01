@@ -27,6 +27,7 @@ interface TrajectoryEditorProps {
   markingStep?: 'confirming_shot' | 'marking_landing' | 'generating' | 'reviewing'
   isMarkingApex?: boolean
   isMarkingOrigin?: boolean
+  isMarkingLanding?: boolean
 }
 
 // Custom cursor SVG for landing point marker placement
@@ -76,6 +77,7 @@ export function TrajectoryEditor({
   markingStep = 'reviewing',
   isMarkingApex = false,
   isMarkingOrigin = false,
+  isMarkingLanding = false,
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
@@ -571,6 +573,10 @@ export function TrajectoryEditor({
     // Apex marking takes priority when active
     if (isMarkingApex) {
       return svgToCursor(apexCursorSvg, 16, 16)  // Hotspot at center of diamond
+    }
+    // Landing re-marking mode
+    if (isMarkingLanding) {
+      return svgToCursor(landingCursorSvg, 16, 28)  // Hotspot at arrow tip
     }
     switch (markingStep) {
       case 'marking_landing':
