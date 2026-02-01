@@ -37,11 +37,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [isMarkingApex, setIsMarkingApex] = useState(false)
   const [isMarkingOrigin, setIsMarkingOrigin] = useState(false)
+  const [isMarkingLanding, setIsMarkingLanding] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
 
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 })
+  const [exportPhase, setExportPhase] = useState<{ phase: string; progress: number }>({ phase: '', progress: 0 })
   const [exportComplete, setExportComplete] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportQuality, setExportQuality] = useState<'draft' | 'preview' | 'final'>('preview')
@@ -199,6 +201,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       setIsMarkingOrigin(false)
       setHasUnsavedChanges(true)
       tracerModifiedRef.current = true
+    } else if (isMarkingLanding) {
+      setLandingPoint({ x, y })
+      setIsMarkingLanding(false)
+      setHasUnsavedChanges(true)
+      tracerModifiedRef.current = true
+      if (currentShot) {
+        updateSegment(currentShot.id, { landingPoint: { x, y } })
+      }
     } else if (reviewStep === 'marking_landing') {
       setLandingPoint({ x, y })
       // Start trajectory animation from when the ball is struck in the video segment
@@ -220,7 +230,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         updateSegment(currentShot.id, { landingPoint: { x, y }, trajectory: traj })
       }
     }
-  }, [reviewStep, tracerConfig, isMarkingApex, isMarkingOrigin, currentShot, updateSegment])
+  }, [reviewStep, tracerConfig, isMarkingApex, isMarkingOrigin, isMarkingLanding, currentShot, updateSegment])
 
   // TracerConfigPanel handlers
   const handleConfigChange = useCallback((config: TracerConfig) => {
@@ -238,11 +248,19 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (!landingPoint) return
     setIsGenerating(true)
     try {
-      // Small delay to ensure UI updates before generation
-      await new Promise(resolve => setTimeout(resolve, 50))
+      // Minimum 300ms delay so user sees loading state
+      const startTime = Date.now()
+
       // Start trajectory animation from when the ball is struck in the video segment
       const strikeOffset = currentShot ? currentShot.strikeTime - currentShot.startTime : 0
       const traj = generateTrajectory(landingPoint, tracerConfig, originPoint || undefined, apexPoint || undefined, strikeOffset)
+
+      // Ensure at least 300ms has passed for visible feedback
+      const elapsed = Date.now() - startTime
+      if (elapsed < 300) {
+        await new Promise(resolve => setTimeout(resolve, 300 - elapsed))
+      }
+
       setTrajectory(traj)
       setHasUnsavedChanges(false)
       if (currentShot) {
@@ -256,11 +274,19 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const handleMarkApex = useCallback(() => {
     setIsMarkingApex(true)
     setIsMarkingOrigin(false)
+    setIsMarkingLanding(false)
   }, [])
 
   const handleMarkOrigin = useCallback(() => {
     setIsMarkingOrigin(true)
     setIsMarkingApex(false)
+    setIsMarkingLanding(false)
+  }, [])
+
+  const handleMarkLanding = useCallback(() => {
+    setIsMarkingLanding(true)
+    setIsMarkingApex(false)
+    setIsMarkingOrigin(false)
   }, [])
 
   // Export approved clips
@@ -276,6 +302,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     setShowExportModal(true)
     setExportProgress({ current: 0, total: approved.length })
+    setExportPhase({ phase: '', progress: 0 })
     setExportComplete(false)
     setExportError(null)
     exportCancelledRef.current = false
@@ -308,6 +335,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
             originPoint: originPoint ?? undefined,
             onProgress: (progress) => {
               console.log(`Export progress: ${progress.phase} ${progress.progress}%`)
+              setExportPhase({ phase: progress.phase, progress: progress.progress })
             }
           }
 
@@ -402,14 +430,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     approveSegment(currentShot.id)
 
-    if (currentIndex >= shotsNeedingReview.length - 1) {
-      // All shots reviewed - trigger export
-      handleExport()
-    } else {
+    if (currentIndex < shotsNeedingReview.length - 1) {
       // Stay at same index - approved shot will filter out
       setCurrentIndex(Math.min(currentIndex, shotsNeedingReview.length - 2))
     }
-  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, handleExport, landingPoint, trajectory, originPoint, apexPoint, tracerConfig, tracerStyle])
+    // When last shot is approved, component will naturally show review-complete UI
+    // User can then click the export button when ready
+  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, landingPoint, trajectory, originPoint, apexPoint, tracerConfig, tracerStyle])
 
   const handleReject = useCallback(() => {
     if (!currentShot) return
@@ -426,13 +453,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     rejectSegment(currentShot.id)
 
-    if (currentIndex >= shotsNeedingReview.length - 1) {
-      // All shots reviewed - trigger export
-      handleExport()
-    } else {
+    if (currentIndex < shotsNeedingReview.length - 1) {
       setCurrentIndex(Math.min(currentIndex, shotsNeedingReview.length - 2))
     }
-  }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment, handleExport])
+    // When last shot is rejected, component will naturally show review-complete UI
+    // User can then click the export button when ready (if any shots were approved)
+  }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment])
 
   const togglePlayPause = useCallback(() => {
     if (!videoRef.current) return
@@ -571,6 +597,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                 <span className="quality-desc">Best</span>
               </button>
             </div>
+            <p className="export-format-hint" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+              Clips with tracer: .mp4 | Clips without tracer: .webm
+            </p>
           </div>
         )}
         <div className="review-complete-actions">
@@ -583,6 +612,61 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
             Process Another Video
           </button>
         </div>
+
+        {/* Export Modal - also rendered in complete state */}
+        {showExportModal && (
+          <div className="export-modal-overlay">
+            <div className="export-modal">
+              <div className="export-modal-header">
+                <h3>{exportError ? 'Export Failed' : exportComplete ? 'Export Complete!' : 'Exporting Clips'}</h3>
+              </div>
+              <div className="export-modal-content">
+                {exportError ? (
+                  <>
+                    <div className="export-error-icon">!</div>
+                    <p className="export-error-message">{exportError}</p>
+                    <button
+                      onClick={() => { setShowExportModal(false); setExportError(null) }}
+                      className="btn-secondary"
+                    >
+                      Close
+                    </button>
+                  </>
+                ) : !exportComplete ? (
+                  <>
+                    <div className="export-progress-bar">
+                      <div
+                        className="export-progress-fill"
+                        style={{ width: `${exportPhase.progress}%` }}
+                      />
+                    </div>
+                    <p className="export-status">
+                      Clip {exportProgress.current} of {exportProgress.total}
+                      {exportPhase.phase && ` — ${exportPhase.phase} ${exportPhase.progress}%`}
+                    </p>
+                    <button
+                      onClick={() => { exportCancelledRef.current = true; setShowExportModal(false) }}
+                      className="btn-secondary"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="export-success-icon">✓</div>
+                    <p className="export-result">{exportProgress.total} clips downloaded</p>
+                    <button
+                      onClick={() => { setShowExportModal(false); onComplete() }}
+                      className="btn-primary"
+                    >
+                      Done
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -657,6 +741,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           markingStep={reviewStep}
           isMarkingApex={isMarkingApex}
           isMarkingOrigin={isMarkingOrigin}
+          isMarkingLanding={isMarkingLanding}
         />
       </div>
 
@@ -690,9 +775,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           onGenerate={handleGenerate}
           onMarkApex={handleMarkApex}
           onMarkOrigin={handleMarkOrigin}
+          onMarkLanding={handleMarkLanding}
           hasChanges={hasUnsavedChanges}
           apexMarked={!!apexPoint}
           originMarked={!!originPoint}
+          landingMarked={!!landingPoint}
+          isMarkingLanding={isMarkingLanding}
           isGenerating={isGenerating}
           isCollapsed={!showConfigPanel}
           onToggleCollapse={() => setShowConfigPanel(!showConfigPanel)}
@@ -761,11 +849,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                   <div className="export-progress-bar">
                     <div
                       className="export-progress-fill"
-                      style={{ width: `${(exportProgress.current / exportProgress.total) * 100}%` }}
+                      style={{ width: `${exportPhase.progress}%` }}
                     />
                   </div>
                   <p className="export-status">
-                    Downloading {exportProgress.current} of {exportProgress.total}...
+                    Clip {exportProgress.current} of {exportProgress.total}
+                    {exportPhase.phase && ` — ${exportPhase.phase} ${exportPhase.progress}%`}
                   </p>
                   <button
                     onClick={() => { exportCancelledRef.current = true; setShowExportModal(false) }}
