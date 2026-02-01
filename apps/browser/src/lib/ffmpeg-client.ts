@@ -244,8 +244,9 @@ export async function transcodeHevcToH264(
   let abortHandler: (() => void) | undefined
   if (signal) {
     abortHandler = () => {
-      // FFmpeg WASM doesn't have a clean abort API, but we can
-      // throw on next progress callback
+      // FFmpeg WASM doesn't have a clean abort API
+      // We remove the progress listener to stop UI updates
+      // The abort check before each FFmpeg operation will throw
       ffmpeg?.off('progress', progressHandler)
     }
     signal.addEventListener('abort', abortHandler)

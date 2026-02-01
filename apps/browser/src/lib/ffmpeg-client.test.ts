@@ -8,17 +8,7 @@ describe('transcodeHevcToH264', () => {
     vi.resetModules()
   })
 
-  it('should abort transcoding when signal is aborted', async () => {
-    // This test documents the expected behavior
-    // Actual implementation will use AbortController
-    const abortController = new AbortController()
-
-    // Abort immediately
-    abortController.abort()
-
-    // Function should throw AbortError when signal is already aborted
-    expect(abortController.signal.aborted).toBe(true)
-  })
+  // Removed test that only verified AbortController works, not our implementation
 
   it('throws when transcoding without loading FFmpeg first', async () => {
     const { transcodeHevcToH264 } = await import('./ffmpeg-client')
@@ -32,15 +22,15 @@ describe('transcodeHevcToH264', () => {
   it('throws AbortError when signal is already aborted', async () => {
     // Mock FFmpeg as loaded to test abort behavior
     vi.doMock('@ffmpeg/ffmpeg', () => ({
-      FFmpeg: vi.fn().mockImplementation(() => ({
-        load: vi.fn().mockResolvedValue(undefined),
-        on: vi.fn(),
-        off: vi.fn(),
-        writeFile: vi.fn().mockResolvedValue(undefined),
-        exec: vi.fn().mockResolvedValue(0),
-        readFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
-        deleteFile: vi.fn().mockResolvedValue(undefined),
-      })),
+      FFmpeg: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+        this.load = vi.fn().mockResolvedValue(undefined)
+        this.on = vi.fn()
+        this.off = vi.fn()
+        this.writeFile = vi.fn().mockResolvedValue(undefined)
+        this.exec = vi.fn().mockResolvedValue(0)
+        this.readFile = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]))
+        this.deleteFile = vi.fn().mockResolvedValue(undefined)
+      }),
     }))
 
     vi.doMock('@ffmpeg/util', () => ({
