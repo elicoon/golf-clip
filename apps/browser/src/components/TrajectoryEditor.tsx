@@ -614,6 +614,7 @@ export function TrajectoryEditor({
         zIndex: 10,
         filter: 'none',
         mixBlendMode: 'normal' as const,
+        overflow: 'hidden', // Safety net for any out-of-bounds rendering
       }}
     />
   )
