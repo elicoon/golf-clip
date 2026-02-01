@@ -258,6 +258,13 @@ export function TrajectoryEditor({
       y: bounds.offsetY + y * bounds.height,
     })
 
+    // Clamped version that ensures coordinates stay within video bounds
+    const clampedToCanvas = (x: number, y: number) => {
+      const clampedX = Math.max(0, Math.min(1, x))
+      const clampedY = Math.max(0, Math.min(1, y))
+      return toCanvas(clampedX, clampedY)
+    }
+
     // Helper to draw smooth curve using quadratic Bezier spline
     const drawSmoothCurve = (points: TrajectoryPoint[]) => {
       if (points.length < 2) return
