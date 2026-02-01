@@ -1,13 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useProcessingStore, TrajectoryData, TracerConfig } from '../stores/processingStore'
+import { useProcessingStore, TrajectoryData, TracerConfig, VideoSegment } from '../stores/processingStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
+import { HevcTranscodeModal, HevcTranscodeModalState, initialHevcTranscodeModalState } from './HevcTranscodeModal'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
 import { VideoFramePipeline, ExportConfig, HevcExportError } from '../lib/video-frame-pipeline'
-import { loadFFmpeg, getFFmpegInstance, transcodeHevcToH264, estimateTranscodeTime, formatRemainingTime } from '../lib/ffmpeg-client'
+import { loadFFmpeg, getFFmpegInstance, transcodeHevcToH264, estimateTranscodeTime } from '../lib/ffmpeg-client'
 import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
+
+/** Minimum delay for trajectory generation to show loading state feedback */
+const TRAJECTORY_GENERATION_MIN_DELAY_MS = 300
 
 interface ClipReviewProps {
   onComplete: () => void
@@ -50,23 +54,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const exportCancelledRef = useRef(false)
 
   // HEVC transcode modal state (shown when export fails due to HEVC codec)
-  const [hevcTranscodeModal, setHevcTranscodeModal] = useState<{
-    show: boolean
-    segmentIndex: number
-    segmentBlob: Blob | null
-    estimatedTime: string
-    isTranscoding: boolean
-    transcodeProgress: number
-    transcodeStartTime: number | null
-  }>({
-    show: false,
-    segmentIndex: 0,
-    segmentBlob: null,
-    estimatedTime: '',
-    isTranscoding: false,
-    transcodeProgress: 0,
-    transcodeStartTime: null,
-  })
+  const [hevcTranscodeModal, setHevcTranscodeModal] = useState<HevcTranscodeModalState>(initialHevcTranscodeModalState)
   const transcodeAbortRef = useRef<AbortController | null>(null)
 
   // Video playback error state
@@ -309,17 +297,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (!landingPoint) return
     setIsGenerating(true)
     try {
-      // Minimum 300ms delay so user sees loading state
+      // Minimum delay so user sees loading state
       const startTime = Date.now()
 
       // Start trajectory animation from when the ball is struck in the video segment
       const strikeOffset = currentShot ? currentShot.strikeTime - currentShot.startTime : 0
       const traj = generateTrajectory(landingPoint, tracerConfig, originPoint || undefined, apexPoint || undefined, strikeOffset)
 
-      // Ensure at least 300ms has passed for visible feedback
+      // Ensure minimum time has passed for visible feedback
       const elapsed = Date.now() - startTime
-      if (elapsed < 300) {
-        await new Promise(resolve => setTimeout(resolve, 300 - elapsed))
+      if (elapsed < TRAJECTORY_GENERATION_MIN_DELAY_MS) {
+        await new Promise(resolve => setTimeout(resolve, TRAJECTORY_GENERATION_MIN_DELAY_MS - elapsed))
       }
 
       setTrajectory(traj)
@@ -354,7 +342,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   // Returns the blob if successful, null if skipped (no trajectory)
   const exportSegmentWithTracer = useCallback(async (
     segment: typeof segments[0],
-    segmentIndex: number,
+    _segmentIndex: number,
     pipeline: VideoFramePipeline
   ): Promise<Blob | null> => {
     if (!segment.trajectory || segment.trajectory.points.length === 0) {
@@ -373,7 +361,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       apexPoint: apexPoint ?? undefined,
       originPoint: originPoint ?? undefined,
       onProgress: (progress) => {
-        console.log(`Export progress: ${progress.phase} ${progress.progress}%`)
         setExportPhase({ phase: progress.phase, progress: progress.progress })
       }
     }
@@ -475,15 +462,34 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     const segmentBlob = hevcTranscodeModal.segmentBlob
     const segmentIndex = hevcTranscodeModal.segmentIndex
 
+    // Get the segment ID to track it and prevent recursive loops
+    const currentSegments = useProcessingStore.getState().segments
+    const approved = currentSegments.filter(s => s.approved === 'approved')
+    const segment = approved[segmentIndex]
+
+    if (!segment) return
+
+    // Guard: Check if this segment was already transcoded to prevent recursive loops
+    // This can happen if transcode succeeds but export still fails for some reason
+    const alreadyTranscoded = hevcTranscodeModal.transcodedSegmentIds?.has(segment.id)
+    if (alreadyTranscoded) {
+      // This segment was already transcoded but still failed - show error instead of looping
+      setHevcTranscodeModal(initialHevcTranscodeModalState)
+      setShowExportModal(true)
+      setExportError(`Export failed for clip ${segmentIndex + 1}: Video still cannot be processed after conversion`)
+      return
+    }
+
     // Create abort controller for cancellation
     transcodeAbortRef.current = new AbortController()
 
-    // Update state to show transcoding progress
+    // Update state to show transcoding progress and track this segment
     setHevcTranscodeModal(prev => ({
       ...prev,
       isTranscoding: true,
       transcodeProgress: 0,
       transcodeStartTime: Date.now(),
+      transcodedSegmentIds: new Set([...(prev.transcodedSegmentIds || []), segment.id]),
     }))
 
     try {
@@ -499,32 +505,22 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         transcodeAbortRef.current.signal
       )
 
-      // Update the segment in the store with the transcoded blob
-      const currentSegments = useProcessingStore.getState().segments
-      const approved = currentSegments.filter(s => s.approved === 'approved')
-      const segment = approved[segmentIndex]
+      // Revoke old object URL
+      URL.revokeObjectURL(segment.objectUrl)
 
-      if (segment) {
-        // Revoke old object URL
-        URL.revokeObjectURL(segment.objectUrl)
-
-        // Update segment with transcoded blob
-        useProcessingStore.getState().updateSegment(segment.id, {
-          blob: h264Blob,
-          objectUrl: URL.createObjectURL(h264Blob),
-        } as any)
+      // Update segment with transcoded blob
+      const newObjectUrl = URL.createObjectURL(h264Blob)
+      const segmentUpdate: Partial<VideoSegment> = {
+        blob: h264Blob,
+        objectUrl: newObjectUrl,
       }
+      useProcessingStore.getState().updateSegment(segment.id, segmentUpdate)
 
-      // Close transcode modal and restart export
-      setHevcTranscodeModal({
-        show: false,
-        segmentIndex: 0,
-        segmentBlob: null,
-        estimatedTime: '',
-        isTranscoding: false,
-        transcodeProgress: 0,
-        transcodeStartTime: null,
-      })
+      // Close transcode modal (preserve transcodedSegmentIds to track) and restart export
+      setHevcTranscodeModal(prev => ({
+        ...initialHevcTranscodeModalState,
+        transcodedSegmentIds: prev.transcodedSegmentIds,
+      }))
 
       // Restart export (it will now use the transcoded segment)
       handleExport()
@@ -539,35 +535,22 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         }))
         return
       }
-      // Other error - show in export modal
-      setHevcTranscodeModal({
-        show: false,
-        segmentIndex: 0,
-        segmentBlob: null,
-        estimatedTime: '',
-        isTranscoding: false,
-        transcodeProgress: 0,
-        transcodeStartTime: null,
-      })
+      // Other error - show in export modal (preserve transcodedSegmentIds)
+      setHevcTranscodeModal(prev => ({
+        ...initialHevcTranscodeModalState,
+        transcodedSegmentIds: prev.transcodedSegmentIds,
+      }))
       setShowExportModal(true)
       setExportError(`Transcode failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
       transcodeAbortRef.current = null
     }
-  }, [hevcTranscodeModal.segmentBlob, hevcTranscodeModal.segmentIndex, handleExport])
+  }, [hevcTranscodeModal.segmentBlob, hevcTranscodeModal.segmentIndex, hevcTranscodeModal.transcodedSegmentIds, handleExport])
 
   // Cancel HEVC transcode modal (go back to review)
   const handleCancelHevcTranscode = useCallback(() => {
     transcodeAbortRef.current?.abort()
-    setHevcTranscodeModal({
-      show: false,
-      segmentIndex: 0,
-      segmentBlob: null,
-      estimatedTime: '',
-      isTranscoding: false,
-      transcodeProgress: 0,
-      transcodeStartTime: null,
-    })
+    setHevcTranscodeModal(initialHevcTranscodeModalState)
   }, [])
 
   const handlePrevious = useCallback(() => {
@@ -867,76 +850,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         )}
 
         {/* HEVC Transcode Modal - also rendered in complete state */}
-        {hevcTranscodeModal.show && (
-          <div className="hevc-modal-overlay">
-            <div className="hevc-modal">
-              <div className="hevc-modal-header">
-                <span className="hevc-warning-icon">⚠</span>
-                <h3>Video Needs Conversion</h3>
-              </div>
-
-              <div className="hevc-modal-content">
-                {!hevcTranscodeModal.isTranscoding ? (
-                  <>
-                    <p>
-                      This clip uses HEVC encoding, which cannot be processed for tracer export.
-                      The video needs to be converted to H.264 format first.
-                    </p>
-
-                    <div className="hevc-time-estimate">
-                      <p>
-                        Estimated conversion time: <strong>{hevcTranscodeModal.estimatedTime}</strong>
-                      </p>
-                      <p className="hevc-modal-hint">
-                        Processing happens in your browser and may be slower on older devices.
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="hevc-progress-container">
-                      <p className="hevc-progress-status">Converting video...</p>
-                      <div className="hevc-progress-bar">
-                        <div
-                          className="hevc-progress-fill"
-                          style={{ width: `${hevcTranscodeModal.transcodeProgress}%` }}
-                        />
-                      </div>
-                      <div className="hevc-progress-info">
-                        <span>{hevcTranscodeModal.transcodeProgress}%</span>
-                        <span>
-                          {hevcTranscodeModal.transcodeStartTime &&
-                            formatRemainingTime(
-                              hevcTranscodeModal.transcodeProgress,
-                              Date.now() - hevcTranscodeModal.transcodeStartTime
-                            )
-                          }
-                        </span>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="hevc-modal-footer">
-                {!hevcTranscodeModal.isTranscoding ? (
-                  <>
-                    <button onClick={handleCancelHevcTranscode} className="btn-secondary">
-                      Cancel Export
-                    </button>
-                    <button onClick={handleTranscodeAndExport} className="btn-primary">
-                      Start Conversion
-                    </button>
-                  </>
-                ) : (
-                  <button onClick={handleCancelHevcTranscode} className="btn-secondary">
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        <HevcTranscodeModal
+          state={hevcTranscodeModal}
+          onStartTranscode={handleTranscodeAndExport}
+          onCancel={handleCancelHevcTranscode}
+        />
       </div>
     )
   }
@@ -1176,76 +1094,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       )}
 
       {/* HEVC Transcode Modal - shown when export fails due to HEVC codec */}
-      {hevcTranscodeModal.show && (
-        <div className="hevc-modal-overlay">
-          <div className="hevc-modal">
-            <div className="hevc-modal-header">
-              <span className="hevc-warning-icon">⚠</span>
-              <h3>Video Needs Conversion</h3>
-            </div>
-
-            <div className="hevc-modal-content">
-              {!hevcTranscodeModal.isTranscoding ? (
-                <>
-                  <p>
-                    This clip uses HEVC encoding, which cannot be processed for tracer export.
-                    The video needs to be converted to H.264 format first.
-                  </p>
-
-                  <div className="hevc-time-estimate">
-                    <p>
-                      Estimated conversion time: <strong>{hevcTranscodeModal.estimatedTime}</strong>
-                    </p>
-                    <p className="hevc-modal-hint">
-                      Processing happens in your browser and may be slower on older devices.
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="hevc-progress-container">
-                    <p className="hevc-progress-status">Converting video...</p>
-                    <div className="hevc-progress-bar">
-                      <div
-                        className="hevc-progress-fill"
-                        style={{ width: `${hevcTranscodeModal.transcodeProgress}%` }}
-                      />
-                    </div>
-                    <div className="hevc-progress-info">
-                      <span>{hevcTranscodeModal.transcodeProgress}%</span>
-                      <span>
-                        {hevcTranscodeModal.transcodeStartTime &&
-                          formatRemainingTime(
-                            hevcTranscodeModal.transcodeProgress,
-                            Date.now() - hevcTranscodeModal.transcodeStartTime
-                          )
-                        }
-                      </span>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="hevc-modal-footer">
-              {!hevcTranscodeModal.isTranscoding ? (
-                <>
-                  <button onClick={handleCancelHevcTranscode} className="btn-secondary">
-                    Cancel Export
-                  </button>
-                  <button onClick={handleTranscodeAndExport} className="btn-primary">
-                    Start Conversion
-                  </button>
-                </>
-              ) : (
-                <button onClick={handleCancelHevcTranscode} className="btn-secondary">
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <HevcTranscodeModal
+        state={hevcTranscodeModal}
+        onStartTranscode={handleTranscodeAndExport}
+        onCancel={handleCancelHevcTranscode}
+      />
     </div>
   )
 }

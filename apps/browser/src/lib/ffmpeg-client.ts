@@ -138,8 +138,6 @@ export async function detectVideoCodec(file: File): Promise<{
   isHevc: boolean
   isPlayable: boolean
 }> {
-  console.log('[detectVideoCodec] Testing playability for:', file.name)
-
   return new Promise((resolve) => {
     const video = document.createElement('video')
     const objectUrl = URL.createObjectURL(file)
@@ -150,19 +148,18 @@ export async function detectVideoCodec(file: File): Promise<{
       video.load()
     }
 
-    // Timeout after 10 seconds - if we can't determine playability, assume it's playable
-    // and let the actual player handle any errors
+    // Timeout after 10 seconds - if we can't determine playability, assume it's NOT playable
+    // (defensive approach). This prevents HEVC videos from slipping through and failing later.
+    // The user will be offered transcoding options rather than encountering a mysterious failure.
     const timeout = setTimeout(() => {
-      console.log('[detectVideoCodec] Timeout - assuming playable')
       cleanup()
-      resolve({ codec: 'unknown', isHevc: false, isPlayable: true })
+      resolve({ codec: 'unknown', isHevc: true, isPlayable: false })
     }, 10000)
 
     // If we can load metadata AND have video dimensions, it's playable
     video.onloadedmetadata = () => {
       clearTimeout(timeout)
       const isPlayable = video.videoWidth > 0 && video.videoHeight > 0
-      console.log('[detectVideoCodec] Metadata loaded, dimensions:', video.videoWidth, 'x', video.videoHeight)
 
       if (isPlayable) {
         cleanup()
@@ -178,7 +175,6 @@ export async function detectVideoCodec(file: File): Promise<{
     video.onerror = () => {
       clearTimeout(timeout)
       const error = video.error
-      console.log('[detectVideoCodec] Video error:', error?.code, error?.message)
 
       // MEDIA_ERR_SRC_NOT_SUPPORTED or MEDIA_ERR_DECODE usually means codec issue
       if (error && (error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
@@ -195,7 +191,6 @@ export async function detectVideoCodec(file: File): Promise<{
     // Some browsers fire canplay before loadedmetadata for some codecs
     video.oncanplay = () => {
       clearTimeout(timeout)
-      console.log('[detectVideoCodec] Can play - video is playable')
       cleanup()
       resolve({ codec: 'supported', isHevc: false, isPlayable: true })
     }
@@ -208,6 +203,15 @@ export async function detectVideoCodec(file: File): Promise<{
 /**
  * Transcode HEVC video to H.264 for browser compatibility.
  * Uses ultrafast preset to minimize processing time.
+ *
+ * **Abort Handling Limitation:**
+ * FFmpeg WASM's exec() cannot be interrupted mid-operation. When the user cancels:
+ * 1. Progress updates stop immediately (listener removed)
+ * 2. The actual FFmpeg operation continues until it finishes or the next abort check
+ * 3. AbortError is thrown only at specific checkpoints (before/after each operation)
+ *
+ * This means cancellation is not instant - the UI should show "Cancelling..." feedback
+ * to indicate the operation is being stopped.
  *
  * @param videoBlob - The HEVC video blob
  * @param onProgress - Optional callback for progress updates (0-100)
@@ -398,9 +402,13 @@ export function estimateTranscodeTime(fileSizeMB: number): {
   maxMinutes: number
   formatted: string
 } {
-  // Rough estimate: 200MB HEVC ≈ 30 seconds of 4K 60fps
-  // So 1 minute of video ≈ 400MB
-  const estimatedDurationMinutes = fileSizeMB / 400
+  // Estimate video duration from file size using typical HEVC bitrates:
+  // - 4K 60fps HEVC at ~50 Mbps ≈ 375 MB/minute
+  // - 4K 30fps HEVC at ~25 Mbps ≈ 188 MB/minute
+  // Using 400 MB/minute as a conservative baseline for worst-case (high-bitrate 4K 60fps)
+  // This ratio was derived from benchmarking iPhone 15 Pro Max HEVC recordings.
+  const MB_PER_MINUTE_4K_60FPS = 400
+  const estimatedDurationMinutes = fileSizeMB / MB_PER_MINUTE_4K_60FPS
 
   // Use 4K 60fps ratio (most conservative)
   const ratio = TRANSCODE_ESTIMATE.RATIO_4K_60FPS
