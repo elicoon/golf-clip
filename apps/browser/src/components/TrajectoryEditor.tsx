@@ -269,25 +269,25 @@ export function TrajectoryEditor({
     const drawSmoothCurve = (points: TrajectoryPoint[]) => {
       if (points.length < 2) return
 
-      const first = toCanvas(points[0].x, points[0].y)
+      const first = clampedToCanvas(points[0].x, points[0].y)
       ctx.moveTo(first.x, first.y)
 
       if (points.length === 2) {
-        const second = toCanvas(points[1].x, points[1].y)
+        const second = clampedToCanvas(points[1].x, points[1].y)
         ctx.lineTo(second.x, second.y)
         return
       }
 
       for (let i = 1; i < points.length - 1; i++) {
-        const current = toCanvas(points[i].x, points[i].y)
-        const next = toCanvas(points[i + 1].x, points[i + 1].y)
+        const current = clampedToCanvas(points[i].x, points[i].y)
+        const next = clampedToCanvas(points[i + 1].x, points[i + 1].y)
         const midX = (current.x + next.x) / 2
         const midY = (current.y + next.y) / 2
         ctx.quadraticCurveTo(current.x, current.y, midX, midY)
       }
 
-      const last = toCanvas(points[points.length - 1].x, points[points.length - 1].y)
-      const secondLast = toCanvas(points[points.length - 2].x, points[points.length - 2].y)
+      const last = clampedToCanvas(points[points.length - 1].x, points[points.length - 1].y)
+      const secondLast = clampedToCanvas(points[points.length - 2].x, points[points.length - 2].y)
       ctx.quadraticCurveTo(secondLast.x, secondLast.y, last.x, last.y)
     }
 
