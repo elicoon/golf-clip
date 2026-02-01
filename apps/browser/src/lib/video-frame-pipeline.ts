@@ -2,6 +2,18 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 import { CanvasCompositor, TracerStyle, TrajectoryPoint } from './canvas-compositor'
+import { isHevcCodec } from './ffmpeg-client'
+
+/**
+ * Error thrown when attempting to export HEVC-encoded video.
+ * FFmpeg WASM cannot decode HEVC, so the video must be transcoded first.
+ */
+export class HevcExportError extends Error {
+  constructor(message: string = 'Cannot export HEVC video. The video must be transcoded to H.264 first.') {
+    super(message)
+    this.name = 'HevcExportError'
+  }
+}
 
 export interface ExportProgress {
   phase: 'extracting' | 'compositing' | 'encoding' | 'complete'
@@ -62,6 +74,13 @@ export class VideoFramePipeline {
 
     const duration = endTime - startTime
     const totalFrames = this.calculateFrameCount(duration, fps)
+
+    // Check for HEVC codec before attempting frame extraction
+    // FFmpeg WASM cannot decode HEVC, so we need to fail fast with a clear error
+    const isHevc = await isHevcCodec(videoBlob)
+    if (isHevc) {
+      throw new HevcExportError()
+    }
 
     // Phase 1: Extract frames from video
     onProgress?.({ phase: 'extracting', progress: 0 })
