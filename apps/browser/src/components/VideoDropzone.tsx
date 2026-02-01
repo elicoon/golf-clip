@@ -12,16 +12,33 @@ interface HevcWarningState {
   show: boolean
   file: File | null
   codec: string
+  fileSizeMB: number
+  estimatedTime: string
+  isTranscoding: boolean
+  transcodeProgress: number
+  transcodeStartTime: number | null
+}
+
+const initialHevcState: HevcWarningState = {
+  show: false,
+  file: null,
+  codec: '',
+  fileSizeMB: 0,
+  estimatedTime: '',
+  isTranscoding: false,
+  transcodeProgress: 0,
+  transcodeStartTime: null,
 }
 
 export function VideoDropzone() {
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isCheckingCodec, setIsCheckingCodec] = useState(false)
-  const [hevcWarning, setHevcWarning] = useState<HevcWarningState>({ show: false, file: null, codec: '' })
+  const [hevcWarning, setHevcWarning] = useState<HevcWarningState>(initialHevcState)
   const { status, progress, progressMessage, fileName, setProgress, setStatus } = useProcessingStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
+  const transcodeAbortRef = useRef<AbortController | null>(null)
 
   const validateFile = (file: File): string | null => {
     const hasValidType = ACCEPTED_TYPES.includes(file.type)
