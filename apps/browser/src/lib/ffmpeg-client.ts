@@ -211,14 +211,24 @@ export async function detectVideoCodec(file: File): Promise<{
  *
  * @param videoBlob - The HEVC video blob
  * @param onProgress - Optional callback for progress updates (0-100)
+ * @param signal - Optional AbortSignal to cancel transcoding
  * @returns H.264 encoded video blob
+ * @throws Error with name 'AbortError' if cancelled
  */
 export async function transcodeHevcToH264(
   videoBlob: Blob,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  signal?: AbortSignal
 ): Promise<Blob> {
   if (!ffmpeg || !loaded) {
     throw new Error('FFmpeg not loaded. Call loadFFmpeg() first.')
+  }
+
+  // Check if already aborted
+  if (signal?.aborted) {
+    const error = new Error('Transcoding cancelled')
+    error.name = 'AbortError'
+    throw error
   }
 
   const inputName = 'hevc_input.mp4'
@@ -230,21 +240,53 @@ export async function transcodeHevcToH264(
   }
   ffmpeg.on('progress', progressHandler)
 
+  // Set up abort listener
+  let abortHandler: (() => void) | undefined
+  if (signal) {
+    abortHandler = () => {
+      // FFmpeg WASM doesn't have a clean abort API, but we can
+      // throw on next progress callback
+      ffmpeg?.off('progress', progressHandler)
+    }
+    signal.addEventListener('abort', abortHandler)
+  }
+
   try {
+    // Check abort before writing file
+    if (signal?.aborted) {
+      const error = new Error('Transcoding cancelled')
+      error.name = 'AbortError'
+      throw error
+    }
+
     await ffmpeg.writeFile(inputName, await fetchFile(videoBlob))
+
+    // Check abort before exec
+    if (signal?.aborted) {
+      const error = new Error('Transcoding cancelled')
+      error.name = 'AbortError'
+      throw error
+    }
 
     const exitCode = await ffmpeg.exec([
       '-i', inputName,
       '-c:v', 'libx264',
-      '-preset', 'ultrafast',  // Prioritize speed for preprocessing
-      '-crf', '23',            // Good balance of quality/size
+      '-preset', 'ultrafast',
+      '-crf', '23',
       '-c:a', 'aac',
       '-b:a', '192k',
-      '-pix_fmt', 'yuv420p',   // Ensure broad compatibility
-      '-movflags', '+faststart', // Enable streaming playback
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
       '-y',
       outputName
     ])
+
+    // Check abort after exec
+    if (signal?.aborted) {
+      const error = new Error('Transcoding cancelled')
+      error.name = 'AbortError'
+      throw error
+    }
 
     if (exitCode !== 0) {
       throw new Error(`FFmpeg transcoding failed with exit code ${exitCode}`)
@@ -259,6 +301,9 @@ export async function transcodeHevcToH264(
     return new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' })
   } finally {
     ffmpeg.off('progress', progressHandler)
+    if (abortHandler && signal) {
+      signal.removeEventListener('abort', abortHandler)
+    }
     try { await ffmpeg.deleteFile(inputName) } catch { /* ignore */ }
     try { await ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
   }
