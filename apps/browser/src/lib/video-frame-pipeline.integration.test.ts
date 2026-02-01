@@ -21,6 +21,15 @@ vi.mock('@ffmpeg/util', () => ({
   }),
 }))
 
+// Mock isHevcCodec from ffmpeg-client to avoid requiring FFmpeg to be loaded
+vi.mock('./ffmpeg-client', async () => {
+  const actual = await vi.importActual('./ffmpeg-client')
+  return {
+    ...actual,
+    isHevcCodec: vi.fn().mockResolvedValue(false), // Assume H.264 in tests
+  }
+})
+
 // Mock ImageData for Node environment
 class MockImageData {
   width: number
@@ -92,6 +101,7 @@ interface MockFFmpegOptions {
 function createMockFFmpeg(options: MockFFmpegOptions = {}) {
   const files = new Map<string, Uint8Array>()
   let frameCount = 0
+  const eventListeners = new Map<string, Set<(...args: unknown[]) => void>>()
 
   return {
     writeFile: vi.fn(async (name: string, data: Uint8Array) => {
@@ -115,6 +125,15 @@ function createMockFFmpeg(options: MockFFmpegOptions = {}) {
     exec: vi.fn(async (args: string[]) => {
       if (options.failOnExec) {
         throw new Error('FFmpeg exec failed')
+      }
+      // Simulate progress events during execution
+      const progressListeners = eventListeners.get('progress')
+      if (progressListeners) {
+        // Emit a few progress updates
+        for (const listener of progressListeners) {
+          listener({ progress: 0.5 })
+          listener({ progress: 1.0 })
+        }
       }
       // Simulate frame extraction - create frame files based on fps and duration
       if (args.includes('image2')) {
@@ -141,6 +160,20 @@ function createMockFFmpeg(options: MockFFmpegOptions = {}) {
 
     deleteFile: vi.fn(async () => {
       // Silent cleanup
+    }),
+
+    on: vi.fn((event: string, callback: (...args: unknown[]) => void) => {
+      if (!eventListeners.has(event)) {
+        eventListeners.set(event, new Set())
+      }
+      eventListeners.get(event)!.add(callback)
+    }),
+
+    off: vi.fn((event: string, callback: (...args: unknown[]) => void) => {
+      const listeners = eventListeners.get(event)
+      if (listeners) {
+        listeners.delete(callback)
+      }
     }),
 
     _getFrameCount: () => frameCount,
@@ -331,7 +364,7 @@ describe('VideoFramePipeline Integration', () => {
           endTime: 1,
           tracerStyle: DEFAULT_TRACER_STYLE,
         })
-      ).rejects.toThrow('FFmpeg exec failed')
+      ).rejects.toThrow('Frame extraction failed')
     })
 
     it('should propagate FFmpeg readFile errors', async () => {
@@ -347,7 +380,7 @@ describe('VideoFramePipeline Integration', () => {
           endTime: 1,
           tracerStyle: DEFAULT_TRACER_STYLE,
         })
-      ).rejects.toThrow('FFmpeg readFile failed')
+      ).rejects.toThrow('Frame extraction produced no frames')
     })
 
     it('should propagate FFmpeg writeFile errors', async () => {

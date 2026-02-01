@@ -21,6 +21,45 @@ import { useProcessingStore } from '../stores/processingStore'
 const AUDIO_CHUNK_DURATION = 30 // Analyze 30 seconds at a time
 const SAMPLE_RATE = 44100  // Essentia.js SuperFluxExtractor requires 44100Hz
 
+/**
+ * Validate that a video blob is playable in the browser.
+ * Creates a temporary video element and checks if it can load.
+ *
+ * @param blob - The video blob to validate
+ * @returns Promise that resolves to true if playable, false otherwise
+ */
+async function validateSegmentPlayability(blob: Blob): Promise<boolean> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    const objectUrl = URL.createObjectURL(blob)
+
+    const cleanup = () => {
+      URL.revokeObjectURL(objectUrl)
+      video.src = ''
+    }
+
+    const timeout = setTimeout(() => {
+      cleanup()
+      resolve(false)
+    }, 5000)
+
+    video.oncanplay = () => {
+      clearTimeout(timeout)
+      cleanup()
+      resolve(true)
+    }
+
+    video.onerror = () => {
+      clearTimeout(timeout)
+      cleanup()
+      resolve(false)
+    }
+
+    video.src = objectUrl
+    video.preload = 'metadata'
+  })
+}
+
 export interface ProcessingCallbacks {
   onProgress?: (percent: number, message: string) => void
   onStrikeDetected?: (strike: StrikeDetection) => void
@@ -48,11 +87,16 @@ export async function processVideoFile(
     store.setProgress(5, 'Loading FFmpeg...')
     await loadFFmpeg()
 
-    store.setProgress(10, 'Loading audio analyzer...')
+    // Note: HEVC detection is now done in VideoDropzone before processing starts.
+    // If the user chose to transcode, they get an H.264 file.
+    // If they proceeded anyway, segments may fail to play (handled by ClipReview error UI).
+    store.setProgress(8, 'Preparing video...')
+
+    store.setProgress(42, 'Loading audio analyzer...')
     await loadEssentia()
 
     // Phase 2: Get video metadata
-    store.setProgress(15, 'Reading video metadata...')
+    store.setProgress(45, 'Reading video metadata...')
     const duration = await getVideoDuration(file)
     store.setFileInfo(file.name, duration)
 
@@ -66,11 +110,11 @@ export async function processVideoFile(
       const chunkEnd = Math.min((i + 1) * AUDIO_CHUNK_DURATION, duration)
       const chunkDuration = chunkEnd - chunkStart
 
-      const progressPercent = 20 + (i / numChunks) * 60
+      const progressPercent = 50 + (i / numChunks) * 35
       store.setProgress(progressPercent, `Analyzing audio chunk ${i + 1}/${numChunks}...`)
       callbacks.onProgress?.(progressPercent, `Analyzing chunk ${i + 1}/${numChunks}`)
 
-      // Extract audio directly from original file with time offsets
+      // Extract audio from the (possibly transcoded) file with time offsets
       // FFmpeg handles seeking properly - no need for byte-level slicing
       const audioData = await extractAudioFromSegment(file, chunkStart, chunkDuration)
 
@@ -90,7 +134,7 @@ export async function processVideoFile(
     }
 
     // Phase 4: Extract video segments for each strike using FFmpeg
-    store.setProgress(85, 'Extracting video segments...')
+    store.setProgress(88, 'Extracting video segments...')
 
     for (let i = 0; i < allStrikes.length; i++) {
       const strike = allStrikes[i]
@@ -103,6 +147,14 @@ export async function processVideoFile(
       // Use FFmpeg for proper segment extraction with keyframe seeking
       const segmentBlob = await extractVideoSegment(file, segmentStart, segmentDuration)
 
+      // Validate segment is playable in browser
+      const isPlayable = await validateSegmentPlayability(segmentBlob)
+      if (!isPlayable) {
+        console.warn(`[streaming-processor] Segment ${i + 1} may not be playable (codec issue). User will see error in review.`)
+        // Still add the segment - the ClipReview will show an error message
+        // This is better than silently failing or transcoding every segment which is slow
+      }
+
       store.addSegment({
         id: `segment-${i}`,
         strikeTime: strike.timestamp,
@@ -114,7 +166,7 @@ export async function processVideoFile(
       callbacks.onSegmentReady?.(segmentBlob, strike.timestamp)
 
       // Update progress during segment extraction
-      const segmentProgress = 85 + (i / allStrikes.length) * 10
+      const segmentProgress = 88 + ((i + 1) / allStrikes.length) * 10
       store.setProgress(segmentProgress, `Extracting segment ${i + 1}/${allStrikes.length}...`)
     }
 

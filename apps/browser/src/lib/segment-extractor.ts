@@ -83,7 +83,7 @@ export function estimateBitrate(fileSize: number, duration: number): number {
  * @param file - The video file
  * @returns Promise resolving to duration in seconds
  */
-export function getVideoDuration(file: File): Promise<number> {
+export function getVideoDuration(file: File | Blob): Promise<number> {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video')
     video.preload = 'metadata'

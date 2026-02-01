@@ -2,6 +2,18 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 import { CanvasCompositor, TracerStyle, TrajectoryPoint } from './canvas-compositor'
+import { isHevcCodec } from './ffmpeg-client'
+
+/**
+ * Error thrown when attempting to export HEVC-encoded video.
+ * FFmpeg WASM cannot decode HEVC, so the video must be transcoded first.
+ */
+export class HevcExportError extends Error {
+  constructor(message: string = 'Cannot export HEVC video. The video must be transcoded to H.264 first.') {
+    super(message)
+    this.name = 'HevcExportError'
+  }
+}
 
 export interface ExportProgress {
   phase: 'extracting' | 'compositing' | 'encoding' | 'complete'
@@ -63,6 +75,13 @@ export class VideoFramePipeline {
     const duration = endTime - startTime
     const totalFrames = this.calculateFrameCount(duration, fps)
 
+    // Check for HEVC codec before attempting frame extraction
+    // FFmpeg WASM cannot decode HEVC, so we need to fail fast with a clear error
+    const isHevc = await isHevcCodec(videoBlob)
+    if (isHevc) {
+      throw new HevcExportError()
+    }
+
     // Phase 1: Extract frames from video
     onProgress?.({ phase: 'extracting', progress: 0 })
 
@@ -71,15 +90,41 @@ export class VideoFramePipeline {
 
     await this.ffmpeg.writeFile(inputName, await fetchFile(videoBlob))
 
-    // Extract frames as PNG sequence
-    await this.ffmpeg.exec([
-      '-ss', startTime.toString(),
-      '-i', inputName,
-      '-t', duration.toString(),
-      '-vf', `fps=${fps}`,
-      '-f', 'image2',
-      framePattern,
-    ])
+    // Set up progress listener for extraction phase
+    const extractionProgressHandler = ({ progress }: { progress: number }) => {
+      // FFmpeg reports progress as 0-1 ratio
+      const percent = Math.round(progress * 100)
+      onProgress?.({ phase: 'extracting', progress: Math.min(percent, 99) })
+    }
+    this.ffmpeg.on('progress', extractionProgressHandler)
+
+    // Extract frames as PNG sequence with error handling
+    try {
+      await this.ffmpeg.exec([
+        '-ss', startTime.toString(),
+        '-i', inputName,
+        '-t', duration.toString(),
+        '-vf', `fps=${fps}`,
+        '-f', 'image2',
+        framePattern,
+      ])
+    } catch (error) {
+      this.ffmpeg.off('progress', extractionProgressHandler)
+      const message = error instanceof Error ? error.message : 'Unknown FFmpeg error'
+      console.error('[VideoFramePipeline] Frame extraction failed:', message)
+      throw new Error(`Frame extraction failed: ${message}`)
+    }
+
+    // Clean up extraction progress listener
+    this.ffmpeg.off('progress', extractionProgressHandler)
+
+    // Verify frames were extracted
+    try {
+      await this.ffmpeg.readFile('frame_0001.png')
+    } catch (error) {
+      console.error('[VideoFramePipeline] No frames extracted - frame_0001.png not found')
+      throw new Error('Frame extraction produced no frames. The video may be corrupted or in an unsupported format.')
+    }
 
     onProgress?.({ phase: 'extracting', progress: 100 })
 
@@ -135,24 +180,41 @@ export class VideoFramePipeline {
     const { crf, preset } = QUALITY_SETTINGS[quality]
     const outputName = 'output.mp4'
 
+    // Set up progress listener for encoding phase
+    const encodingProgressHandler = ({ progress }: { progress: number }) => {
+      const percent = Math.round(progress * 100)
+      onProgress?.({ phase: 'encoding', progress: Math.min(percent, 99) })
+    }
+    this.ffmpeg.on('progress', encodingProgressHandler)
+
     // Re-encode with audio from original
-    await this.ffmpeg.exec([
-      '-framerate', fps.toString(),
-      '-i', framePattern,
-      '-ss', startTime.toString(),
-      '-t', duration.toString(),
-      '-i', inputName,
-      '-map', '0:v',
-      '-map', '1:a?',
-      '-c:v', 'libx264',
-      '-crf', crf.toString(),
-      '-preset', preset,
-      '-c:a', 'aac',
-      '-b:a', '192k',
-      '-pix_fmt', 'yuv420p',
-      '-y',
-      outputName,
-    ])
+    try {
+      await this.ffmpeg.exec([
+        '-framerate', fps.toString(),
+        '-i', framePattern,
+        '-ss', startTime.toString(),
+        '-t', duration.toString(),
+        '-i', inputName,
+        '-map', '0:v',
+        '-map', '1:a?',
+        '-c:v', 'libx264',
+        '-crf', crf.toString(),
+        '-preset', preset,
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-pix_fmt', 'yuv420p',
+        '-y',
+        outputName,
+      ])
+    } catch (error) {
+      this.ffmpeg.off('progress', encodingProgressHandler)
+      const message = error instanceof Error ? error.message : 'Unknown FFmpeg error'
+      console.error('[VideoFramePipeline] Video encoding failed:', message)
+      throw new Error(`Video encoding failed: ${message}`)
+    }
+
+    // Clean up encoding progress listener
+    this.ffmpeg.off('progress', encodingProgressHandler)
 
     onProgress?.({ phase: 'encoding', progress: 100 })
 

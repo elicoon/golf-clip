@@ -27,6 +27,7 @@ interface TrajectoryEditorProps {
   markingStep?: 'confirming_shot' | 'marking_landing' | 'generating' | 'reviewing'
   isMarkingApex?: boolean
   isMarkingOrigin?: boolean
+  isMarkingLanding?: boolean
 }
 
 // Custom cursor SVG for landing point marker placement
@@ -76,6 +77,7 @@ export function TrajectoryEditor({
   markingStep = 'reviewing',
   isMarkingApex = false,
   isMarkingOrigin = false,
+  isMarkingLanding = false,
 }: TrajectoryEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
@@ -256,29 +258,36 @@ export function TrajectoryEditor({
       y: bounds.offsetY + y * bounds.height,
     })
 
+    // Clamped version that ensures coordinates stay within video bounds
+    const clampedToCanvas = (x: number, y: number) => {
+      const clampedX = Math.max(0, Math.min(1, x))
+      const clampedY = Math.max(0, Math.min(1, y))
+      return toCanvas(clampedX, clampedY)
+    }
+
     // Helper to draw smooth curve using quadratic Bezier spline
     const drawSmoothCurve = (points: TrajectoryPoint[]) => {
       if (points.length < 2) return
 
-      const first = toCanvas(points[0].x, points[0].y)
+      const first = clampedToCanvas(points[0].x, points[0].y)
       ctx.moveTo(first.x, first.y)
 
       if (points.length === 2) {
-        const second = toCanvas(points[1].x, points[1].y)
+        const second = clampedToCanvas(points[1].x, points[1].y)
         ctx.lineTo(second.x, second.y)
         return
       }
 
       for (let i = 1; i < points.length - 1; i++) {
-        const current = toCanvas(points[i].x, points[i].y)
-        const next = toCanvas(points[i + 1].x, points[i + 1].y)
+        const current = clampedToCanvas(points[i].x, points[i].y)
+        const next = clampedToCanvas(points[i + 1].x, points[i + 1].y)
         const midX = (current.x + next.x) / 2
         const midY = (current.y + next.y) / 2
         ctx.quadraticCurveTo(current.x, current.y, midX, midY)
       }
 
-      const last = toCanvas(points[points.length - 1].x, points[points.length - 1].y)
-      const secondLast = toCanvas(points[points.length - 2].x, points[points.length - 2].y)
+      const last = clampedToCanvas(points[points.length - 1].x, points[points.length - 1].y)
+      const secondLast = clampedToCanvas(points[points.length - 2].x, points[points.length - 2].y)
       ctx.quadraticCurveTo(secondLast.x, secondLast.y, last.x, last.y)
     }
 
@@ -290,7 +299,7 @@ export function TrajectoryEditor({
 
       // Draw landing marker (downward arrow)
       if (landingPoint) {
-        const markerPos = toCanvas(landingPoint.x, landingPoint.y)
+        const markerPos = clampedToCanvas(landingPoint.x, landingPoint.y)
         const markerX = markerPos.x
         const markerY = markerPos.y
         const arrowWidth = 12
@@ -322,7 +331,7 @@ export function TrajectoryEditor({
 
       // Draw user-marked apex point (gold diamond)
       if (apexPoint) {
-        const apexPos = toCanvas(apexPoint.x, apexPoint.y)
+        const apexPos = clampedToCanvas(apexPoint.x, apexPoint.y)
         const apexX = apexPos.x
         const apexY = apexPos.y
         const diamondSize = 10
@@ -348,7 +357,7 @@ export function TrajectoryEditor({
 
       // Draw user-marked origin point (green circle with dot)
       if (originPoint) {
-        const originPos = toCanvas(originPoint.x, originPoint.y)
+        const originPos = clampedToCanvas(originPoint.x, originPoint.y)
         const originX = originPos.x
         const originY = originPos.y
         const outerRadius = 12
@@ -487,7 +496,7 @@ export function TrajectoryEditor({
 
       // Draw apex marker if visible
       if (trajectory?.apex_point && videoTime >= trajectory.apex_point.timestamp) {
-        const apex = toCanvas(trajectory.apex_point.x, trajectory.apex_point.y)
+        const apex = clampedToCanvas(trajectory.apex_point.x, trajectory.apex_point.y)
         ctx.save()
         ctx.fillStyle = '#ff0000'
         ctx.shadowColor = '#ff0000'
@@ -572,6 +581,10 @@ export function TrajectoryEditor({
     if (isMarkingApex) {
       return svgToCursor(apexCursorSvg, 16, 16)  // Hotspot at center of diamond
     }
+    // Landing re-marking mode
+    if (isMarkingLanding) {
+      return svgToCursor(landingCursorSvg, 16, 28)  // Hotspot at arrow tip
+    }
     switch (markingStep) {
       case 'marking_landing':
         return svgToCursor(landingCursorSvg, 16, 28)  // Hotspot at arrow tip
@@ -601,6 +614,7 @@ export function TrajectoryEditor({
         zIndex: 10,
         filter: 'none',
         mixBlendMode: 'normal' as const,
+        overflow: 'hidden', // Safety net for any out-of-bounds rendering
       }}
     />
   )

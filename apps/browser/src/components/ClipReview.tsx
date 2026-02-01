@@ -1,13 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useProcessingStore, TrajectoryData, TracerConfig } from '../stores/processingStore'
+import { useProcessingStore, TrajectoryData, TracerConfig, VideoSegment } from '../stores/processingStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
+import { HevcTranscodeModal, HevcTranscodeModalState, initialHevcTranscodeModalState } from './HevcTranscodeModal'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
-import { VideoFramePipeline, ExportConfig } from '../lib/video-frame-pipeline'
-import { loadFFmpeg, getFFmpegInstance } from '../lib/ffmpeg-client'
+import { VideoFramePipeline, ExportConfig, HevcExportError } from '../lib/video-frame-pipeline'
+import { loadFFmpeg, getFFmpegInstance, transcodeHevcToH264, estimateTranscodeTime } from '../lib/ffmpeg-client'
 import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
+
+/** Minimum delay for trajectory generation to show loading state feedback */
+const TRAJECTORY_GENERATION_MIN_DELAY_MS = 300
 
 interface ClipReviewProps {
   onComplete: () => void
@@ -37,19 +41,31 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [isMarkingApex, setIsMarkingApex] = useState(false)
   const [isMarkingOrigin, setIsMarkingOrigin] = useState(false)
+  const [isMarkingLanding, setIsMarkingLanding] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
 
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 })
+  const [exportPhase, setExportPhase] = useState<{ phase: string; progress: number }>({ phase: '', progress: 0 })
   const [exportComplete, setExportComplete] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportQuality, setExportQuality] = useState<'draft' | 'preview' | 'final'>('preview')
   const exportCancelledRef = useRef(false)
 
+  // HEVC transcode modal state (shown when export fails due to HEVC codec)
+  const [hevcTranscodeModal, setHevcTranscodeModal] = useState<HevcTranscodeModalState>(initialHevcTranscodeModalState)
+  const transcodeAbortRef = useRef<AbortController | null>(null)
+
+  // Video playback error state
+  const [videoError, setVideoError] = useState<string | null>(null)
+
   // Auto-loop state
   const [autoLoopEnabled, setAutoLoopEnabled] = useState(true)
   const loopTimeoutRef = useRef<number | null>(null)
+
+  // Audio state - start unmuted, will auto-mute if browser blocks playback
+  const [isMuted, setIsMuted] = useState(false)
 
   // Track which shot we've already autoplayed for (to avoid re-triggering on canplay)
   const autoplayedShotIdRef = useRef<string | null>(null)
@@ -95,8 +111,15 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       video.play().then(() => {
         setIsPlaying(true)
       }).catch(() => {
-        // Autoplay blocked by browser policy - user must click to play
-        setIsPlaying(false)
+        // Autoplay with audio blocked - retry muted
+        video.muted = true
+        setIsMuted(true)
+        video.play().then(() => {
+          setIsPlaying(true)
+        }).catch(() => {
+          // Even muted autoplay blocked - user must click to play
+          setIsPlaying(false)
+        })
       })
     }
 
@@ -175,6 +198,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setOriginPoint(null)
     setReviewStep('marking_landing')
     setTrajectory(null)
+    setVideoError(null) // Clear video error on shot change
     // Reset feedback tracking for new shot
     initialTracerParamsRef.current = null
     tracerModifiedRef.current = false
@@ -186,6 +210,33 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       }
     }
   }, [currentShot?.id])
+
+  // Handle video playback errors
+  const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget
+    const error = video.error
+
+    console.error('Video playback error:', error)
+
+    let message = 'This video format is not supported by your browser.'
+    if (error) {
+      switch (error.code) {
+        case MediaError.MEDIA_ERR_ABORTED:
+          message = 'Video playback was aborted.'
+          break
+        case MediaError.MEDIA_ERR_NETWORK:
+          message = 'A network error occurred while loading the video.'
+          break
+        case MediaError.MEDIA_ERR_DECODE:
+          message = 'This video format cannot be decoded. It may use an unsupported codec like HEVC.'
+          break
+        case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+          message = 'This video format is not supported. Try re-exporting as H.264.'
+          break
+      }
+    }
+    setVideoError(message)
+  }, [])
 
   // Handle canvas click for marking points
   const handleCanvasClick = useCallback((x: number, y: number) => {
@@ -199,6 +250,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       setIsMarkingOrigin(false)
       setHasUnsavedChanges(true)
       tracerModifiedRef.current = true
+    } else if (isMarkingLanding) {
+      setLandingPoint({ x, y })
+      setIsMarkingLanding(false)
+      setHasUnsavedChanges(true)
+      tracerModifiedRef.current = true
+      if (currentShot) {
+        updateSegment(currentShot.id, { landingPoint: { x, y } })
+      }
     } else if (reviewStep === 'marking_landing') {
       setLandingPoint({ x, y })
       // Start trajectory animation from when the ball is struck in the video segment
@@ -220,7 +279,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         updateSegment(currentShot.id, { landingPoint: { x, y }, trajectory: traj })
       }
     }
-  }, [reviewStep, tracerConfig, isMarkingApex, isMarkingOrigin, currentShot, updateSegment])
+  }, [reviewStep, tracerConfig, isMarkingApex, isMarkingOrigin, isMarkingLanding, currentShot, updateSegment])
 
   // TracerConfigPanel handlers
   const handleConfigChange = useCallback((config: TracerConfig) => {
@@ -238,11 +297,19 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (!landingPoint) return
     setIsGenerating(true)
     try {
-      // Small delay to ensure UI updates before generation
-      await new Promise(resolve => setTimeout(resolve, 50))
+      // Minimum delay so user sees loading state
+      const startTime = Date.now()
+
       // Start trajectory animation from when the ball is struck in the video segment
       const strikeOffset = currentShot ? currentShot.strikeTime - currentShot.startTime : 0
       const traj = generateTrajectory(landingPoint, tracerConfig, originPoint || undefined, apexPoint || undefined, strikeOffset)
+
+      // Ensure minimum time has passed for visible feedback
+      const elapsed = Date.now() - startTime
+      if (elapsed < TRAJECTORY_GENERATION_MIN_DELAY_MS) {
+        await new Promise(resolve => setTimeout(resolve, TRAJECTORY_GENERATION_MIN_DELAY_MS - elapsed))
+      }
+
       setTrajectory(traj)
       setHasUnsavedChanges(false)
       if (currentShot) {
@@ -256,12 +323,50 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const handleMarkApex = useCallback(() => {
     setIsMarkingApex(true)
     setIsMarkingOrigin(false)
+    setIsMarkingLanding(false)
   }, [])
 
   const handleMarkOrigin = useCallback(() => {
     setIsMarkingOrigin(true)
     setIsMarkingApex(false)
+    setIsMarkingLanding(false)
   }, [])
+
+  const handleMarkLanding = useCallback(() => {
+    setIsMarkingLanding(true)
+    setIsMarkingApex(false)
+    setIsMarkingOrigin(false)
+  }, [])
+
+  // Export a single segment with tracer overlay
+  // Returns the blob if successful, null if skipped (no trajectory)
+  const exportSegmentWithTracer = useCallback(async (
+    segment: typeof segments[0],
+    _segmentIndex: number,
+    pipeline: VideoFramePipeline
+  ): Promise<Blob | null> => {
+    if (!segment.trajectory || segment.trajectory.points.length === 0) {
+      return null // No trajectory - will download raw segment
+    }
+
+    const exportConfig: ExportConfig = {
+      videoBlob: segment.blob,
+      trajectory: segment.trajectory.points,
+      startTime: segment.clipStart - segment.startTime,
+      endTime: segment.clipEnd - segment.startTime,
+      fps: 30,
+      quality: exportQuality,
+      tracerStyle: tracerStyle,
+      landingPoint: segment.landingPoint ?? undefined,
+      apexPoint: apexPoint ?? undefined,
+      originPoint: originPoint ?? undefined,
+      onProgress: (progress) => {
+        setExportPhase({ phase: progress.phase, progress: progress.progress })
+      }
+    }
+
+    return await pipeline.exportWithTracer(exportConfig)
+  }, [exportQuality, tracerStyle, apexPoint, originPoint])
 
   // Export approved clips
   // Note: Get segments directly from store to avoid stale closure issue
@@ -276,6 +381,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     setShowExportModal(true)
     setExportProgress({ current: 0, total: approved.length })
+    setExportPhase({ phase: '', progress: 0 })
     setExportComplete(false)
     setExportError(null)
     exportCancelledRef.current = false
@@ -292,44 +398,49 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         const segment = approved[i]
         setExportProgress({ current: i + 1, total: approved.length })
 
-        // Check if segment has trajectory data for tracer overlay
-        if (segment.trajectory && segment.trajectory.points.length > 0) {
-          // Export with tracer overlay using VideoFramePipeline
-          const exportConfig: ExportConfig = {
-            videoBlob: segment.blob,
-            trajectory: segment.trajectory.points,
-            startTime: segment.clipStart - segment.startTime,
-            endTime: segment.clipEnd - segment.startTime,
-            fps: 30,
-            quality: exportQuality,
-            tracerStyle: tracerStyle,
-            landingPoint: segment.landingPoint ?? undefined,
-            apexPoint: apexPoint ?? undefined,
-            originPoint: originPoint ?? undefined,
-            onProgress: (progress) => {
-              console.log(`Export progress: ${progress.phase} ${progress.progress}%`)
-            }
+        try {
+          const exportedBlob = await exportSegmentWithTracer(segment, i, pipeline)
+
+          if (exportedBlob) {
+            // Download the exported MP4
+            const url = URL.createObjectURL(exportedBlob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `shot_${i + 1}.mp4`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            URL.revokeObjectURL(url)
+          } else {
+            // No trajectory - download raw segment as WebM
+            const a = document.createElement('a')
+            a.href = segment.objectUrl
+            a.download = `shot_${i + 1}.webm`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
           }
+        } catch (segmentError) {
+          // Check if it's an HEVC error - show transcode modal
+          if (segmentError instanceof HevcExportError) {
+            const fileSizeMB = Math.round(segment.blob.size / (1024 * 1024))
+            const { formatted: estimatedTime } = estimateTranscodeTime(fileSizeMB)
 
-          const exportedBlob = await pipeline.exportWithTracer(exportConfig)
-
-          // Download the exported MP4
-          const url = URL.createObjectURL(exportedBlob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = `shot_${i + 1}.mp4`
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
-          URL.revokeObjectURL(url)
-        } else {
-          // No trajectory - download raw segment as WebM
-          const a = document.createElement('a')
-          a.href = segment.objectUrl
-          a.download = `shot_${i + 1}.webm`
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
+            // Hide export modal and show HEVC transcode modal
+            setShowExportModal(false)
+            setHevcTranscodeModal({
+              show: true,
+              segmentIndex: i,
+              segmentBlob: segment.blob,
+              estimatedTime,
+              isTranscoding: false,
+              transcodeProgress: 0,
+              transcodeStartTime: null,
+            })
+            return // Exit export loop - user will choose to transcode or cancel
+          }
+          // Re-throw other errors
+          throw segmentError
         }
 
         // Small delay between downloads to avoid browser throttling
@@ -342,7 +453,105 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'An error occurred during export')
     }
-  }, [onComplete, exportQuality, tracerStyle, apexPoint, originPoint])
+  }, [onComplete, exportSegmentWithTracer])
+
+  // Handle HEVC transcode and retry export
+  const handleTranscodeAndExport = useCallback(async () => {
+    if (!hevcTranscodeModal.segmentBlob) return
+
+    const segmentBlob = hevcTranscodeModal.segmentBlob
+    const segmentIndex = hevcTranscodeModal.segmentIndex
+
+    // Get the segment ID to track it and prevent recursive loops
+    const currentSegments = useProcessingStore.getState().segments
+    const approved = currentSegments.filter(s => s.approved === 'approved')
+    const segment = approved[segmentIndex]
+
+    if (!segment) return
+
+    // Guard: Check if this segment was already transcoded to prevent recursive loops
+    // This can happen if transcode succeeds but export still fails for some reason
+    const alreadyTranscoded = hevcTranscodeModal.transcodedSegmentIds?.has(segment.id)
+    if (alreadyTranscoded) {
+      // This segment was already transcoded but still failed - show error instead of looping
+      setHevcTranscodeModal(initialHevcTranscodeModalState)
+      setShowExportModal(true)
+      setExportError(`Export failed for clip ${segmentIndex + 1}: Video still cannot be processed after conversion`)
+      return
+    }
+
+    // Create abort controller for cancellation
+    transcodeAbortRef.current = new AbortController()
+
+    // Update state to show transcoding progress and track this segment
+    setHevcTranscodeModal(prev => ({
+      ...prev,
+      isTranscoding: true,
+      transcodeProgress: 0,
+      transcodeStartTime: Date.now(),
+      transcodedSegmentIds: new Set([...(prev.transcodedSegmentIds || []), segment.id]),
+    }))
+
+    try {
+      // Transcode the segment
+      const h264Blob = await transcodeHevcToH264(
+        segmentBlob,
+        (percent) => {
+          setHevcTranscodeModal(prev => ({
+            ...prev,
+            transcodeProgress: percent,
+          }))
+        },
+        transcodeAbortRef.current.signal
+      )
+
+      // Revoke old object URL
+      URL.revokeObjectURL(segment.objectUrl)
+
+      // Update segment with transcoded blob
+      const newObjectUrl = URL.createObjectURL(h264Blob)
+      const segmentUpdate: Partial<VideoSegment> = {
+        blob: h264Blob,
+        objectUrl: newObjectUrl,
+      }
+      useProcessingStore.getState().updateSegment(segment.id, segmentUpdate)
+
+      // Close transcode modal (preserve transcodedSegmentIds to track) and restart export
+      setHevcTranscodeModal(prev => ({
+        ...initialHevcTranscodeModalState,
+        transcodedSegmentIds: prev.transcodedSegmentIds,
+      }))
+
+      // Restart export (it will now use the transcoded segment)
+      handleExport()
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        // User cancelled - reset to initial modal state (not closed)
+        setHevcTranscodeModal(prev => ({
+          ...prev,
+          isTranscoding: false,
+          transcodeProgress: 0,
+          transcodeStartTime: null,
+        }))
+        return
+      }
+      // Other error - show in export modal (preserve transcodedSegmentIds)
+      setHevcTranscodeModal(prev => ({
+        ...initialHevcTranscodeModalState,
+        transcodedSegmentIds: prev.transcodedSegmentIds,
+      }))
+      setShowExportModal(true)
+      setExportError(`Transcode failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      transcodeAbortRef.current = null
+    }
+  }, [hevcTranscodeModal.segmentBlob, hevcTranscodeModal.segmentIndex, hevcTranscodeModal.transcodedSegmentIds, handleExport])
+
+  // Cancel HEVC transcode modal (go back to review)
+  const handleCancelHevcTranscode = useCallback(() => {
+    transcodeAbortRef.current?.abort()
+    setHevcTranscodeModal(initialHevcTranscodeModalState)
+  }, [])
 
   const handlePrevious = useCallback(() => {
     if (currentIndex > 0) {
@@ -402,14 +611,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     approveSegment(currentShot.id)
 
-    if (currentIndex >= shotsNeedingReview.length - 1) {
-      // All shots reviewed - trigger export
-      handleExport()
-    } else {
+    if (currentIndex < shotsNeedingReview.length - 1) {
       // Stay at same index - approved shot will filter out
       setCurrentIndex(Math.min(currentIndex, shotsNeedingReview.length - 2))
     }
-  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, handleExport, landingPoint, trajectory, originPoint, apexPoint, tracerConfig, tracerStyle])
+    // When last shot is approved, component will naturally show review-complete UI
+    // User can then click the export button when ready
+  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, landingPoint, trajectory, originPoint, apexPoint, tracerConfig, tracerStyle])
 
   const handleReject = useCallback(() => {
     if (!currentShot) return
@@ -426,13 +634,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     rejectSegment(currentShot.id)
 
-    if (currentIndex >= shotsNeedingReview.length - 1) {
-      // All shots reviewed - trigger export
-      handleExport()
-    } else {
+    if (currentIndex < shotsNeedingReview.length - 1) {
       setCurrentIndex(Math.min(currentIndex, shotsNeedingReview.length - 2))
     }
-  }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment, handleExport])
+    // When last shot is rejected, component will naturally show review-complete UI
+    // User can then click the export button when ready (if any shots were approved)
+  }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment])
 
   const togglePlayPause = useCallback(() => {
     if (!videoRef.current) return
@@ -571,6 +778,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                 <span className="quality-desc">Best</span>
               </button>
             </div>
+            <p className="export-format-hint" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+              Clips with tracer: .mp4 | Clips without tracer: .webm
+            </p>
           </div>
         )}
         <div className="review-complete-actions">
@@ -583,6 +793,68 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
             Process Another Video
           </button>
         </div>
+
+        {/* Export Modal - also rendered in complete state */}
+        {showExportModal && (
+          <div className="export-modal-overlay">
+            <div className="export-modal">
+              <div className="export-modal-header">
+                <h3>{exportError ? 'Export Failed' : exportComplete ? 'Export Complete!' : 'Exporting Clips'}</h3>
+              </div>
+              <div className="export-modal-content">
+                {exportError ? (
+                  <>
+                    <div className="export-error-icon">!</div>
+                    <p className="export-error-message">{exportError}</p>
+                    <button
+                      onClick={() => { setShowExportModal(false); setExportError(null) }}
+                      className="btn-secondary"
+                    >
+                      Close
+                    </button>
+                  </>
+                ) : !exportComplete ? (
+                  <>
+                    <div className="export-progress-bar">
+                      <div
+                        className="export-progress-fill"
+                        style={{ width: `${exportPhase.progress}%` }}
+                      />
+                    </div>
+                    <p className="export-status">
+                      Clip {exportProgress.current} of {exportProgress.total}
+                      {exportPhase.phase && ` — ${exportPhase.phase} ${exportPhase.progress}%`}
+                    </p>
+                    <button
+                      onClick={() => { exportCancelledRef.current = true; setShowExportModal(false) }}
+                      className="btn-secondary"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="export-success-icon">✓</div>
+                    <p className="export-result">{exportProgress.total} clips downloaded</p>
+                    <button
+                      onClick={() => { setShowExportModal(false); onComplete() }}
+                      className="btn-primary"
+                    >
+                      Done
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* HEVC Transcode Modal - also rendered in complete state */}
+        <HevcTranscodeModal
+          state={hevcTranscodeModal}
+          onStartTranscode={handleTranscodeAndExport}
+          onCancel={handleCancelHevcTranscode}
+        />
       </div>
     )
   }
@@ -634,17 +906,35 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       </div>
 
       <div className="video-container">
-        <video
-          ref={videoRef}
-          src={currentShot.objectUrl}
-          className="review-video"
-          muted
-          playsInline
-          onClick={togglePlayPause}
-          onCanPlay={handleVideoCanPlay}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-        />
+        {videoError ? (
+          <div className="video-error-overlay">
+            <div className="video-error-content">
+              <span className="video-error-icon">⚠</span>
+              <h3>Video Cannot Play</h3>
+              <p>{videoError}</p>
+              <p className="video-error-hint">
+                The video may use HEVC/H.265 encoding which browsers cannot play natively.
+                Try processing a different video or re-export the original as H.264.
+              </p>
+              <button onClick={handleReject} className="btn-secondary">
+                Skip This Clip
+              </button>
+            </div>
+          </div>
+        ) : (
+          <video
+            ref={videoRef}
+            src={currentShot.objectUrl}
+            className="review-video"
+            muted={isMuted}
+            playsInline
+            onClick={togglePlayPause}
+            onCanPlay={handleVideoCanPlay}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onError={handleVideoError}
+          />
+        )}
         <TrajectoryEditor
           videoRef={videoRef as React.RefObject<HTMLVideoElement>}
           trajectory={trajectory}
@@ -657,11 +947,19 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           markingStep={reviewStep}
           isMarkingApex={isMarkingApex}
           isMarkingOrigin={isMarkingOrigin}
+          isMarkingLanding={isMarkingLanding}
         />
       </div>
 
       {/* Playback and tracer controls */}
       <div className="tracer-controls">
+        <button
+          onClick={() => setIsMuted(!isMuted)}
+          className="btn-audio-toggle"
+          title={isMuted ? 'Click to unmute' : 'Click to mute'}
+        >
+          {isMuted ? '🔇 Unmute' : '🔊 Sound On'}
+        </button>
         <label>
           <input
             type="checkbox"
@@ -690,9 +988,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           onGenerate={handleGenerate}
           onMarkApex={handleMarkApex}
           onMarkOrigin={handleMarkOrigin}
+          onMarkLanding={handleMarkLanding}
           hasChanges={hasUnsavedChanges}
           apexMarked={!!apexPoint}
           originMarked={!!originPoint}
+          landingMarked={!!landingPoint}
+          isMarkingLanding={isMarkingLanding}
           isGenerating={isGenerating}
           isCollapsed={!showConfigPanel}
           onToggleCollapse={() => setShowConfigPanel(!showConfigPanel)}
@@ -761,11 +1062,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                   <div className="export-progress-bar">
                     <div
                       className="export-progress-fill"
-                      style={{ width: `${(exportProgress.current / exportProgress.total) * 100}%` }}
+                      style={{ width: `${exportPhase.progress}%` }}
                     />
                   </div>
                   <p className="export-status">
-                    Downloading {exportProgress.current} of {exportProgress.total}...
+                    Clip {exportProgress.current} of {exportProgress.total}
+                    {exportPhase.phase && ` — ${exportPhase.phase} ${exportPhase.progress}%`}
                   </p>
                   <button
                     onClick={() => { exportCancelledRef.current = true; setShowExportModal(false) }}
@@ -790,6 +1092,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           </div>
         </div>
       )}
+
+      {/* HEVC Transcode Modal - shown when export fails due to HEVC codec */}
+      <HevcTranscodeModal
+        state={hevcTranscodeModal}
+        onStartTranscode={handleTranscodeAndExport}
+        onCancel={handleCancelHevcTranscode}
+      />
     </div>
   )
 }
