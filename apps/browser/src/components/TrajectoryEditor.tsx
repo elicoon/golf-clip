@@ -299,7 +299,7 @@ export function TrajectoryEditor({
 
       // Draw landing marker (downward arrow)
       if (landingPoint) {
-        const markerPos = toCanvas(landingPoint.x, landingPoint.y)
+        const markerPos = clampedToCanvas(landingPoint.x, landingPoint.y)
         const markerX = markerPos.x
         const markerY = markerPos.y
         const arrowWidth = 12
@@ -331,7 +331,7 @@ export function TrajectoryEditor({
 
       // Draw user-marked apex point (gold diamond)
       if (apexPoint) {
-        const apexPos = toCanvas(apexPoint.x, apexPoint.y)
+        const apexPos = clampedToCanvas(apexPoint.x, apexPoint.y)
         const apexX = apexPos.x
         const apexY = apexPos.y
         const diamondSize = 10
@@ -357,7 +357,7 @@ export function TrajectoryEditor({
 
       // Draw user-marked origin point (green circle with dot)
       if (originPoint) {
-        const originPos = toCanvas(originPoint.x, originPoint.y)
+        const originPos = clampedToCanvas(originPoint.x, originPoint.y)
         const originX = originPos.x
         const originY = originPos.y
         const outerRadius = 12
