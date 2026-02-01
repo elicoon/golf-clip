@@ -119,8 +119,8 @@ export function generateTrajectory(
     confidence: 1.0,
     apex_point: {
       ...points[Math.floor(NUM_TRAJECTORY_POINTS / 2)],
-      x: apex.x,
-      y: apex.y,
+      x: Math.max(0, Math.min(1, apex.x)),
+      y: Math.max(0, Math.min(1, apex.y)),
     },
     frame_width: 1920,
     frame_height: 1080,
