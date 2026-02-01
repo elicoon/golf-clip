@@ -2,7 +2,7 @@
 import { useCallback, useState, useRef } from 'react'
 import { useProcessingStore } from '../stores/processingStore'
 import { processVideoFile } from '../lib/streaming-processor'
-import { loadFFmpeg, detectVideoCodec, transcodeHevcToH264 } from '../lib/ffmpeg-client'
+import { loadFFmpeg, detectVideoCodec, transcodeHevcToH264, estimateTranscodeTime, formatRemainingTime, SUPPORTED_CODECS } from '../lib/ffmpeg-client'
 
 const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime', 'video/x-m4v']
 const ACCEPTED_EXTENSIONS = ['.mp4', '.mov', '.m4v']
@@ -77,9 +77,21 @@ export function VideoDropzone() {
       console.log('[VideoDropzone] Codec detection result:', codecInfo)
 
       if (codecInfo.isHevc) {
-        // Show HEVC warning modal
+        // Calculate file info for modal
+        const fileSizeMB = Math.round(file.size / (1024 * 1024))
+        const { formatted: estimatedTime } = estimateTranscodeTime(fileSizeMB)
+
         console.log('[VideoDropzone] HEVC detected, showing warning modal')
-        setHevcWarning({ show: true, file, codec: codecInfo.codec.toUpperCase() })
+        setHevcWarning({
+          show: true,
+          file,
+          codec: codecInfo.codec.toUpperCase(),
+          fileSizeMB,
+          estimatedTime,
+          isTranscoding: false,
+          transcodeProgress: 0,
+          transcodeStartTime: null,
+        })
         setIsCheckingCodec(false)
         return
       }
@@ -100,7 +112,7 @@ export function VideoDropzone() {
     if (!hevcWarning.file) return
 
     const file = hevcWarning.file
-    setHevcWarning({ show: false, file: null, codec: '' })
+    setHevcWarning(initialHevcState)
     setStatus('loading')
     setProgress(0, 'Converting HEVC to H.264...')
 
@@ -123,7 +135,7 @@ export function VideoDropzone() {
   }, [hevcWarning.file, setProgress, setStatus])
 
   const handleCancelHevc = useCallback(() => {
-    setHevcWarning({ show: false, file: null, codec: '' })
+    setHevcWarning(initialHevcState)
   }, [])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
