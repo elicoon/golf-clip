@@ -321,39 +321,80 @@ export function VideoDropzone() {
               <span className="hevc-warning-icon">⚠</span>
               <h3>Unsupported Video Format</h3>
             </div>
+
             <div className="hevc-modal-content">
-              <p>
-                This video uses <strong>{hevcWarning.codec}</strong> encoding, which browsers
-                cannot play natively.
-              </p>
-              <p className="hevc-modal-hint">
-                This is common with iPhone videos recorded at 4K 60fps, even when exported
-                as "Most Compatible".
-              </p>
-              <div className="hevc-modal-options">
-                <div className="hevc-option">
-                  <h4>Option 1: Convert in browser</h4>
-                  <p>We can convert the video to a compatible format. This may take several minutes for large files.</p>
-                  <button onClick={handleTranscode} className="btn-primary">
-                    Convert Video
-                  </button>
-                </div>
-                <div className="hevc-option-divider">or</div>
-                <div className="hevc-option">
-                  <h4>Option 2: Re-export from iPhone</h4>
-                  <p>For faster results, re-export from iPhone using:</p>
-                  <ol>
-                    <li>Open the video in Photos app</li>
-                    <li>Tap Share, then "Save to Files"</li>
-                    <li>Choose "More Compatible" format</li>
-                  </ol>
-                </div>
-              </div>
+              {!hevcWarning.isTranscoding ? (
+                <>
+                  {/* Initial state - show info and options */}
+                  <div className="hevc-file-info">
+                    <p>
+                      <strong>Detected:</strong> {hevcWarning.codec} encoding ({hevcWarning.fileSizeMB} MB)
+                    </p>
+                    <p>
+                      <strong>Supported:</strong> {SUPPORTED_CODECS.join(', ')}
+                    </p>
+                  </div>
+
+                  <div className="hevc-time-estimate">
+                    <p>
+                      Estimated conversion time: <strong>{hevcWarning.estimatedTime}</strong>
+                    </p>
+                    <p className="hevc-modal-hint">
+                      Processing happens in your browser and may be slower on older devices.
+                    </p>
+                  </div>
+
+                  <div className="hevc-tip">
+                    <h4>Tip: Re-export from iPhone for faster results</h4>
+                    <ol>
+                      <li>Open the video in Photos app</li>
+                      <li>Tap Share → "Save to Files"</li>
+                      <li>Choose "More Compatible" format</li>
+                    </ol>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Transcoding in progress */}
+                  <div className="hevc-progress-container">
+                    <p className="hevc-progress-status">Converting video...</p>
+                    <div className="hevc-progress-bar">
+                      <div
+                        className="hevc-progress-fill"
+                        style={{ width: `${hevcWarning.transcodeProgress}%` }}
+                      />
+                    </div>
+                    <div className="hevc-progress-info">
+                      <span>{hevcWarning.transcodeProgress}%</span>
+                      <span>
+                        {hevcWarning.transcodeStartTime &&
+                          formatRemainingTime(
+                            hevcWarning.transcodeProgress,
+                            Date.now() - hevcWarning.transcodeStartTime
+                          )
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
+
             <div className="hevc-modal-footer">
-              <button onClick={handleCancelHevc} className="btn-secondary">
-                Cancel
-              </button>
+              {!hevcWarning.isTranscoding ? (
+                <>
+                  <button onClick={handleCancelHevc} className="btn-secondary">
+                    Upload Different Video
+                  </button>
+                  <button onClick={handleTranscode} className="btn-primary">
+                    Start Transcoding
+                  </button>
+                </>
+              ) : (
+                <button onClick={handleCancelTranscode} className="btn-secondary">
+                  Cancel
+                </button>
+              )}
             </div>
           </div>
         </div>
