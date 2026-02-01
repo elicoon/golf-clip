@@ -112,29 +112,63 @@ export function VideoDropzone() {
     if (!hevcWarning.file) return
 
     const file = hevcWarning.file
-    setHevcWarning(initialHevcState)
-    setStatus('loading')
-    setProgress(0, 'Converting HEVC to H.264...')
+
+    // Create abort controller for cancellation
+    transcodeAbortRef.current = new AbortController()
+
+    // Update state to show transcoding progress in modal
+    setHevcWarning(prev => ({
+      ...prev,
+      isTranscoding: true,
+      transcodeProgress: 0,
+      transcodeStartTime: Date.now(),
+    }))
 
     try {
-      const h264Blob = await transcodeHevcToH264(file, (percent) => {
-        setProgress(percent * 0.4, `Converting video... ${percent}%`)
-      })
+      const h264Blob = await transcodeHevcToH264(
+        file,
+        (percent) => {
+          setHevcWarning(prev => ({
+            ...prev,
+            transcodeProgress: percent,
+          }))
+        },
+        transcodeAbortRef.current.signal
+      )
 
       // Create a File from the blob to pass to processVideoFile
       const h264File = new File([h264Blob], file.name.replace(/\.[^.]+$/, '_h264.mp4'), {
         type: 'video/mp4'
       })
 
-      // Process the transcoded file (skip codec check since we just created H.264)
+      // Close modal and process the transcoded file
+      setHevcWarning(initialHevcState)
       await processVideoFile(h264File)
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        // User cancelled - reset to initial modal state
+        setHevcWarning(prev => ({
+          ...prev,
+          isTranscoding: false,
+          transcodeProgress: 0,
+          transcodeStartTime: null,
+        }))
+        return
+      }
       setError(`Transcode failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setHevcWarning(initialHevcState)
       setStatus('idle')
+    } finally {
+      transcodeAbortRef.current = null
     }
-  }, [hevcWarning.file, setProgress, setStatus])
+  }, [hevcWarning.file, setStatus])
+
+  const handleCancelTranscode = useCallback(() => {
+    transcodeAbortRef.current?.abort()
+  }, [])
 
   const handleCancelHevc = useCallback(() => {
+    transcodeAbortRef.current?.abort()
     setHevcWarning(initialHevcState)
   }, [])
 
