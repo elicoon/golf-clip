@@ -72,36 +72,89 @@ export interface ProcessingCallbacks {
  * Process a video file to detect golf strikes and extract segments.
  *
  * @param file - The video file to process
+ * @param videoId - Optional unique identifier for multi-video tracking
  * @param callbacks - Optional callbacks for progress and events
  * @returns Array of detected strikes
  */
 export async function processVideoFile(
   file: File,
+  videoId?: string,
   callbacks: ProcessingCallbacks = {}
 ): Promise<StrikeDetection[]> {
   const store = useProcessingStore.getState()
 
+  // Helper to update state - uses videoId if provided, otherwise legacy global state
+  const updateProgress = (progress: number, message: string) => {
+    if (videoId) {
+      store.setVideoProgress(videoId, progress, message)
+    } else {
+      store.setProgress(progress, message)
+    }
+    callbacks.onProgress?.(progress, message)
+  }
+
+  const updateStatus = (status: 'loading' | 'processing' | 'ready' | 'error') => {
+    if (videoId) {
+      store.setVideoStatus(videoId, status)
+    } else {
+      store.setStatus(status)
+    }
+  }
+
+  const addStrike = (strike: StrikeDetection) => {
+    if (videoId) {
+      store.addVideoStrike(videoId, strike)
+    } else {
+      store.addStrike(strike)
+    }
+    callbacks.onStrikeDetected?.(strike)
+  }
+
+  const addSegment = (segment: Parameters<typeof store.addSegment>[0]) => {
+    if (videoId) {
+      store.addVideoSegment(videoId, segment)
+    } else {
+      store.addSegment(segment)
+    }
+  }
+
+  const setFileInfo = (name: string, duration: number) => {
+    if (videoId) {
+      store.setVideoFileInfo(videoId, duration)
+    } else {
+      store.setFileInfo(name, duration)
+    }
+  }
+
+  const setError = (error: string) => {
+    if (videoId) {
+      store.setVideoError(videoId, error)
+    } else {
+      store.setError(error)
+    }
+  }
+
   try {
     // Phase 1: Initialize
-    store.setStatus('loading')
-    store.setProgress(5, 'Loading FFmpeg...')
+    updateStatus('loading')
+    updateProgress(5, 'Loading FFmpeg...')
     await loadFFmpeg()
 
     // Note: HEVC detection is now done in VideoDropzone before processing starts.
     // If the user chose to transcode, they get an H.264 file.
     // If they proceeded anyway, segments may fail to play (handled by ClipReview error UI).
-    store.setProgress(8, 'Preparing video...')
+    updateProgress(8, 'Preparing video...')
 
-    store.setProgress(42, 'Loading audio analyzer...')
+    updateProgress(42, 'Loading audio analyzer...')
     await loadEssentia()
 
     // Phase 2: Get video metadata
-    store.setProgress(45, 'Reading video metadata...')
+    updateProgress(45, 'Reading video metadata...')
     const duration = await getVideoDuration(file)
-    store.setFileInfo(file.name, duration)
+    setFileInfo(file.name, duration)
 
     // Phase 3: Process audio in chunks
-    store.setStatus('processing')
+    updateStatus('processing')
     const allStrikes: StrikeDetection[] = []
     const numChunks = Math.ceil(duration / AUDIO_CHUNK_DURATION)
 
@@ -111,8 +164,7 @@ export async function processVideoFile(
       const chunkDuration = chunkEnd - chunkStart
 
       const progressPercent = 50 + (i / numChunks) * 35
-      store.setProgress(progressPercent, `Analyzing audio chunk ${i + 1}/${numChunks}...`)
-      callbacks.onProgress?.(progressPercent, `Analyzing chunk ${i + 1}/${numChunks}`)
+      updateProgress(progressPercent, `Analyzing audio chunk ${i + 1}/${numChunks}...`)
 
       // Extract audio from the (possibly transcoded) file with time offsets
       // FFmpeg handles seeking properly - no need for byte-level slicing
@@ -128,13 +180,12 @@ export async function processVideoFile(
           timestamp: strike.timestamp + chunkStart
         }
         allStrikes.push(adjustedStrike)
-        store.addStrike(adjustedStrike)
-        callbacks.onStrikeDetected?.(adjustedStrike)
+        addStrike(adjustedStrike)
       }
     }
 
     // Phase 4: Extract video segments for each strike using FFmpeg
-    store.setProgress(88, 'Extracting video segments...')
+    updateProgress(88, 'Extracting video segments...')
 
     for (let i = 0; i < allStrikes.length; i++) {
       const strike = allStrikes[i]
@@ -155,7 +206,7 @@ export async function processVideoFile(
         // This is better than silently failing or transcoding every segment which is slow
       }
 
-      store.addSegment({
+      addSegment({
         id: `segment-${i}`,
         strikeTime: strike.timestamp,
         startTime: segmentStart,
@@ -167,19 +218,19 @@ export async function processVideoFile(
 
       // Update progress during segment extraction
       const segmentProgress = 88 + ((i + 1) / allStrikes.length) * 10
-      store.setProgress(segmentProgress, `Extracting segment ${i + 1}/${allStrikes.length}...`)
+      updateProgress(segmentProgress, `Extracting segment ${i + 1}/${allStrikes.length}...`)
     }
 
     // Complete
-    store.setProgress(100, 'Processing complete!')
-    store.setStatus('ready')
+    updateProgress(100, 'Processing complete!')
+    updateStatus('ready')
     callbacks.onComplete?.(allStrikes)
 
     return allStrikes
 
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error))
-    store.setError(err.message)
+    setError(err.message)
     callbacks.onError?.(err)
     throw err
   } finally {
