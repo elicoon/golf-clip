@@ -9,6 +9,7 @@ import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
 import { VideoFramePipeline, ExportConfig, HevcExportError } from '../lib/video-frame-pipeline'
 import { VideoFramePipelineV2, ExportConfigV2 } from '../lib/video-frame-pipeline-v2'
+import { VideoFramePipelineV3, ExportConfigV3 } from '../lib/video-frame-pipeline-v3'
 import { loadFFmpeg, getFFmpegInstance, transcodeHevcToH264, estimateTranscodeTime } from '../lib/ffmpeg-client'
 import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
 
@@ -651,6 +652,78 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     }
   }, [onComplete, exportQuality])
 
+  // POC: Export using V3 pipeline with WebCodecs (hardware accelerated)
+  const handleExportV3 = useCallback(async () => {
+    const store = useProcessingStore.getState()
+    const activeVid = store.activeVideoId ? store.videos.get(store.activeVideoId) : undefined
+    const currentSegments = activeVid?.segments ?? store.segments
+    const approved = currentSegments.filter(s => s.approved === 'approved')
+
+    if (approved.length === 0) {
+      alert('No approved shots to export')
+      return
+    }
+
+    setShowExportModal(true)
+    setExportProgress({ current: 0, total: approved.length })
+    setExportPhase({ phase: 'preparing', progress: 0 })
+    setExportComplete(false)
+    setExportError(null)
+    exportCancelledRef.current = false
+
+    try {
+      console.log('[ExportV3] Starting WebCodecs export...')
+      const pipelineV3 = new VideoFramePipelineV3()
+
+      for (let i = 0; i < approved.length; i++) {
+        if (exportCancelledRef.current) break
+
+        const segment = approved[i]
+        setExportProgress({ current: i + 1, total: approved.length })
+
+        console.log('[ExportV3] Exporting segment', i + 1, 'of', approved.length)
+
+        // Get trajectory points or empty array
+        const trajectoryPoints = segment.trajectory?.points ?? []
+
+        const configV3: ExportConfigV3 = {
+          videoBlob: segment.blob,
+          trajectory: trajectoryPoints,
+          startTime: segment.clipStart - segment.startTime,
+          endTime: segment.clipEnd - segment.startTime,
+          onProgress: (progress) => {
+            setExportPhase({ phase: progress.phase, progress: progress.progress })
+          },
+        }
+
+        const exportedBlob = await pipelineV3.exportWithTracer(configV3)
+
+        // Download
+        const url = URL.createObjectURL(exportedBlob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `shot_${i + 1}_v3.mp4`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      if (!exportCancelledRef.current) {
+        setExportComplete(true)
+        autoCloseTimerRef.current = window.setTimeout(() => {
+          setShowExportModal(false)
+          onComplete()
+        }, 1500)
+      }
+    } catch (error) {
+      console.error('[ExportV3] Export failed:', error)
+      setExportError(error instanceof Error ? error.message : 'Export V3 failed')
+    }
+  }, [onComplete])
+
   // Handle HEVC transcode and retry export
   const handleTranscodeAndExport = useCallback(async () => {
     if (!hevcTranscodeModal.segmentBlob) return
@@ -1030,6 +1103,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                 title="POC: Export using FFmpeg filter approach (faster for 4K)"
               >
                 Export V2 (POC)
+              </button>
+              <button
+                onClick={handleExportV3}
+                className="btn-secondary btn-large"
+                title="POC: Export using WebCodecs (hardware accelerated)"
+              >
+                Export V3 (WebCodecs)
               </button>
             </>
           )}
