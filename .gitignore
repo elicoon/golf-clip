@@ -83,6 +83,9 @@ tmp/
 # Claude Code
 .claude/
 
+# Vercel
+.vercel/
+
 # Test screenshots and artifacts
 trajectory-*.png
 trajectory-*.gif
