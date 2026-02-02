@@ -19,8 +19,8 @@ export class HevcExportError extends Error {
 }
 
 export interface ExportProgress {
-  phase: 'extracting' | 'compositing' | 'encoding' | 'complete'
-  progress: number  // 0-100
+  phase: 'preparing' | 'extracting' | 'compositing' | 'encoding' | 'complete'
+  progress: number  // 0-100, or -1 for indeterminate
   currentFrame?: number
   totalFrames?: number
 }
@@ -87,18 +87,38 @@ export class VideoFramePipeline {
     // via detectVideoCodec() in VideoDropzone.tsx. If an HEVC file somehow reaches
     // here, the frame extraction will fail and trigger the HevcExportError handling.
 
+    // Phase 0: Prepare video data (can be slow for large files)
+    const inputName = 'input.mp4'
+    const framePattern = 'frame_%04d.png'
+    const blobSizeMB = (videoBlob.size / (1024 * 1024)).toFixed(1)
+
+    console.log(`[Pipeline] Preparing video data (${blobSizeMB}MB)...`)
+    onProgress?.({ phase: 'preparing', progress: -1 })
+
+    // For large blobs, warn about potential slowness
+    if (videoBlob.size > 100 * 1024 * 1024) {
+      console.warn(`[Pipeline] Large blob detected (${blobSizeMB}MB). This may take a while...`)
+    }
+
+    // Convert blob to Uint8Array with timing
+    const fetchStart = performance.now()
+    const videoData = await fetchFile(videoBlob)
+    const fetchTime = ((performance.now() - fetchStart) / 1000).toFixed(1)
+    console.log(`[Pipeline] Blob converted to Uint8Array in ${fetchTime}s`)
+    onProgress?.({ phase: 'preparing', progress: 50 })
+
+    // Write to FFmpeg filesystem with timing
+    const writeStart = performance.now()
+    await this.ffmpeg.writeFile(inputName, videoData)
+    const writeTime = ((performance.now() - writeStart) / 1000).toFixed(1)
+    console.log(`[Pipeline] Video written to FFmpeg in ${writeTime}s`)
+    onProgress?.({ phase: 'preparing', progress: 100 })
+
     // Phase 1: Extract frames from video
     // NOTE: FFmpeg.wasm doesn't reliably emit progress events for image2 format.
     // We report -1 (indeterminate) initially, with periodic fallback updates.
     console.log('[Pipeline] Phase 1: Extracting frames')
     onProgress?.({ phase: 'extracting', progress: -1 })
-
-    const inputName = 'input.mp4'
-    const framePattern = 'frame_%04d.png'
-
-    console.log('[Pipeline] Writing video blob to FFmpeg filesystem...')
-    await this.ffmpeg.writeFile(inputName, await fetchFile(videoBlob))
-    console.log('[Pipeline] Video blob written')
 
     // Set up log listener to capture FFmpeg stderr for diagnostics
     let ffmpegLogs = ''
@@ -121,8 +141,12 @@ export class VideoFramePipeline {
     }, 1000)
 
     // Extract frames as PNG sequence with error handling
+    // Add timeout to prevent indefinite hangs (2 minutes should be enough for most segments)
+    const EXTRACTION_TIMEOUT_MS = 120000
+    console.log(`[Pipeline] Starting frame extraction (timeout: ${EXTRACTION_TIMEOUT_MS / 1000}s)...`)
+
     try {
-      const exitCode = await this.ffmpeg.exec([
+      const execPromise = this.ffmpeg.exec([
         '-ss', startTime.toString(),
         '-i', inputName,
         '-t', duration.toString(),
@@ -130,6 +154,15 @@ export class VideoFramePipeline {
         '-f', 'image2',
         framePattern,
       ])
+
+      const timeoutPromise = new Promise<number>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Frame extraction timed out after ${EXTRACTION_TIMEOUT_MS / 1000} seconds. The video may be too large or in an unsupported format.`))
+        }, EXTRACTION_TIMEOUT_MS)
+      })
+
+      const exitCode = await Promise.race([execPromise, timeoutPromise])
+
       if (exitCode !== 0) {
         // Log FFmpeg output for debugging
         if (ffmpegLogs) {
