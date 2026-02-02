@@ -1328,6 +1328,12 @@ kbd {
   border-radius: 4px;
 }
 
+.export-progress-fill.indeterminate {
+  animation: indeterminate 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover));
+  background-size: 200% 100%;
+}
+
 .export-status {
   color: var(--color-text-secondary);
   font-size: 0.875rem;
