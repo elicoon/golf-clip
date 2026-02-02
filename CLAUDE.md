@@ -2,7 +2,23 @@
 
 AI-powered golf shot detection and clip export tool. Analyzes video to detect golf shots via audio transients and visual ball tracking, then exports trimmed clips with optional shot tracer overlay.
 
-**Stack**: FastAPI + Python 3.11 | React + TypeScript + Vite | SQLite | OpenCV + FFmpeg | YOLO
+## Active Development Scope
+
+**ACTIVE** (reference and modify):
+- `apps/browser/` - Production web app (Vercel) - **THIS IS THE MAIN CODEBASE**
+
+**PAUSED** (do not reference or modify):
+- `packages/frontend/` - Tauri desktop frontend (on hold)
+- `packages/detection/` - Shared detection package (unused, desktop has own copy)
+- `packages/api-schemas/` - Shared schemas (unused)
+- `apps/desktop/` - Desktop backend (on hold)
+- `apps/webapp/` - Cloud webapp (on hold)
+
+When working on features or bugs, look in `apps/browser/` first. The paused directories contain stale code that may not reflect current functionality.
+
+---
+
+**Stack**: React + TypeScript + Vite | FFmpeg.js + Essentia.js (client-side processing)
 
 ## Deployments
 
