@@ -190,14 +190,14 @@ export async function processVideoFile(
     for (let i = 0; i < allStrikes.length; i++) {
       const strike = allStrikes[i]
 
-      // Extract 30-second segment: 10 seconds before to 20 seconds after
-      // This gives 5s extension room on each side beyond the default clip
-      const segmentStart = Math.max(0, strike.timestamp - 10)
-      const segmentEnd = Math.min(duration, strike.timestamp + 20)
+      // Extract 30-second segment: 15 seconds before to 15 seconds after impact
+      // This gives symmetric extension room around the default clip
+      const segmentStart = Math.max(0, strike.timestamp - 15)
+      const segmentEnd = Math.min(duration, strike.timestamp + 15)
       const segmentDuration = segmentEnd - segmentStart
 
       // Default clip boundaries: 5s before to 10s after strike (15s clip)
-      // User can extend up to 5s in either direction within the extracted segment
+      // User can extend 10s earlier (to segmentStart) or 5s later (to segmentEnd)
       const clipStart = Math.max(segmentStart, strike.timestamp - 5)
       const clipEnd = Math.min(segmentEnd, strike.timestamp + 10)
 
