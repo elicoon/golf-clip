@@ -173,9 +173,10 @@ describe('VideoFramePipeline extraction progress fallback', () => {
     const progressUpdates: { phase: string; progress: number }[] = []
 
     // Create a mock that delays exec to simulate slow extraction
-    const execPromise = new Promise<void>(resolve => {
+    // Returns exit code 0 (success) after delay
+    const execPromise = new Promise<number>(resolve => {
       // Simulate 3 seconds of extraction
-      setTimeout(resolve, 3000)
+      setTimeout(() => resolve(0), 3000)
     })
 
     const mockFFmpeg = {
@@ -400,5 +401,486 @@ describe('VideoFramePipeline HEVC detection', () => {
     })).rejects.toThrow('Frame extraction produced no frames')
 
     expect(mockedIsHevc).toHaveBeenCalledWith(h264Blob)
+  })
+})
+
+/**
+ * Tests for FFmpeg exit code handling bug.
+ *
+ * BUG: The current implementation does NOT check FFmpeg's exit code after frame extraction.
+ * FFmpeg.exec() returns an exit code, but lines 109-117 only catch exceptions - they don't
+ * verify exec() returned 0.
+ *
+ * When FFmpeg fails to decode a video (e.g., HEVC without decoder), it:
+ * 1. Does NOT throw an exception
+ * 2. Returns a non-zero exit code
+ * 3. Produces no output frames
+ *
+ * The current code falls through to line 130 which checks for frame_0001.png,
+ * finds nothing, and throws a generic "Frame extraction produced no frames" error
+ * that doesn't mention the actual cause (codec/exit code).
+ *
+ * These tests verify the fix:
+ * 1. FFmpeg exit code MUST be checked after exec()
+ * 2. Non-zero exit code MUST throw a descriptive error (not generic)
+ * 3. Error message SHOULD include exit code and ideally codec info
+ */
+describe('VideoFramePipeline FFmpeg exit code handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('should throw descriptive error when FFmpeg returns non-zero exit code during frame extraction', async () => {
+    /**
+     * This test will FAIL with current buggy code because:
+     * - Current code doesn't check exec() return value (lines 110-117)
+     * - FFmpeg returning exit code 1 doesn't throw, just silently fails
+     * - Error is caught later as generic "Frame extraction produced no frames"
+     *
+     * After fix, this should pass because:
+     * - exec() return value is checked
+     * - Non-zero exit code throws error with exit code in message
+     */
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const { VideoFramePipeline } = await import('./video-frame-pipeline')
+
+    vi.mocked(isHevcCodec).mockResolvedValue(false) // Bypasses HEVC check
+
+    // FFmpeg returns exit code 1 (failure) but doesn't throw
+    const mockFFmpeg = {
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockRejectedValue(new Error('file not found')), // No frames produced
+      exec: vi.fn().mockResolvedValue(1), // <-- Non-zero exit code!
+      deleteFile: vi.fn().mockResolvedValue(undefined),
+      on: vi.fn(),
+      off: vi.fn(),
+    }
+
+    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
+
+    // This should throw an error that mentions the exit code, not just "no frames"
+    await expect(pipeline.exportWithTracer({
+      videoBlob: new Blob(['video'], { type: 'video/mp4' }),
+      trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
+      startTime: 0,
+      endTime: 1,
+      fps: 30,
+      tracerStyle: {
+        color: '#ff0000',
+        thickness: 2,
+        glowEnabled: false,
+        glowColor: '#ffffff',
+        glowIntensity: 0.5,
+        shadowEnabled: false,
+        shadowColor: '#000000',
+        shadowBlur: 4,
+      },
+    })).rejects.toThrow(/exit code/i)
+
+    // Verify exec was called (frame extraction attempt)
+    expect(mockFFmpeg.exec).toHaveBeenCalled()
+  })
+
+  it('should include exit code value in error message when FFmpeg fails', async () => {
+    /**
+     * This test verifies the error message is actionable, not generic.
+     * Current code: "Frame extraction produced no frames. The video may be corrupted..."
+     * Expected: Error message that includes "exit code 1" or similar
+     */
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const { VideoFramePipeline } = await import('./video-frame-pipeline')
+
+    vi.mocked(isHevcCodec).mockResolvedValue(false)
+
+    const mockFFmpeg = {
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockRejectedValue(new Error('file not found')),
+      exec: vi.fn().mockResolvedValue(1), // Exit code 1
+      deleteFile: vi.fn().mockResolvedValue(undefined),
+      on: vi.fn(),
+      off: vi.fn(),
+    }
+
+    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
+
+    let thrownError: Error | null = null
+    try {
+      await pipeline.exportWithTracer({
+        videoBlob: new Blob(['video'], { type: 'video/mp4' }),
+        trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
+        startTime: 0,
+        endTime: 1,
+        fps: 30,
+        tracerStyle: {
+          color: '#ff0000',
+          thickness: 2,
+          glowEnabled: false,
+          glowColor: '#ffffff',
+          glowIntensity: 0.5,
+          shadowEnabled: false,
+          shadowColor: '#000000',
+          shadowBlur: 4,
+        },
+      })
+    } catch (e) {
+      thrownError = e as Error
+    }
+
+    expect(thrownError).not.toBeNull()
+    // Error message should contain the actual exit code value
+    expect(thrownError!.message).toMatch(/1/) // Contains "1" (the exit code)
+    // Should NOT be the generic message
+    expect(thrownError!.message).not.toMatch(/may be corrupted/i)
+  })
+
+  it('should succeed when FFmpeg returns exit code 0', async () => {
+    /**
+     * Sanity check: When FFmpeg succeeds (exit code 0), export should work.
+     */
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const { VideoFramePipeline } = await import('./video-frame-pipeline')
+
+    vi.mocked(isHevcCodec).mockResolvedValue(false)
+
+    const mockFFmpeg = {
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockImplementation((name: string) => {
+        if (name === 'frame_0001.png') {
+          return Promise.resolve(new Uint8Array([
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x64,
+            0x00, 0x00, 0x00, 0x64,
+            0x08, 0x02, 0x00, 0x00, 0x00,
+          ]))
+        }
+        return Promise.resolve(new Uint8Array([1, 2, 3]))
+      }),
+      exec: vi.fn().mockResolvedValue(0), // <-- Exit code 0 = success
+      deleteFile: vi.fn().mockResolvedValue(undefined),
+      on: vi.fn(),
+      off: vi.fn(),
+    }
+
+    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
+
+    // Should NOT throw
+    const result = await pipeline.exportWithTracer({
+      videoBlob: new Blob(['video'], { type: 'video/mp4' }),
+      trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
+      startTime: 0,
+      endTime: 0.1,
+      fps: 10,
+      tracerStyle: {
+        color: '#ff0000',
+        thickness: 2,
+        glowEnabled: false,
+        glowColor: '#ffffff',
+        glowIntensity: 0.5,
+        shadowEnabled: false,
+        shadowColor: '#000000',
+        shadowBlur: 4,
+      },
+    })
+
+    expect(result).toBeInstanceOf(Blob)
+  })
+
+  it('should check exit code for frame extraction specifically, not just encoding', async () => {
+    /**
+     * Verify that exit code is checked after the FIRST exec call (frame extraction),
+     * not just the second one (encoding). This is critical because:
+     * - Frame extraction is where codec incompatibility manifests
+     * - Current code only has try/catch, not exit code check
+     */
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const { VideoFramePipeline } = await import('./video-frame-pipeline')
+
+    vi.mocked(isHevcCodec).mockResolvedValue(false)
+
+    let execCallCount = 0
+    const mockFFmpeg = {
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockRejectedValue(new Error('file not found')),
+      exec: vi.fn().mockImplementation(() => {
+        execCallCount++
+        if (execCallCount === 1) {
+          // First call = frame extraction - return failure
+          return Promise.resolve(1)
+        }
+        // Second call would be encoding (shouldn't reach here)
+        return Promise.resolve(0)
+      }),
+      deleteFile: vi.fn().mockResolvedValue(undefined),
+      on: vi.fn(),
+      off: vi.fn(),
+    }
+
+    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
+
+    await expect(pipeline.exportWithTracer({
+      videoBlob: new Blob(['video'], { type: 'video/mp4' }),
+      trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
+      startTime: 0,
+      endTime: 1,
+      fps: 30,
+      tracerStyle: {
+        color: '#ff0000',
+        thickness: 2,
+        glowEnabled: false,
+        glowColor: '#ffffff',
+        glowIntensity: 0.5,
+        shadowEnabled: false,
+        shadowColor: '#000000',
+        shadowBlur: 4,
+      },
+    })).rejects.toThrow()
+
+    // Should fail on FIRST exec call, not proceed to second
+    expect(execCallCount).toBe(1)
+  })
+})
+
+/**
+ * Integration tests for HEVC codec handling in export flow.
+ *
+ * These tests verify the complete flow when dealing with HEVC videos,
+ * including proper error propagation and recovery options.
+ */
+describe('VideoFramePipeline HEVC codec integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('should throw HevcExportError that can be caught by type for UI handling', async () => {
+    /**
+     * UI components need to catch HevcExportError specifically to show
+     * the transcode modal instead of a generic error message.
+     */
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const { VideoFramePipeline, HevcExportError } = await import('./video-frame-pipeline')
+
+    vi.mocked(isHevcCodec).mockResolvedValue(true)
+
+    const mockFFmpeg = {
+      writeFile: vi.fn(),
+      readFile: vi.fn(),
+      exec: vi.fn(),
+      deleteFile: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+    }
+
+    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
+
+    let caughtError: Error | null = null
+    try {
+      await pipeline.exportWithTracer({
+        videoBlob: new Blob(['hevc'], { type: 'video/mp4' }),
+        trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
+        startTime: 0,
+        endTime: 1,
+        fps: 30,
+        tracerStyle: {
+          color: '#ff0000',
+          thickness: 2,
+          glowEnabled: false,
+          glowColor: '#ffffff',
+          glowIntensity: 0.5,
+          shadowEnabled: false,
+          shadowColor: '#000000',
+          shadowBlur: 4,
+        },
+      })
+    } catch (e) {
+      caughtError = e as Error
+    }
+
+    // Must be catchable as HevcExportError for UI to show transcode modal
+    expect(caughtError).toBeInstanceOf(HevcExportError)
+    expect(caughtError!.name).toBe('HevcExportError')
+  })
+
+  it('should detect HEVC before attempting frame extraction (fail fast)', async () => {
+    /**
+     * HEVC check should happen BEFORE any heavy FFmpeg operations.
+     * This ensures fast feedback to user and avoids wasted processing.
+     */
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const { VideoFramePipeline, HevcExportError } = await import('./video-frame-pipeline')
+
+    vi.mocked(isHevcCodec).mockResolvedValue(true)
+
+    const mockFFmpeg = {
+      writeFile: vi.fn(),
+      readFile: vi.fn(),
+      exec: vi.fn(),
+      deleteFile: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+    }
+
+    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
+
+    await expect(pipeline.exportWithTracer({
+      videoBlob: new Blob(['hevc'], { type: 'video/mp4' }),
+      trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
+      startTime: 0,
+      endTime: 1,
+      fps: 30,
+      tracerStyle: {
+        color: '#ff0000',
+        thickness: 2,
+        glowEnabled: false,
+        glowColor: '#ffffff',
+        glowIntensity: 0.5,
+        shadowEnabled: false,
+        shadowColor: '#000000',
+        shadowBlur: 4,
+      },
+    })).rejects.toThrow(HevcExportError)
+
+    // exec should NOT have been called because HEVC was detected first
+    expect(mockFFmpeg.exec).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Tests for FFmpeg diagnostic logging during frame extraction failures.
+ *
+ * When frame extraction fails, FFmpeg's log output (stderr) contains valuable
+ * information about why (e.g., "Stream #0: Video: hevc, cannot decode").
+ * These tests verify that we capture and log this information.
+ */
+describe('VideoFramePipeline - Diagnostic Logging (Bug Fix)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.resetModules()
+  })
+
+  const defaultTracerStyle = {
+    color: '#FF4444',
+    lineWidth: 3,
+    glowEnabled: true,
+    glowColor: '#FF6666',
+    glowRadius: 8,
+    showApexMarker: true,
+    showLandingMarker: true,
+    showOriginMarker: true,
+    styleMode: 'solid' as const,
+    tailLengthSeconds: 0.4,
+    tailFade: true,
+  }
+
+  /**
+   * Test that FFmpeg log output is captured and logged when extraction fails.
+   * This helps debug codec issues without requiring users to understand FFmpeg.
+   */
+  it('should capture FFmpeg log output when frame extraction fails', async () => {
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const { VideoFramePipeline } = await import('./video-frame-pipeline')
+
+    vi.mocked(isHevcCodec).mockResolvedValue(false)
+
+    const consoleSpy = vi.spyOn(console, 'error')
+    const logListeners: Array<(data: { message: string }) => void> = []
+
+    const mockFFmpeg = {
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockRejectedValue(new Error('File not found')),
+      exec: vi.fn().mockImplementation(async () => {
+        // Simulate FFmpeg log output during execution
+        for (const listener of logListeners) {
+          listener({ message: 'Stream #0: Video: hevc, cannot decode' })
+          listener({ message: 'Error decoding video stream' })
+        }
+        return 1 // Non-zero exit code
+      }),
+      deleteFile: vi.fn(),
+      on: vi.fn().mockImplementation((event: string, callback: (data: { message: string }) => void) => {
+        if (event === 'log') {
+          logListeners.push(callback)
+        }
+      }),
+      off: vi.fn().mockImplementation((event: string, callback: (data: { message: string }) => void) => {
+        if (event === 'log') {
+          const index = logListeners.indexOf(callback)
+          if (index !== -1) logListeners.splice(index, 1)
+        }
+      }),
+    }
+
+    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
+    const videoBlob = new Blob(['video-data'], { type: 'video/mp4' })
+
+    try {
+      await pipeline.exportWithTracer({
+        videoBlob,
+        trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
+        startTime: 0,
+        endTime: 1,
+        fps: 30,
+        quality: 'draft',
+        tracerStyle: defaultTracerStyle,
+      })
+      expect.fail('Expected error to be thrown')
+    } catch {
+      // Expected
+    }
+
+    // Should have logged diagnostic info from FFmpeg
+    expect(consoleSpy).toHaveBeenCalled()
+    const logCalls = consoleSpy.mock.calls.map(call => call.join(' ')).join('\n')
+    expect(logCalls).toContain('FFmpeg')
+
+    consoleSpy.mockRestore()
+  })
+
+  /**
+   * Test that log listeners are cleaned up after failure.
+   */
+  it('should clean up log listeners when frame extraction fails', async () => {
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const { VideoFramePipeline } = await import('./video-frame-pipeline')
+
+    vi.mocked(isHevcCodec).mockResolvedValue(false)
+
+    const onCalls: string[] = []
+    const offCalls: string[] = []
+
+    const mockFFmpeg = {
+      writeFile: vi.fn().mockResolvedValue(undefined),
+      readFile: vi.fn().mockRejectedValue(new Error('File not found')),
+      exec: vi.fn().mockResolvedValue(1),
+      deleteFile: vi.fn(),
+      on: vi.fn().mockImplementation((event: string) => {
+        onCalls.push(event)
+      }),
+      off: vi.fn().mockImplementation((event: string) => {
+        offCalls.push(event)
+      }),
+    }
+
+    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
+    const videoBlob = new Blob(['video-data'], { type: 'video/mp4' })
+
+    try {
+      await pipeline.exportWithTracer({
+        videoBlob,
+        trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
+        startTime: 0,
+        endTime: 1,
+        fps: 30,
+        quality: 'draft',
+        tracerStyle: defaultTracerStyle,
+      })
+    } catch {
+      // Expected
+    }
+
+    // Every 'on' call for log should have a corresponding 'off' call
+    const logOnCount = onCalls.filter(e => e === 'log').length
+    const logOffCount = offCalls.filter(e => e === 'log').length
+    expect(logOffCount).toBeGreaterThanOrEqual(logOnCount)
   })
 })

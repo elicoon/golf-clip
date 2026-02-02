@@ -92,6 +92,13 @@ export class VideoFramePipeline {
 
     await this.ffmpeg.writeFile(inputName, await fetchFile(videoBlob))
 
+    // Set up log listener to capture FFmpeg stderr for diagnostics
+    let ffmpegLogs = ''
+    const logHandler = ({ message }: { message: string }) => {
+      ffmpegLogs += message + '\n'
+    }
+    this.ffmpeg.on('log', logHandler)
+
     // Set up fallback progress updates every second during extraction
     // This prevents the UI from appearing stuck if FFmpeg doesn't emit events
     let lastReportedProgress = -1
@@ -116,17 +123,26 @@ export class VideoFramePipeline {
         framePattern,
       ])
       if (exitCode !== 0) {
+        // Log FFmpeg output for debugging
+        if (ffmpegLogs) {
+          console.error('[VideoFramePipeline] FFmpeg logs:\n', ffmpegLogs)
+        }
         throw new Error(`FFmpeg frame extraction failed with exit code ${exitCode}`)
       }
     } catch (error) {
       clearInterval(fallbackInterval)
+      this.ffmpeg.off('log', logHandler)
       const message = error instanceof Error ? error.message : 'Unknown FFmpeg error'
       console.error('[VideoFramePipeline] Frame extraction failed:', message)
+      if (ffmpegLogs) {
+        console.error('[VideoFramePipeline] FFmpeg logs:\n', ffmpegLogs)
+      }
       throw new Error(`Frame extraction failed: ${message}`)
     }
 
-    // Clean up fallback interval
+    // Clean up fallback interval and log listener
     clearInterval(fallbackInterval)
+    this.ffmpeg.off('log', logHandler)
 
     // Verify frames were extracted
     try {
