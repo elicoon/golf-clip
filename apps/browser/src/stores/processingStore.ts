@@ -159,15 +159,20 @@ export const useProcessingStore = create<ProcessingState>((set, get) => ({
   addStrike: (strike) => set((state) => ({
     strikes: [...state.strikes, strike]
   })),
-  addSegment: (segment) => set((state) => ({
-    segments: [...state.segments, {
-      ...segment,
-      confidence: segment.confidence ?? 0.5,
-      clipStart: segment.clipStart ?? segment.startTime,
-      clipEnd: segment.clipEnd ?? segment.endTime,
-      approved: segment.approved ?? 'pending',
-    }]
-  })),
+  addSegment: (segment) => set((state) => {
+    const confidence = segment.confidence ?? 0.5
+    // Auto-approve high-confidence shots (>= 0.7) since they skip review
+    const approved = segment.approved ?? (confidence >= 0.7 ? 'approved' : 'pending')
+    return {
+      segments: [...state.segments, {
+        ...segment,
+        confidence,
+        clipStart: segment.clipStart ?? segment.startTime,
+        clipEnd: segment.clipEnd ?? segment.endTime,
+        approved,
+      }]
+    }
+  }),
   setCurrentSegment: (index) => set({ currentSegmentIndex: index }),
   updateSegment: (id, updates) => set((state) => ({
     segments: state.segments.map(seg =>
@@ -259,12 +264,15 @@ export const useProcessingStore = create<ProcessingState>((set, get) => ({
     const video = state.videos.get(id)
     if (!video) return state
     const newVideos = new Map(state.videos)
+    const confidence = segment.confidence ?? 0.5
+    // Auto-approve high-confidence shots (>= 0.7) since they skip review
+    const approved = segment.approved ?? (confidence >= 0.7 ? 'approved' : 'pending')
     const fullSegment: VideoSegment = {
       ...segment,
-      confidence: segment.confidence ?? 0.5,
+      confidence,
       clipStart: segment.clipStart ?? segment.startTime,
       clipEnd: segment.clipEnd ?? segment.endTime,
-      approved: segment.approved ?? 'pending',
+      approved,
     }
     newVideos.set(id, { ...video, segments: [...video.segments, fullSegment] })
     return { videos: newVideos }

@@ -28,15 +28,30 @@ const initialHevcState: HevcWarningState = {
   fileSizeMB: 0,
 }
 
+/** Store actions needed for background processing */
+interface BackgroundProcessingActions {
+  addVideo: (id: string, fileName: string) => void
+  setVideoError: (id: string, error: string) => void
+}
+
 /**
  * Process a single file in the background without blocking.
  * Adds video to store immediately, then starts processing.
+ *
+ * @param file - The video file to process
+ * @param videoId - Unique identifier for this video
+ * @param storeActions - Store actions (defaults to real store, can be injected for testing)
  */
-async function processFileInBackground(file: File, videoId: string) {
-  const store = useProcessingStore.getState()
+async function processFileInBackground(
+  file: File,
+  videoId: string,
+  storeActions?: BackgroundProcessingActions
+) {
+  // Get store actions - use injected actions if provided (for testing), otherwise get from real store
+  const actions = storeActions ?? useProcessingStore.getState()
 
   // Add video to store immediately with 'pending' status
-  store.addVideo(videoId, file.name)
+  actions.addVideo(videoId, file.name)
 
   try {
     // Check codec before processing
@@ -45,7 +60,7 @@ async function processFileInBackground(file: File, videoId: string) {
 
     if (codecInfo.isHevc) {
       // For HEVC in multi-file mode, mark as error (user can handle individually)
-      store.setVideoError(videoId, `HEVC codec detected - needs transcoding`)
+      actions.setVideoError(videoId, `HEVC codec detected - needs transcoding`)
       return
     }
 
@@ -53,7 +68,7 @@ async function processFileInBackground(file: File, videoId: string) {
     await processVideoFile(file, videoId)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    store.setVideoError(videoId, message)
+    actions.setVideoError(videoId, message)
   }
 }
 

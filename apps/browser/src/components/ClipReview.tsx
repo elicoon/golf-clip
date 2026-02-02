@@ -52,6 +52,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportQuality, setExportQuality] = useState<'draft' | 'preview' | 'final'>('preview')
   const exportCancelledRef = useRef(false)
+  const defensiveTimeoutRef = useRef<number | null>(null)
 
   // HEVC transcode modal state (shown when export fails due to HEVC codec)
   const [hevcTranscodeModal, setHevcTranscodeModal] = useState<HevcTranscodeModalState>(initialHevcTranscodeModalState)
@@ -190,6 +191,15 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current)
     }
   }, [currentShot, autoLoopEnabled])
+
+  // Cleanup defensive timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (defensiveTimeoutRef.current) {
+        clearTimeout(defensiveTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Reset marking state when shot changes
   useEffect(() => {
@@ -451,6 +461,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         setExportComplete(true)
         // Auto-close modal after showing success for 1.5 seconds
         setTimeout(() => {
+          // Clear defensive timeout when modal auto-closes on success
+          if (defensiveTimeoutRef.current) {
+            clearTimeout(defensiveTimeoutRef.current)
+            defensiveTimeoutRef.current = null
+          }
           setShowExportModal(false)
           onComplete()
         }, 1500)
@@ -458,24 +473,33 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'An error occurred during export')
     } finally {
+      // Clear any existing defensive timeout before potentially setting a new one
+      if (defensiveTimeoutRef.current) {
+        clearTimeout(defensiveTimeoutRef.current)
+        defensiveTimeoutRef.current = null
+      }
       // Defensive: Ensure modal closes even if exception occurs after downloads
       // This handles edge cases where exceptions bypass setExportComplete(true)
-      // Wait 10 seconds - if modal is still open without error/complete, force close
-      setTimeout(() => {
-        // Only force close if we're in a stuck state (modal open, no error, not complete, not cancelled)
-        // Use functional updates to check current state values at timeout time
-        setShowExportModal(currentShowModal => {
-          if (currentShowModal && !exportCancelledRef.current) {
-            // Check if we're in a stuck state by looking at what the modal would show
-            // If we get here, the modal is open - but is it showing error or complete?
-            // We can't directly check exportError/exportComplete, so we force close
-            // and let the normal flow handle it if it's actually showing something
-            console.warn('[ClipReview] Export modal stuck - forcing close after timeout')
-            return false // Force close
-          }
-          return currentShowModal
-        })
-      }, 10000)
+      // Only set the timeout if export wasn't cancelled
+      if (!exportCancelledRef.current) {
+        // Wait 10 seconds - if modal is still open without error/complete, force close
+        defensiveTimeoutRef.current = window.setTimeout(() => {
+          // Only force close if we're in a stuck state (modal open, no error, not complete, not cancelled)
+          // Use functional updates to check current state values at timeout time
+          setShowExportModal(currentShowModal => {
+            if (currentShowModal && !exportCancelledRef.current) {
+              // Check if we're in a stuck state by looking at what the modal would show
+              // If we get here, the modal is open - but is it showing error or complete?
+              // We can't directly check exportError/exportComplete, so we force close
+              // and let the normal flow handle it if it's actually showing something
+              console.warn('[ClipReview] Export modal stuck - forcing close after timeout')
+              return false // Force close
+            }
+            return currentShowModal
+          })
+          defensiveTimeoutRef.current = null  // Clear after running
+        }, 10000)
+      }
     }
   }, [onComplete, exportSegmentWithTracer])
 
@@ -876,7 +900,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                       )}
                     </p>
                     <button
-                      onClick={() => { exportCancelledRef.current = true; setShowExportModal(false) }}
+                      onClick={() => {
+                        exportCancelledRef.current = true
+                        if (defensiveTimeoutRef.current) {
+                          clearTimeout(defensiveTimeoutRef.current)
+                          defensiveTimeoutRef.current = null
+                        }
+                        setShowExportModal(false)
+                      }}
                       className="btn-secondary"
                     >
                       Cancel
@@ -887,7 +918,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                     <div className="export-success-icon">✓</div>
                     <p className="export-result">{exportProgress.total} clips downloaded</p>
                     <button
-                      onClick={() => { setShowExportModal(false); onComplete() }}
+                      onClick={() => {
+                        if (defensiveTimeoutRef.current) {
+                          clearTimeout(defensiveTimeoutRef.current)
+                          defensiveTimeoutRef.current = null
+                        }
+                        setShowExportModal(false)
+                        onComplete()
+                      }}
                       className="btn-primary"
                     >
                       Done
@@ -1144,7 +1182,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                     )}
                   </p>
                   <button
-                    onClick={() => { exportCancelledRef.current = true; setShowExportModal(false) }}
+                    onClick={() => {
+                      exportCancelledRef.current = true
+                      if (defensiveTimeoutRef.current) {
+                        clearTimeout(defensiveTimeoutRef.current)
+                        defensiveTimeoutRef.current = null
+                      }
+                      setShowExportModal(false)
+                    }}
                     className="btn-secondary"
                   >
                     Cancel
@@ -1155,7 +1200,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                   <div className="export-success-icon">✓</div>
                   <p className="export-result">{exportProgress.total} clips downloaded</p>
                   <button
-                    onClick={() => { setShowExportModal(false); onComplete() }}
+                    onClick={() => {
+                      if (defensiveTimeoutRef.current) {
+                        clearTimeout(defensiveTimeoutRef.current)
+                        defensiveTimeoutRef.current = null
+                      }
+                      setShowExportModal(false)
+                      onComplete()
+                    }}
                     className="btn-primary"
                   >
                     Done
