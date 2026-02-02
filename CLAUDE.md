@@ -4,56 +4,38 @@ AI-powered golf shot detection and clip export tool. Analyzes video to detect go
 
 **Stack**: FastAPI + Python 3.11 | React + TypeScript + Vite | SQLite | OpenCV + FFmpeg | YOLO
 
+## Deployments
+
+| App | URL | Notes |
+|-----|-----|-------|
+| Browser App (PROD) | https://browser-seven-sigma.vercel.app | Main production deployment |
+| API (PROD) | https://golfclip-api.fly.dev | Backend API on Fly.io |
+
 ## Commands
 
 | Task | Command |
 |------|---------|
+| **Browser app dev** | `cd apps/browser && npm run dev` |
+| **Browser app tests** | `cd apps/browser && npm run test` |
 | Backend server | `cd apps/desktop && uvicorn backend.main:app --host 127.0.0.1 --port 8420 --reload` |
-| Frontend dev | `cd packages/frontend && npm run dev` |
-| Run all tests | `cd apps/desktop && pytest backend/tests/ -v` |
+| Backend tests | `cd apps/desktop && pytest backend/tests/ -v` |
 | Skip slow tests | `cd apps/desktop && pytest backend/tests/ -v -m "not slow"` |
-| Single test file | `cd apps/desktop && pytest backend/tests/test_integration.py -v` |
+| Desktop frontend dev | `cd packages/frontend && npm run dev` |
 | Setup (macOS) | `brew install python@3.11 ffmpeg && python3.11 -m venv .venv && pip install -e ".[dev]"` |
 
 ## Architecture
 
-```
-golf-clip/
-├── packages/
-│   ├── frontend/           # Shared React app (Vite + TypeScript)
-│   │   └── src/
-│   │       ├── App.tsx, config.ts, stores/appStore.ts
-│   │       └── components/  # VideoDropzone, ClipReview, TrajectoryEditor, etc.
-│   ├── detection/          # Shared ML/detection (golfclip-detection)
-│   │   └── src/golfclip_detection/  # audio.py, visual.py, origin.py, tracker.py
-│   └── api-schemas/        # Shared Pydantic schemas
-├── apps/
-│   ├── desktop/            # Desktop app (golfclip-desktop)
-│   │   └── backend/
-│   │       ├── api/routes.py        # All API endpoints
-│   │       ├── core/                # database.py, config.py, video.py
-│   │       ├── detection/           # Audio + visual detection modules
-│   │       ├── models/              # CRUD: job.py, trajectory.py
-│   │       ├── processing/          # tracer.py, clips.py, curves.py
-│   │       └── tests/               # 30+ test files
-│   └── webapp/             # Cloud webapp (PostgreSQL + R2)
-├── scripts/                # Dev scripts
-└── docs/                   # Extended documentation
-```
+**`apps/browser/` and `packages/frontend/` are SEPARATE codebases** - not shared imports. Production is `apps/browser/`. When fixing frontend bugs, apply fixes there.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
+| `apps/browser/src/components/ClipReview.tsx` | **Production** shot review UI |
+| `apps/browser/src/components/Scrubber.tsx` | **Production** timeline scrubber |
 | `apps/desktop/backend/main.py` | FastAPI app entrypoint |
 | `apps/desktop/backend/api/routes.py` | All API endpoints |
-| `apps/desktop/backend/core/database.py` | SQLite setup + migrations |
-| `packages/frontend/src/App.tsx` | Main React app with view routing |
-| `packages/frontend/src/stores/appStore.ts` | Zustand state management |
-| `packages/frontend/src/components/ClipReview.tsx` | Shot review + export + tracer |
 | `packages/detection/src/golfclip_detection/audio.py` | Audio transient detection |
-| `packages/detection/src/golfclip_detection/origin.py` | Ball origin detection (shaft + clubhead) |
-| `apps/desktop/backend/processing/tracer.py` | Shot tracer rendering (OpenCV) |
 
 ## Environment Variables
 
