@@ -1,0 +1,39 @@
+# Large test files
+test-videos/
+video files/
+*.mov
+*.mp4
+*.MOV
+*.MP4
+*.avi
+*.mkv
+
+# ML Models
+*.pt
+*.pth
+*.onnx
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Test artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Desktop app (only deploying browser app)
+apps/desktop/
+apps/webapp/
+src-tauri/
+
+# Docs (not needed for deployment)
+docs/
+
+# Development files
+.claude/
+.worktrees/
+.playwright-mcp/
