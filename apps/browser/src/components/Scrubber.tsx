@@ -30,22 +30,20 @@ export function Scrubber({
   // Lock the window while dragging to prevent it from shifting
   const [lockedWindow, setLockedWindow] = useState<{ start: number; end: number } | null>(null)
 
-  // Calculate extension buffer: use 30s or 25% of video duration, whichever is smaller
-  // This allows extending clip boundaries well beyond the initial detection
+  // The scrubber window shows the full available segment
+  // Users can extend the clip up to the segment boundaries (0 to videoDuration)
   const totalDuration = videoDuration || duration
-  const extensionBuffer = totalDuration ? Math.min(30, totalDuration * 0.25) : 30
 
-  // Calculate window bounds - use locked values if dragging, otherwise compute from props
+  // Calculate window bounds - always show the full segment so user can extend to boundaries
+  // When dragging, lock the window to prevent jumping
   const windowStart = lockedWindow
     ? lockedWindow.start
-    : Math.max(0, startTime - extensionBuffer)
+    : 0  // Segment always starts at 0 (times are relative to segment)
 
   // Guard against inverted window - ensure windowEnd > windowStart
   const rawWindowEnd = lockedWindow
     ? lockedWindow.end
-    : totalDuration
-      ? Math.min(totalDuration, endTime + extensionBuffer)
-      : endTime + extensionBuffer
+    : totalDuration || Math.max(endTime + 5, 30)  // Show full segment, fallback if duration unknown
   const windowEnd = Math.max(rawWindowEnd, windowStart + 1) // Ensure at least 1s window
 
   // Prevent division by zero/negative
@@ -111,12 +109,11 @@ export function Scrubber({
     e.stopPropagation()
 
     // Lock the window dimensions when starting to drag a handle
+    // Use full segment bounds (0 to totalDuration)
     if (type === 'start' || type === 'end') {
       setLockedWindow({
-        start: Math.max(0, startTime - extensionBuffer),
-        end: totalDuration
-          ? Math.min(totalDuration, endTime + extensionBuffer)
-          : endTime + extensionBuffer,
+        start: 0,
+        end: totalDuration || Math.max(endTime + 5, 30),
       })
     }
 
