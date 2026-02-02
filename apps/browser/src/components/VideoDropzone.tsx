@@ -2,12 +2,17 @@
 import { useCallback, useState, useRef } from 'react'
 import { useProcessingStore } from '../stores/processingStore'
 import { processVideoFile } from '../lib/streaming-processor'
-import { loadFFmpeg, detectVideoCodec, transcodeHevcToH264, estimateTranscodeTime } from '../lib/ffmpeg-client'
+import { loadFFmpeg, detectVideoCodec, transcodeHevcToH264 } from '../lib/ffmpeg-client'
 import { HevcTranscodeModal, HevcTranscodeModalState, initialHevcTranscodeModalState } from './HevcTranscodeModal'
 
 const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime', 'video/x-m4v']
 const ACCEPTED_EXTENSIONS = ['.mp4', '.mov', '.m4v']
 const MAX_FILE_SIZE_GB = 2 // Browser has lower limit due to memory constraints
+
+/** Generate unique video ID */
+function generateVideoId(): string {
+  return `video-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+}
 
 /** Extended state for VideoDropzone HEVC modal (includes file info for display) */
 interface HevcWarningState extends HevcTranscodeModalState {
@@ -23,10 +28,39 @@ const initialHevcState: HevcWarningState = {
   fileSizeMB: 0,
 }
 
+/**
+ * Process a single file in the background without blocking.
+ * Adds video to store immediately, then starts processing.
+ */
+async function processFileInBackground(file: File, videoId: string) {
+  const store = useProcessingStore.getState()
+
+  // Add video to store immediately with 'pending' status
+  store.addVideo(videoId, file.name)
+
+  try {
+    // Check codec before processing
+    await loadFFmpeg()
+    const codecInfo = await detectVideoCodec(file)
+
+    if (codecInfo.isHevc) {
+      // For HEVC in multi-file mode, mark as error (user can handle individually)
+      store.setVideoError(videoId, `HEVC codec detected - needs transcoding`)
+      return
+    }
+
+    // Process the video
+    await processVideoFile(file, videoId)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    store.setVideoError(videoId, message)
+  }
+}
+
 export function VideoDropzone() {
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isCheckingCodec, setIsCheckingCodec] = useState(false)
+  const [isCheckingCodec] = useState(false)  // Kept for legacy progress view - set via per-video state now
   const [hevcWarning, setHevcWarning] = useState<HevcWarningState>(initialHevcState)
   const { status, progress, progressMessage, fileName, setStatus } = useProcessingStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -51,57 +85,11 @@ export function VideoDropzone() {
     return null
   }
 
-  const handleFile = useCallback(async (file: File) => {
-    const validationError = validateFile(file)
-    if (validationError) {
-      setError(validationError)
-      return
-    }
-
-    setError(null)
-
-    // Check codec before processing
-    setIsCheckingCodec(true)
-    try {
-      await loadFFmpeg()
-      const codecInfo = await detectVideoCodec(file)
-
-      if (codecInfo.isHevc) {
-        // Calculate file info for modal
-        const fileSizeMB = Math.round(file.size / (1024 * 1024))
-        const { formatted: estimatedTime } = estimateTranscodeTime(fileSizeMB)
-
-        setHevcWarning({
-          show: true,
-          file,
-          codec: codecInfo.codec.toUpperCase(),
-          fileSizeMB,
-          estimatedTime,
-          isTranscoding: false,
-          transcodeProgress: 0,
-          transcodeStartTime: null,
-          // Required by base HevcTranscodeModalState but not used in VideoDropzone context
-          segmentIndex: 0,
-          segmentBlob: null,
-        })
-        setIsCheckingCodec(false)
-        return
-      }
-
-      // Codec is playable, proceed with processing
-      await processVideoFile(file)
-    } catch {
-      // If codec detection fails, try processing anyway
-      await processVideoFile(file)
-    } finally {
-      setIsCheckingCodec(false)
-    }
-  }, [])
-
   const handleTranscode = useCallback(async () => {
     if (!hevcWarning.file) return
 
     const file = hevcWarning.file
+    const videoId = (hevcWarning as HevcWarningState & { videoId?: string }).videoId
 
     // Create abort controller for cancellation
     transcodeAbortRef.current = new AbortController()
@@ -133,7 +121,7 @@ export function VideoDropzone() {
 
       // Close modal and process the transcoded file
       setHevcWarning(initialHevcState)
-      await processVideoFile(h264File)
+      await processVideoFile(h264File, videoId)
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         // User cancelled - reset to initial modal state
@@ -151,7 +139,7 @@ export function VideoDropzone() {
     } finally {
       transcodeAbortRef.current = null
     }
-  }, [hevcWarning.file, setStatus])
+  }, [hevcWarning, setStatus])
 
   const handleCancelHevc = useCallback(() => {
     if (hevcWarning.isTranscoding) {
@@ -194,22 +182,45 @@ export function VideoDropzone() {
     dragCounter.current = 0
     setError(null)
 
-    const file = e.dataTransfer.files[0]
-    if (!file) {
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length === 0) {
       setError('No file detected. Please try again.')
       return
     }
 
-    handleFile(file)
-  }, [handleFile])
+    // Process each file - don't await, let them run in parallel
+    for (const file of files) {
+      const validationError = validateFile(file)
+      if (validationError) {
+        // For multi-file, show error but continue with valid files
+        console.warn(`Skipping ${file.name}: ${validationError}`)
+        continue
+      }
+
+      const videoId = generateVideoId()
+      // Fire and forget - don't block
+      processFileInBackground(file, videoId)
+    }
+  }, [])
 
   const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      handleFile(file)
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+
+    // Process each file - don't await
+    for (const file of files) {
+      const validationError = validateFile(file)
+      if (validationError) {
+        console.warn(`Skipping ${file.name}: ${validationError}`)
+        continue
+      }
+
+      const videoId = generateVideoId()
+      processFileInBackground(file, videoId)
     }
+
     e.target.value = ''
-  }, [handleFile])
+  }, [])
 
   const handleFileSelect = () => {
     fileInputRef.current?.click()
@@ -299,6 +310,7 @@ export function VideoDropzone() {
           ref={fileInputRef}
           type="file"
           accept=".mp4,.mov,.m4v,video/mp4,video/quicktime,video/x-m4v"
+          multiple
           onChange={handleFileInputChange}
           style={{ display: 'none' }}
           aria-hidden="true"
