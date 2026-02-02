@@ -156,6 +156,8 @@ function createMockFFmpeg(options: MockFFmpegOptions = {}) {
           files.set(frameName, new Uint8Array([0x89, 0x50, 0x4e, 0x47]))
         }
       }
+      // Return exit code 0 (success)
+      return 0
     }),
 
     deleteFile: vi.fn(async () => {
