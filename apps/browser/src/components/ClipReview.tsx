@@ -8,6 +8,7 @@ import { HevcTranscodeModal, HevcTranscodeModalState, initialHevcTranscodeModalS
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
 import { VideoFramePipeline, ExportConfig, HevcExportError } from '../lib/video-frame-pipeline'
+import { VideoFramePipelineV2, ExportConfigV2 } from '../lib/video-frame-pipeline-v2'
 import { loadFFmpeg, getFFmpegInstance, transcodeHevcToH264, estimateTranscodeTime } from '../lib/ffmpeg-client'
 import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
 
@@ -575,6 +576,81 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     }
   }, [onComplete, exportSegmentWithTracer])
 
+  // POC: Export using V2 pipeline with FFmpeg filter approach
+  const handleExportV2 = useCallback(async () => {
+    const store = useProcessingStore.getState()
+    const activeVid = store.activeVideoId ? store.videos.get(store.activeVideoId) : undefined
+    const currentSegments = activeVid?.segments ?? store.segments
+    const approved = currentSegments.filter(s => s.approved === 'approved')
+
+    if (approved.length === 0) {
+      alert('No approved shots to export')
+      return
+    }
+
+    setShowExportModal(true)
+    setExportProgress({ current: 0, total: approved.length })
+    setExportPhase({ phase: 'preparing', progress: 0 })
+    setExportComplete(false)
+    setExportError(null)
+    exportCancelledRef.current = false
+
+    try {
+      console.log('[ExportV2] Loading FFmpeg...')
+      await loadFFmpeg()
+      const ffmpeg = getFFmpegInstance()
+      const pipelineV2 = new VideoFramePipelineV2(ffmpeg)
+
+      for (let i = 0; i < approved.length; i++) {
+        if (exportCancelledRef.current) break
+
+        const segment = approved[i]
+        setExportProgress({ current: i + 1, total: approved.length })
+
+        console.log('[ExportV2] Exporting segment', i + 1, 'of', approved.length)
+
+        // Get trajectory points or empty array
+        const trajectoryPoints = segment.trajectory?.points ?? []
+
+        const configV2: ExportConfigV2 = {
+          videoBlob: segment.blob,
+          trajectory: trajectoryPoints,
+          startTime: segment.clipStart - segment.startTime,
+          endTime: segment.clipEnd - segment.startTime,
+          quality: exportQuality,
+          onProgress: (progress) => {
+            setExportPhase({ phase: progress.phase, progress: progress.progress })
+          },
+        }
+
+        const exportedBlob = await pipelineV2.exportWithTracer(configV2)
+
+        // Download
+        const url = URL.createObjectURL(exportedBlob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `shot_${i + 1}_v2.mp4`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      if (!exportCancelledRef.current) {
+        setExportComplete(true)
+        autoCloseTimerRef.current = window.setTimeout(() => {
+          setShowExportModal(false)
+          onComplete()
+        }, 1500)
+      }
+    } catch (error) {
+      console.error('[ExportV2] Export failed:', error)
+      setExportError(error instanceof Error ? error.message : 'Export V2 failed')
+    }
+  }, [onComplete, exportQuality])
+
   // Handle HEVC transcode and retry export
   const handleTranscodeAndExport = useCallback(async () => {
     if (!hevcTranscodeModal.segmentBlob) return
@@ -944,9 +1020,18 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         )}
         <div className="review-complete-actions">
           {approvedCount > 0 && (
-            <button onClick={handleExport} className="btn-primary btn-large">
-              Export {approvedCount} Clip{approvedCount !== 1 ? 's' : ''}
-            </button>
+            <>
+              <button onClick={handleExport} className="btn-primary btn-large">
+                Export {approvedCount} Clip{approvedCount !== 1 ? 's' : ''}
+              </button>
+              <button
+                onClick={handleExportV2}
+                className="btn-secondary btn-large"
+                title="POC: Export using FFmpeg filter approach (faster for 4K)"
+              >
+                Export V2 (POC)
+              </button>
+            </>
           )}
           <button onClick={onComplete} className="btn-secondary">
             Process Another Video
