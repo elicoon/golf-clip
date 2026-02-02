@@ -48,7 +48,7 @@ interface ExportProgress {
 }
 
 export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
-  const { shots, updateShot } = useAppStore()
+  const { shots, updateShot, currentJob } = useAppStore()
   const [currentShotIndex, setCurrentShotIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [loadingState, setLoadingState] = useState<LoadingState>('idle')
@@ -1437,6 +1437,7 @@ export function ClipReview({ jobId, videoPath, onComplete }: ClipReviewProps) {
         endTime={currentShot.clip_end}
         onTimeUpdate={handleTimeUpdate}
         disabled={loadingState === 'loading'}
+        videoDuration={currentJob?.video_info?.duration}
       />
 
       <div className="playback-controls">
