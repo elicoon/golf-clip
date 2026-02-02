@@ -773,13 +773,14 @@ describe('Window Calculation Verification', () => {
 
   /**
    * Verify the window calculation formula:
-   * - windowStart = max(0, startTime - 5)
-   * - rawWindowEnd = min(duration, endTime + 5)
+   * - extensionBuffer = min(30, duration * 0.25)
+   * - windowStart = max(0, startTime - extensionBuffer)
+   * - rawWindowEnd = min(duration, endTime + extensionBuffer)
    * - windowEnd = max(rawWindowEnd, windowStart + 1)  <- BUG 1 FIX
    * - windowDuration = max(0.1, windowEnd - windowStart)  <- BUG 2 FIX
    */
   describe('window bounds calculation', () => {
-    it('should apply 5s padding to window (windowStart = startTime - 5)', () => {
+    it('should apply dynamic extension buffer to window (up to 30s or 25% of duration)', () => {
       const videoRef = createMockVideoRef({ duration: 100, currentTime: 20 })
       const onTimeUpdate = vi.fn()
 
@@ -796,9 +797,11 @@ describe('Window Calculation Verification', () => {
         videoRef.current!.dispatchLoadedMetadata()
       })
 
-      // Check that the window label shows 15 (20 - 5)
+      // extensionBuffer = min(30, 100*0.25) = 25
+      // windowStart = max(0, 20-25) = 0
+      // Check that the window label shows 0:00 (clamped at 0)
       const startLabel = document.querySelector('.scrubber-label-start')
-      expect(startLabel?.textContent).toContain('0:15')
+      expect(startLabel?.textContent).toContain('0:00')
     })
 
     it('should cap windowStart at 0 (cannot go negative)', () => {
@@ -894,11 +897,11 @@ describe('Window Calculation Verification', () => {
         videoRef.current!.dispatchLoadedMetadata()
       })
 
-      // windowStart = 20, windowEnd = 80
-      // Position 0% should correspond to time 20
-      // The start label should show 0:20
+      // With extensionBuffer = min(30, 100*0.25) = 25
+      // windowStart = max(0, 25-25) = 0
+      // Position 0% should correspond to time 0
       const startLabel = document.querySelector('.scrubber-label-start')
-      expect(startLabel?.textContent).toContain('0:20')
+      expect(startLabel?.textContent).toContain('0:00')
     })
 
     it('should correctly convert position 100% to windowEnd time', () => {
@@ -918,10 +921,11 @@ describe('Window Calculation Verification', () => {
         videoRef.current!.dispatchLoadedMetadata()
       })
 
-      // windowStart = 20, windowEnd = 80
-      // Position 100% should correspond to time 80
+      // With extensionBuffer = min(30, 100*0.25) = 25
+      // windowEnd = min(100, 75+25) = 100
+      // Position 100% should correspond to time 100
       const endLabel = document.querySelector('.scrubber-label-end')
-      expect(endLabel?.textContent).toContain('1:20') // 80 seconds = 1:20
+      expect(endLabel?.textContent).toContain('1:40') // 100 seconds = 1:40
     })
   })
 })

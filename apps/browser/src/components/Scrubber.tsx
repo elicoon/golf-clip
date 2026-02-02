@@ -6,6 +6,7 @@ interface ScrubberProps {
   endTime: number
   onTimeUpdate: (start: number, end: number) => void
   disabled?: boolean
+  videoDuration?: number // Total video duration for extended boundary support
 }
 
 type DragTarget = 'start' | 'end' | 'playhead' | null
@@ -16,6 +17,7 @@ export function Scrubber({
   endTime,
   onTimeUpdate,
   disabled = false,
+  videoDuration,
 }: ScrubberProps) {
   const scrubberRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState<DragTarget>(null)
@@ -26,18 +28,24 @@ export function Scrubber({
 
   // Window around the clip to show (extra context before and after)
   // Lock the window while dragging to prevent it from shifting
-  const windowPadding = 5 // seconds
   const [lockedWindow, setLockedWindow] = useState<{ start: number; end: number } | null>(null)
+
+  // Calculate extension buffer: use 30s or 25% of video duration, whichever is smaller
+  // This allows extending clip boundaries well beyond the initial detection
+  const totalDuration = videoDuration || duration
+  const extensionBuffer = totalDuration ? Math.min(30, totalDuration * 0.25) : 30
 
   // Calculate window bounds - use locked values if dragging, otherwise compute from props
   const windowStart = lockedWindow
     ? lockedWindow.start
-    : Math.max(0, startTime - windowPadding)
+    : Math.max(0, startTime - extensionBuffer)
 
   // Guard against inverted window - ensure windowEnd > windowStart
   const rawWindowEnd = lockedWindow
     ? lockedWindow.end
-    : Math.min(duration || endTime + windowPadding, endTime + windowPadding)
+    : totalDuration
+      ? Math.min(totalDuration, endTime + extensionBuffer)
+      : endTime + extensionBuffer
   const windowEnd = Math.max(rawWindowEnd, windowStart + 1) // Ensure at least 1s window
 
   // Prevent division by zero/negative
@@ -105,8 +113,10 @@ export function Scrubber({
     // Lock the window dimensions when starting to drag a handle
     if (type === 'start' || type === 'end') {
       setLockedWindow({
-        start: Math.max(0, startTime - windowPadding),
-        end: Math.min(duration || endTime + windowPadding, endTime + windowPadding),
+        start: Math.max(0, startTime - extensionBuffer),
+        end: totalDuration
+          ? Math.min(totalDuration, endTime + extensionBuffer)
+          : endTime + extensionBuffer,
       })
     }
 
@@ -125,8 +135,10 @@ export function Scrubber({
         const newStart = Math.max(0, Math.min(time, endTime - 0.5))
         onTimeUpdate(newStart, endTime)
       } else if (isDragging === 'end') {
-        // Ensure minimum 0.5s clip duration and clamp to bounds
-        const newEnd = Math.min(duration || Infinity, Math.max(time, startTime + 0.5))
+        // Ensure minimum 0.5s clip duration and clamp to video bounds
+        // Use videoDuration prop if available, otherwise fall back to loaded duration
+        const maxEnd = videoDuration || duration || endTime + 30
+        const newEnd = Math.min(maxEnd, Math.max(time, startTime + 0.5))
         onTimeUpdate(startTime, newEnd)
       } else if (isDragging === 'playhead') {
         if (videoRef.current) {
@@ -135,7 +147,7 @@ export function Scrubber({
         }
       }
     },
-    [isDragging, getPositionFromEvent, positionToTime, startTime, endTime, duration, onTimeUpdate, videoRef, windowStart, windowEnd, disabled]
+    [isDragging, getPositionFromEvent, positionToTime, startTime, endTime, duration, videoDuration, onTimeUpdate, videoRef, windowStart, windowEnd, disabled]
   )
 
   const handleMouseUp = useCallback(() => {

@@ -997,6 +997,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         videoRef={videoRef}
         startTime={currentShot.clipStart - currentShot.startTime}
         endTime={currentShot.clipEnd - currentShot.startTime}
+        videoDuration={currentShot.endTime - currentShot.startTime}
         onTimeUpdate={(newStart, newEnd) => {
           // Convert blob-relative times back to global for storage
           handleTrimUpdate(newStart + currentShot.startTime, newEnd + currentShot.startTime)
