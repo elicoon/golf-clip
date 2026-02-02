@@ -83,20 +83,27 @@ export class VideoFramePipeline {
     }
 
     // Phase 1: Extract frames from video
-    onProgress?.({ phase: 'extracting', progress: 0 })
+    // NOTE: FFmpeg.wasm doesn't reliably emit progress events for image2 format.
+    // We report -1 (indeterminate) initially, with periodic fallback updates.
+    onProgress?.({ phase: 'extracting', progress: -1 })
 
     const inputName = 'input.mp4'
     const framePattern = 'frame_%04d.png'
 
     await this.ffmpeg.writeFile(inputName, await fetchFile(videoBlob))
 
-    // Set up progress listener for extraction phase
-    const extractionProgressHandler = ({ progress }: { progress: number }) => {
-      // FFmpeg reports progress as 0-1 ratio
-      const percent = Math.round(progress * 100)
-      onProgress?.({ phase: 'extracting', progress: Math.min(percent, 99) })
-    }
-    this.ffmpeg.on('progress', extractionProgressHandler)
+    // Set up fallback progress updates every second during extraction
+    // This prevents the UI from appearing stuck if FFmpeg doesn't emit events
+    let lastReportedProgress = -1
+    const fallbackInterval = setInterval(() => {
+      // Increment progress slowly to show activity (caps at 90%)
+      if (lastReportedProgress === -1) {
+        lastReportedProgress = 10
+      } else if (lastReportedProgress < 90) {
+        lastReportedProgress = Math.min(lastReportedProgress + 10, 90)
+      }
+      onProgress?.({ phase: 'extracting', progress: lastReportedProgress })
+    }, 1000)
 
     // Extract frames as PNG sequence with error handling
     try {
@@ -109,14 +116,14 @@ export class VideoFramePipeline {
         framePattern,
       ])
     } catch (error) {
-      this.ffmpeg.off('progress', extractionProgressHandler)
+      clearInterval(fallbackInterval)
       const message = error instanceof Error ? error.message : 'Unknown FFmpeg error'
       console.error('[VideoFramePipeline] Frame extraction failed:', message)
       throw new Error(`Frame extraction failed: ${message}`)
     }
 
-    // Clean up extraction progress listener
-    this.ffmpeg.off('progress', extractionProgressHandler)
+    // Clean up fallback interval
+    clearInterval(fallbackInterval)
 
     // Verify frames were extracted
     try {
@@ -183,6 +190,7 @@ export class VideoFramePipeline {
     // Set up progress listener for encoding phase
     const encodingProgressHandler = ({ progress }: { progress: number }) => {
       const percent = Math.round(progress * 100)
+      // Allow up to 99% from FFmpeg - we'll report 100% explicitly after exec completes
       onProgress?.({ phase: 'encoding', progress: Math.min(percent, 99) })
     }
     this.ffmpeg.on('progress', encodingProgressHandler)
@@ -216,14 +224,16 @@ export class VideoFramePipeline {
     // Clean up encoding progress listener
     this.ffmpeg.off('progress', encodingProgressHandler)
 
+    // Explicitly report 100% for encoding phase BEFORE reading result
     onProgress?.({ phase: 'encoding', progress: 100 })
 
     const result = await this.ffmpeg.readFile(outputName)
 
-    // Cleanup
-    await this.cleanup(inputName, outputName, totalFrames)
-
+    // Report completion BEFORE cleanup to avoid 99% hang
     onProgress?.({ phase: 'complete', progress: 100 })
+
+    // Cleanup (non-blocking for user perception)
+    await this.cleanup(inputName, outputName, totalFrames)
 
     return new Blob([new Uint8Array(result as Uint8Array)], { type: 'video/mp4' })
   }

@@ -457,6 +457,25 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       }
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'An error occurred during export')
+    } finally {
+      // Defensive: Ensure modal closes even if exception occurs after downloads
+      // This handles edge cases where exceptions bypass setExportComplete(true)
+      // Wait 10 seconds - if modal is still open without error/complete, force close
+      setTimeout(() => {
+        // Only force close if we're in a stuck state (modal open, no error, not complete, not cancelled)
+        // Use functional updates to check current state values at timeout time
+        setShowExportModal(currentShowModal => {
+          if (currentShowModal && !exportCancelledRef.current) {
+            // Check if we're in a stuck state by looking at what the modal would show
+            // If we get here, the modal is open - but is it showing error or complete?
+            // We can't directly check exportError/exportComplete, so we force close
+            // and let the normal flow handle it if it's actually showing something
+            console.warn('[ClipReview] Export modal stuck - forcing close after timeout')
+            return false // Force close
+          }
+          return currentShowModal
+        })
+      }, 10000)
     }
   }, [onComplete, exportSegmentWithTracer])
 
