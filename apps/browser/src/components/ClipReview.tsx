@@ -412,10 +412,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
             document.body.removeChild(a)
             URL.revokeObjectURL(url)
           } else {
-            // No trajectory - download raw segment as WebM
+            // No trajectory - download raw segment as MP4
             const a = document.createElement('a')
             a.href = segment.objectUrl
-            a.download = `shot_${i + 1}.webm`
+            a.download = `shot_${i + 1}.mp4`
             document.body.appendChild(a)
             a.click()
             document.body.removeChild(a)
@@ -651,6 +651,28 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setIsPlaying(!isPlaying)
   }, [isPlaying])
 
+  const stepFrameForward = useCallback(() => {
+    if (!videoRef.current) return
+    videoRef.current.currentTime += 1/60
+  }, [])
+
+  const stepFrameBackward = useCallback(() => {
+    if (!videoRef.current) return
+    videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 1/60)
+  }, [])
+
+  const skipToStart = useCallback(() => {
+    if (!videoRef.current || !currentShot) return
+    const clipStartInVideo = currentShot.clipStart - currentShot.startTime
+    videoRef.current.currentTime = clipStartInVideo
+  }, [currentShot])
+
+  const skipToEnd = useCallback(() => {
+    if (!videoRef.current || !currentShot) return
+    const clipEndInVideo = currentShot.clipEnd - currentShot.startTime
+    videoRef.current.currentTime = clipEndInVideo
+  }, [currentShot])
+
   const handleTrimUpdate = useCallback((newStart: number, newEnd: number) => {
     if (currentShot) {
       updateSegment(currentShot.id, {
@@ -779,7 +801,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
               </button>
             </div>
             <p className="export-format-hint" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-              Clips with tracer: .mp4 | Clips without tracer: .webm
+              All clips export as .mp4
             </p>
           </div>
         )}
@@ -817,13 +839,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                   <>
                     <div className="export-progress-bar">
                       <div
-                        className="export-progress-fill"
-                        style={{ width: `${exportPhase.progress}%` }}
+                        className={`export-progress-fill${exportPhase.progress === -1 ? ' indeterminate' : ''}`}
+                        style={{ width: exportPhase.progress === -1 ? '100%' : `${exportPhase.progress}%` }}
                       />
                     </div>
                     <p className="export-status">
                       Clip {exportProgress.current} of {exportProgress.total}
-                      {exportPhase.phase && ` — ${exportPhase.phase} ${exportPhase.progress}%`}
+                      {exportPhase.phase && (
+                        exportPhase.progress === -1
+                          ? ` — ${exportPhase.phase}...`
+                          : ` — ${exportPhase.phase} ${exportPhase.progress}%`
+                      )}
                     </p>
                     <button
                       onClick={() => { exportCancelledRef.current = true; setShowExportModal(false) }}
@@ -866,28 +892,54 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <span className="review-progress">{currentIndex + 1} of {totalShots}</span>
       </div>
 
-      <div className="playback-controls">
+      {/* Video transport controls */}
+      <div className="video-transport-controls">
         <button
-          onClick={handlePrevious}
-          disabled={currentIndex === 0}
-          className="btn-secondary"
+          onClick={skipToStart}
+          className="btn-transport"
+          title="Skip to clip start"
         >
-          ← Previous
+          ⏮
+        </button>
+        <button
+          onClick={stepFrameBackward}
+          className="btn-transport"
+          title="Step back 1 frame"
+        >
+          ⏪
         </button>
         <button
           onClick={togglePlayPause}
-          className="btn-secondary btn-play"
+          className="btn-transport btn-transport-play"
+          title={isPlaying ? 'Pause' : 'Play'}
         >
-          {isPlaying ? '⏸ Pause' : '▶ Play'}
+          {isPlaying ? '⏸' : '▶'}
         </button>
         <button
-          onClick={handleNext}
-          disabled={currentIndex >= totalShots - 1}
-          className="btn-secondary"
+          onClick={stepFrameForward}
+          className="btn-transport"
+          title="Step forward 1 frame"
         >
-          Next →
+          ⏩
+        </button>
+        <button
+          onClick={skipToEnd}
+          className="btn-transport"
+          title="Skip to clip end"
+        >
+          ⏭
         </button>
       </div>
+
+      <Scrubber
+        videoRef={videoRef}
+        startTime={currentShot.clipStart - currentShot.startTime}
+        endTime={currentShot.clipEnd - currentShot.startTime}
+        onTimeUpdate={(newStart, newEnd) => {
+          // Convert blob-relative times back to global for storage
+          handleTrimUpdate(newStart + currentShot.startTime, newEnd + currentShot.startTime)
+        }}
+      />
 
       {/* Instruction banner based on review step */}
       <div className="marking-instruction">
@@ -903,6 +955,15 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
             <span className="instruction-text">Review the trajectory, then approve or reject</span>
           </>
         )}
+      </div>
+
+      <div className="review-actions">
+        <button onClick={handleReject} className="btn-no-shot">
+          ✕ No Golf Shot
+        </button>
+        <button onClick={handleApprove} className="btn-primary btn-large">
+          ✓ Approve Shot
+        </button>
       </div>
 
       <div className="video-container">
@@ -1000,13 +1061,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         />
       )}
 
-      <Scrubber
-        videoRef={videoRef}
-        startTime={currentShot.clipStart}
-        endTime={currentShot.clipEnd}
-        onTimeUpdate={handleTrimUpdate}
-      />
-
       <div className="confidence-info">
         <span
           className="confidence-badge"
@@ -1017,15 +1071,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <span className="clip-time">
           Duration: {(currentShot.clipEnd - currentShot.clipStart).toFixed(1)}s
         </span>
-      </div>
-
-      <div className="review-actions">
-        <button onClick={handleReject} className="btn-no-shot">
-          ✕ No Golf Shot
-        </button>
-        <button onClick={handleApprove} className="btn-primary btn-large">
-          ✓ Approve Shot
-        </button>
       </div>
 
       <div className="keyboard-hints">
@@ -1061,13 +1106,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                 <>
                   <div className="export-progress-bar">
                     <div
-                      className="export-progress-fill"
-                      style={{ width: `${exportPhase.progress}%` }}
+                      className={`export-progress-fill${exportPhase.progress === -1 ? ' indeterminate' : ''}`}
+                      style={{ width: exportPhase.progress === -1 ? '100%' : `${exportPhase.progress}%` }}
                     />
                   </div>
                   <p className="export-status">
                     Clip {exportProgress.current} of {exportProgress.total}
-                    {exportPhase.phase && ` — ${exportPhase.phase} ${exportPhase.progress}%`}
+                    {exportPhase.phase && (
+                      exportPhase.progress === -1
+                        ? ` — ${exportPhase.phase}...`
+                        : ` — ${exportPhase.phase} ${exportPhase.progress}%`
+                    )}
                   </p>
                   <button
                     onClick={() => { exportCancelledRef.current = true; setShowExportModal(false) }}
