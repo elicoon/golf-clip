@@ -216,7 +216,7 @@ export class VideoFramePipeline {
 
     // Re-encode with audio from original
     try {
-      await this.ffmpeg.exec([
+      const exitCode = await this.ffmpeg.exec([
         '-framerate', fps.toString(),
         '-i', framePattern,
         '-ss', startTime.toString(),
@@ -233,6 +233,9 @@ export class VideoFramePipeline {
         '-y',
         outputName,
       ])
+      if (exitCode !== 0) {
+        throw new Error(`FFmpeg video encoding failed with exit code ${exitCode}`)
+      }
     } catch (error) {
       this.ffmpeg.off('progress', encodingProgressHandler)
       const message = error instanceof Error ? error.message : 'Unknown FFmpeg error'
