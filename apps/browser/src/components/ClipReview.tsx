@@ -53,6 +53,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [exportQuality, setExportQuality] = useState<'draft' | 'preview' | 'final'>('preview')
   const exportCancelledRef = useRef(false)
   const defensiveTimeoutRef = useRef<number | null>(null)
+  const autoCloseTimerRef = useRef<number | null>(null)
 
   // HEVC transcode modal state (shown when export fails due to HEVC codec)
   const [hevcTranscodeModal, setHevcTranscodeModal] = useState<HevcTranscodeModalState>(initialHevcTranscodeModalState)
@@ -197,6 +198,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     return () => {
       if (defensiveTimeoutRef.current) {
         clearTimeout(defensiveTimeoutRef.current)
+      }
+      if (autoCloseTimerRef.current) {
+        clearTimeout(autoCloseTimerRef.current)
       }
     }
   }, [])
@@ -460,7 +464,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       if (!exportCancelledRef.current) {
         setExportComplete(true)
         // Auto-close modal after showing success for 1.5 seconds
-        setTimeout(() => {
+        // Track timer so Done button can cancel it to prevent double onComplete
+        autoCloseTimerRef.current = window.setTimeout(() => {
+          autoCloseTimerRef.current = null
           // Clear defensive timeout when modal auto-closes on success
           if (defensiveTimeoutRef.current) {
             clearTimeout(defensiveTimeoutRef.current)
@@ -919,6 +925,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                     <p className="export-result">{exportProgress.total} clips downloaded</p>
                     <button
                       onClick={() => {
+                        // Clear auto-close timer to prevent double onComplete
+                        if (autoCloseTimerRef.current) {
+                          clearTimeout(autoCloseTimerRef.current)
+                          autoCloseTimerRef.current = null
+                        }
                         if (defensiveTimeoutRef.current) {
                           clearTimeout(defensiveTimeoutRef.current)
                           defensiveTimeoutRef.current = null
@@ -1030,6 +1041,28 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         )}
       </div>
 
+      {/* TracerConfigPanel - above video for easy access */}
+      {reviewStep === 'reviewing' && (
+        <TracerConfigPanel
+          config={tracerConfig}
+          onChange={handleConfigChange}
+          style={tracerStyle}
+          onStyleChange={handleStyleChange}
+          onGenerate={handleGenerate}
+          onMarkApex={handleMarkApex}
+          onMarkOrigin={handleMarkOrigin}
+          onMarkLanding={handleMarkLanding}
+          hasChanges={hasUnsavedChanges}
+          apexMarked={!!apexPoint}
+          originMarked={!!originPoint}
+          landingMarked={!!landingPoint}
+          isMarkingLanding={isMarkingLanding}
+          isGenerating={isGenerating}
+          isCollapsed={!showConfigPanel}
+          onToggleCollapse={() => setShowConfigPanel(!showConfigPanel)}
+        />
+      )}
+
       <div className="video-container">
         {videoError ? (
           <div className="video-error-overlay">
@@ -1102,28 +1135,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           Show Tracer
         </label>
       </div>
-
-      {/* TracerConfigPanel - only show when trajectory exists */}
-      {reviewStep === 'reviewing' && (
-        <TracerConfigPanel
-          config={tracerConfig}
-          onChange={handleConfigChange}
-          style={tracerStyle}
-          onStyleChange={handleStyleChange}
-          onGenerate={handleGenerate}
-          onMarkApex={handleMarkApex}
-          onMarkOrigin={handleMarkOrigin}
-          onMarkLanding={handleMarkLanding}
-          hasChanges={hasUnsavedChanges}
-          apexMarked={!!apexPoint}
-          originMarked={!!originPoint}
-          landingMarked={!!landingPoint}
-          isMarkingLanding={isMarkingLanding}
-          isGenerating={isGenerating}
-          isCollapsed={!showConfigPanel}
-          onToggleCollapse={() => setShowConfigPanel(!showConfigPanel)}
-        />
-      )}
 
       <div className="confidence-info">
         <span
@@ -1202,6 +1213,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                   <p className="export-result">{exportProgress.total} clips downloaded</p>
                   <button
                     onClick={() => {
+                      // Clear auto-close timer to prevent double onComplete
+                      if (autoCloseTimerRef.current) {
+                        clearTimeout(autoCloseTimerRef.current)
+                        autoCloseTimerRef.current = null
+                      }
                       if (defensiveTimeoutRef.current) {
                         clearTimeout(defensiveTimeoutRef.current)
                         defensiveTimeoutRef.current = null

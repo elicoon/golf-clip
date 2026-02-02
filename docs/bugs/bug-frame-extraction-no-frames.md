@@ -42,6 +42,10 @@ Modal displays:
 - [bug-export-hangs.md](bug-export-hangs.md)
 - [2026-02-01-hevc-transcoding-reset.md](2026-02-01-hevc-transcoding-reset.md)
 
+## Status
+
+**Fixed** - HEVC transcoding and proper error handling added in PR #9. E2E tests verify HEVC videos work.
+
 ## Priority
 
 High - Blocks core export functionality
