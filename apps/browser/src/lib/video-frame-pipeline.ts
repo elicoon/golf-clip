@@ -79,8 +79,38 @@ export class VideoFramePipeline {
     console.log('[Pipeline] Config:', { startTime, endTime, fps, quality, trajectoryPoints: trajectory.length })
 
     const duration = endTime - startTime
-    const totalFrames = this.calculateFrameCount(duration, fps)
-    console.log('[Pipeline] Duration:', duration, 'Total frames:', totalFrames)
+
+    // For memory efficiency, cap total frames to prevent WASM memory exhaustion
+    // 4K 60fps videos can easily exhaust memory with too many frames
+    // Strategy: Try to maintain 30fps, but if clip is long, reduce to 24fps minimum
+    // If still too many frames at 24fps, we'll downscale to 1080p during extraction
+    const MAX_FRAMES_AT_30FPS = 450  // 15 seconds at 30fps
+    const MIN_FPS = 24  // Cinematic minimum
+
+    let effectiveFps = fps
+    let scaleFilter = ''  // Will be set if we need to downscale
+
+    const rawFrameCount = this.calculateFrameCount(duration, fps)
+
+    if (rawFrameCount > MAX_FRAMES_AT_30FPS) {
+      // First try: reduce fps to 24
+      effectiveFps = Math.floor(MAX_FRAMES_AT_30FPS / duration)
+      effectiveFps = Math.max(effectiveFps, MIN_FPS)
+
+      const framesAt24 = this.calculateFrameCount(duration, effectiveFps)
+
+      if (framesAt24 > MAX_FRAMES_AT_30FPS) {
+        // Still too many frames even at 24fps - downscale to 1080p to reduce memory
+        // This happens for clips longer than ~18 seconds
+        scaleFilter = ',scale=1920:1080:force_original_aspect_ratio=decrease'
+        console.warn(`[Pipeline] Long clip (${duration.toFixed(1)}s) - downscaling to 1080p and using ${effectiveFps}fps`)
+      } else {
+        console.warn(`[Pipeline] Reducing fps from ${fps} to ${effectiveFps} to stay under frame limit`)
+      }
+    }
+
+    const totalFrames = this.calculateFrameCount(duration, effectiveFps)
+    console.log('[Pipeline] Duration:', duration, 'Total frames:', totalFrames, 'Effective fps:', effectiveFps, scaleFilter ? '(downscaled to 1080p)' : '')
 
     // Note: HEVC check removed - it was causing hangs on large files because it wrote
     // the entire blob to FFmpeg WASM memory. HEVC is already detected during upload
@@ -146,11 +176,14 @@ export class VideoFramePipeline {
     console.log(`[Pipeline] Starting frame extraction (timeout: ${EXTRACTION_TIMEOUT_MS / 1000}s)...`)
 
     try {
+      // Build the video filter - fps is required, scale is optional for long clips
+      const vfFilter = `fps=${effectiveFps}${scaleFilter}`
+
       const execPromise = this.ffmpeg.exec([
         '-ss', startTime.toString(),
         '-i', inputName,
         '-t', duration.toString(),
-        '-vf', `fps=${fps}`,
+        '-vf', vfFilter,
         '-f', 'image2',
         framePattern,
       ])
@@ -213,7 +246,7 @@ export class VideoFramePipeline {
       const bitmap = await createImageBitmap(blob)
 
       // Calculate current time for this frame
-      const frameTime = startTime + (i - 1) / fps
+      const frameTime = startTime + (i - 1) / effectiveFps
 
       // Composite with tracer
       const composited = this.compositor.compositeFrame(bitmap as any, {
@@ -258,7 +291,7 @@ export class VideoFramePipeline {
     // Re-encode with audio from original
     try {
       const exitCode = await this.ffmpeg.exec([
-        '-framerate', fps.toString(),
+        '-framerate', effectiveFps.toString(),
         '-i', framePattern,
         '-ss', startTime.toString(),
         '-t', duration.toString(),
