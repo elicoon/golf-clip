@@ -107,7 +107,7 @@ export class VideoFramePipeline {
 
     // Extract frames as PNG sequence with error handling
     try {
-      await this.ffmpeg.exec([
+      const exitCode = await this.ffmpeg.exec([
         '-ss', startTime.toString(),
         '-i', inputName,
         '-t', duration.toString(),
@@ -115,6 +115,9 @@ export class VideoFramePipeline {
         '-f', 'image2',
         framePattern,
       ])
+      if (exitCode !== 0) {
+        throw new Error(`FFmpeg frame extraction failed with exit code ${exitCode}`)
+      }
     } catch (error) {
       clearInterval(fallbackInterval)
       const message = error instanceof Error ? error.message : 'Unknown FFmpeg error'
