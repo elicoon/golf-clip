@@ -2,10 +2,12 @@
 import { TrajectoryPoint } from './canvas-compositor'
 
 /**
- * Convert trajectory points to FFmpeg drawline filter string.
+ * Convert trajectory points to FFmpeg drawbox filter string.
  *
- * Each segment appears at its start timestamp and stays visible,
- * creating a "growing" tracer effect as the video plays.
+ * Uses drawbox instead of drawline because drawline is not available
+ * in FFmpeg WASM builds. Each segment is rendered as a thin filled box
+ * that appears at its start timestamp and stays visible, creating a
+ * "growing" tracer effect as the video plays.
  *
  * @param trajectory - Array of trajectory points with normalized coords (0-1)
  * @param width - Video width in pixels
@@ -27,7 +29,11 @@ export function trajectoryToFFmpegFilter(
   const sorted = [...trajectory].sort((a, b) => a.timestamp - b.timestamp)
   const filters: string[] = []
 
-  // Generate a drawline filter for each segment between adjacent points
+  // Line thickness for the tracer (POC hardcoded)
+  const thickness = 4
+
+  // Generate a drawbox filter for each segment between adjacent points
+  // drawbox draws filled rectangles - we use thin boxes to simulate lines
   for (let i = 0; i < sorted.length - 1; i++) {
     const p1 = sorted[i]
     const p2 = sorted[i + 1]
@@ -41,10 +47,17 @@ export function trajectoryToFFmpegFilter(
     // Time relative to clip start (FFmpeg filter time starts at 0)
     const t = p1.timestamp - clipStart
 
-    // Use gte(t,T) so line appears at time T and stays visible
-    // Color: red, Thickness: 4 (hardcoded for POC)
+    // Calculate box dimensions to simulate a line segment
+    // Box goes from min to max coords, with thickness
+    const minX = Math.min(x1, x2)
+    const minY = Math.min(y1, y2)
+    const boxW = Math.max(Math.abs(x2 - x1), thickness)
+    const boxH = Math.max(Math.abs(y2 - y1), thickness)
+
+    // Use gte(t,T) so box appears at time T and stays visible
+    // Color: red, t=fill means filled box
     filters.push(
-      `drawline=x1=${x1}:y1=${y1}:x2=${x2}:y2=${y2}:color=red:thickness=4:enable='gte(t\\,${t.toFixed(3)})'`
+      `drawbox=x=${minX}:y=${minY}:w=${boxW}:h=${boxH}:color=red:t=fill:enable='gte(t\\,${t.toFixed(3)})'`
     )
   }
 

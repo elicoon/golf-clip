@@ -7,7 +7,7 @@ describe('trajectoryToFFmpegFilter', () => {
     expect(trajectoryToFFmpegFilter([{ x: 0.5, y: 0.5, timestamp: 1 }], 1920, 1080, 0)).toBe('')
   })
 
-  it('generates single drawline filter for 2 points', () => {
+  it('generates single drawbox filter for 2 points', () => {
     const trajectory = [
       { x: 0.1, y: 0.8, timestamp: 1.0 },
       { x: 0.5, y: 0.2, timestamp: 2.0 },
@@ -16,12 +16,19 @@ describe('trajectoryToFFmpegFilter', () => {
 
     // x1 = 0.1 * 1920 = 192, y1 = 0.8 * 1080 = 864
     // x2 = 0.5 * 1920 = 960, y2 = 0.2 * 1080 = 216
-    expect(result).toBe(
-      "drawline=x1=192:y1=864:x2=960:y2=216:color=red:thickness=4:enable='gte(t\\,1.000)'"
-    )
+    // minX = 192, minY = 216
+    // boxW = |960 - 192| = 768, boxH = |864 - 216| = 648
+    expect(result).toContain('drawbox=')
+    expect(result).toContain('x=192')
+    expect(result).toContain('y=216')
+    expect(result).toContain('w=768')
+    expect(result).toContain('h=648')
+    expect(result).toContain('color=red')
+    expect(result).toContain('t=fill')
+    expect(result).toContain("enable='gte(t\\,1.000)'")
   })
 
-  it('generates multiple drawline filters joined by commas for multiple points', () => {
+  it('generates multiple drawbox filters joined by commas for multiple points', () => {
     const trajectory = [
       { x: 0.1, y: 0.8, timestamp: 1.0 },
       { x: 0.3, y: 0.5, timestamp: 1.5 },
@@ -29,23 +36,23 @@ describe('trajectoryToFFmpegFilter', () => {
     ]
     const result = trajectoryToFFmpegFilter(trajectory, 1920, 1080, 0)
 
-    // Should have 2 segments (3 points = 2 line segments)
-    // Split on ",drawline" to separate filters (not just comma, which appears in enable expression)
-    const parts = result.split(/,(?=drawline)/)
+    // Should have 2 segments (3 points = 2 box segments)
+    // Split on ",drawbox" to separate filters
+    const parts = result.split(/,(?=drawbox)/)
     expect(parts).toHaveLength(2)
 
     // First segment: point 0 to point 1
-    expect(parts[0]).toContain('x1=192')
-    expect(parts[0]).toContain('y1=864')
-    expect(parts[0]).toContain('x2=576')  // 0.3 * 1920 = 576
-    expect(parts[0]).toContain('y2=540')  // 0.5 * 1080 = 540
+    // x1=192, y1=864, x2=576, y2=540
+    // minX=192, minY=540, w=384, h=324
+    expect(parts[0]).toContain('x=192')
+    expect(parts[0]).toContain('y=540')
     expect(parts[0]).toContain("enable='gte(t\\,1.000)'")
 
     // Second segment: point 1 to point 2
-    expect(parts[1]).toContain('x1=576')
-    expect(parts[1]).toContain('y1=540')
-    expect(parts[1]).toContain('x2=960')  // 0.5 * 1920 = 960
-    expect(parts[1]).toContain('y2=216')  // 0.2 * 1080 = 216
+    // x1=576, y1=540, x2=960, y2=216
+    // minX=576, minY=216, w=384, h=324
+    expect(parts[1]).toContain('x=576')
+    expect(parts[1]).toContain('y=216')
     expect(parts[1]).toContain("enable='gte(t\\,1.500)'")
   })
 
@@ -70,44 +77,42 @@ describe('trajectoryToFFmpegFilter', () => {
     ]
     const result = trajectoryToFFmpegFilter(trajectory, 1920, 1080, 0)
 
-    // Split on ",drawline" to separate filters (not just comma, which appears in enable expression)
-    const parts = result.split(/,(?=drawline)/)
+    // Split on ",drawbox" to separate filters
+    const parts = result.split(/,(?=drawbox)/)
     // First segment should use timestamp 1.0 (earliest)
     expect(parts[0]).toContain("enable='gte(t\\,1.000)'")
     // Second segment should use timestamp 1.5
     expect(parts[1]).toContain("enable='gte(t\\,1.500)'")
   })
 
-  it('rounds pixel coordinates to integers', () => {
+  it('uses minimum thickness when segment is very short', () => {
+    // Vertical line (same x coordinates)
     const trajectory = [
-      { x: 0.333, y: 0.666, timestamp: 0 },
-      { x: 0.777, y: 0.111, timestamp: 1 },
+      { x: 0.5, y: 0.1, timestamp: 0 },
+      { x: 0.5, y: 0.2, timestamp: 1 },
     ]
     const result = trajectoryToFFmpegFilter(trajectory, 1920, 1080, 0)
 
-    // 0.333 * 1920 = 639.36 -> 639
-    // 0.666 * 1080 = 719.28 -> 719
-    // 0.777 * 1920 = 1491.84 -> 1492
-    // 0.111 * 1080 = 119.88 -> 120
-    expect(result).toContain('x1=639')
-    expect(result).toContain('y1=719')
-    expect(result).toContain('x2=1492')
-    expect(result).toContain('y2=120')
+    // x difference is 0, so width should be thickness (4)
+    expect(result).toContain('w=4')
+    // y difference is 0.1 * 1080 = 108
+    expect(result).toContain('h=108')
   })
 
   it('works with 4K resolution (3840x2160)', () => {
     const trajectory = [
-      { x: 0.5, y: 0.5, timestamp: 0 },
-      { x: 1.0, y: 1.0, timestamp: 1 },
+      { x: 0.25, y: 0.75, timestamp: 0 },
+      { x: 0.75, y: 0.25, timestamp: 1 },
     ]
     const result = trajectoryToFFmpegFilter(trajectory, 3840, 2160, 0)
 
-    // 0.5 * 3840 = 1920, 0.5 * 2160 = 1080
-    // 1.0 * 3840 = 3840, 1.0 * 2160 = 2160
-    expect(result).toContain('x1=1920')
-    expect(result).toContain('y1=1080')
-    expect(result).toContain('x2=3840')
-    expect(result).toContain('y2=2160')
+    // 0.25 * 3840 = 960, 0.75 * 2160 = 1620
+    // 0.75 * 3840 = 2880, 0.25 * 2160 = 540
+    // minX=960, minY=540, w=1920, h=1080
+    expect(result).toContain('x=960')
+    expect(result).toContain('y=540')
+    expect(result).toContain('w=1920')
+    expect(result).toContain('h=1080')
   })
 
   it('handles negative relative timestamps when clipStart is after trajectory start', () => {
