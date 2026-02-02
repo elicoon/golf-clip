@@ -36,26 +36,35 @@ The scrubber component likely constrains handles to `[clip_start, clip_end]` fro
 
 ## Files
 
-- `apps/browser/src/components/Scrubber.tsx` - Has extension UI (30s buffer)
+- `apps/browser/src/components/Scrubber.tsx` - Shows full segment for extension
 - `apps/browser/src/components/ClipReview.tsx` - Passes videoDuration
-- `apps/browser/src/lib/streaming-processor.ts` - Extracts fixed 20s segments (5s before, 15s after)
+- `apps/browser/src/lib/streaming-processor.ts` - Extracts 30s segments
 
 ## Root Cause Analysis (2026-02-02)
 
-The UI fix was applied (Scrubber supports 30s extension buffer), but the underlying architecture limits extension:
+Two issues were found:
 
-1. **Segment extraction is fixed**: `streaming-processor.ts` extracts 20s segments (5s before strike, 15s after)
-2. **Blob contains only that 20s**: The video element can only play what's in the blob
-3. **UI can't extend beyond blob**: Even with the UI fix, you can't extend past what's in the extracted segment
-
-**To fully fix:**
-- Option A: Extract larger segments initially (e.g., 60s instead of 20s) - wasteful for memory
-- Option B: Re-extract from original file when user extends boundaries - complex, requires keeping original file reference
-- Option C: Accept current 20s limit as "good enough" for golf shots
-
-**Current state**: UI fix merged but doesn't help because underlying segment is only 20s.
+1. **Segment extraction was asymmetric**: Originally extracted 20s segments (5s before, 15s after)
+2. **Scrubber used percentage-based buffer**: The extension buffer was 25% of segment duration, which for short segments was less than the actual available room
 
 ## Fix (2026-02-02)
 
-Changed segment extraction to 30s (10s before, 20s after) with default clip of 15s (5s before, 10s after).
-This gives 5s extension room on each side. See commit in `streaming-processor.ts`.
+### Commit 1: Segment extraction (streaming-processor.ts)
+Changed to symmetric 30s segments around impact:
+- **Segment**: impact-15s to impact+15s (30s total)
+- **Default clip**: impact-5s to impact+10s (15s)
+- **Extension room**: 10s before clip start, 5s after clip end
+
+### Commit 2: Scrubber display (Scrubber.tsx)
+Changed scrubber to show full segment instead of percentage-based buffer:
+- Window now spans 0 to videoDuration (full segment)
+- User can extend clips to actual segment boundaries
+- Removed artificial 25%-of-duration buffer calculation
+
+### Timeline
+| Keyframe | Time Relative to Impact |
+|----------|------------------------|
+| Segment start (selectable area begins) | -15s |
+| Default clip start | -5s |
+| Default clip end | +10s |
+| Segment end (selectable area ends) | +15s |
