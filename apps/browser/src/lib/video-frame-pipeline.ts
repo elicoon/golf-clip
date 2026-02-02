@@ -78,6 +78,11 @@ export class VideoFramePipeline {
 
     console.log('[Pipeline] Config:', { startTime, endTime, fps, quality, trajectoryPoints: trajectory.length })
 
+    // Track pipeline start time for overall timeout
+    const pipelineStartTime = performance.now()
+    const PIPELINE_TIMEOUT_MS = 180000  // 3 minutes total for entire pipeline
+    const COMPOSITING_BATCH_SIZE = 10  // Process frames in batches to allow GC
+
     const duration = endTime - startTime
 
     // For memory efficiency, cap total frames to prevent WASM memory exhaustion
@@ -125,9 +130,16 @@ export class VideoFramePipeline {
     console.log(`[Pipeline] Preparing video data (${blobSizeMB}MB)...`)
     onProgress?.({ phase: 'preparing', progress: -1 })
 
-    // For large blobs, warn about potential slowness
-    if (videoBlob.size > 100 * 1024 * 1024) {
-      console.warn(`[Pipeline] Large blob detected (${blobSizeMB}MB). This may take a while...`)
+    // For large blobs (>50MB), force 1080p downscale to prevent memory exhaustion
+    // 4K frames create ~70MB active memory each, causing GC churn and hangs
+    // See: docs/bugs/bug-export-tracer-pipeline-hang.md
+    if (videoBlob.size > 50 * 1024 * 1024) {
+      if (!scaleFilter) {  // Don't override if already set by frame count limiting
+        scaleFilter = ',scale=1920:1080:force_original_aspect_ratio=decrease'
+        console.warn(`[Pipeline] Large blob detected (${blobSizeMB}MB) - forcing 1080p downscale to prevent memory exhaustion`)
+      } else {
+        console.warn(`[Pipeline] Large blob detected (${blobSizeMB}MB) - downscale already active`)
+      }
     }
 
     // Convert blob to Uint8Array with timing
@@ -234,10 +246,17 @@ export class VideoFramePipeline {
 
     this.compositor = new CanvasCompositor(dimensions.width, dimensions.height)
 
-    // Phase 2: Composite each frame with tracer
+    // Phase 2: Composite each frame with tracer in batches
+    // Processing in batches allows GC to reclaim memory between batches
     onProgress?.({ phase: 'compositing', progress: 0, currentFrame: 0, totalFrames })
 
     for (let i = 1; i <= totalFrames; i++) {
+      // Check for overall pipeline timeout
+      const elapsed = performance.now() - pipelineStartTime
+      if (elapsed > PIPELINE_TIMEOUT_MS) {
+        throw new Error(`Export pipeline timed out after ${Math.round(elapsed / 1000)} seconds during compositing (frame ${i}/${totalFrames})`)
+      }
+
       const frameFile = `frame_${i.toString().padStart(4, '0')}.png`
       const frameData = await this.ffmpeg.readFile(frameFile)
 
@@ -249,7 +268,7 @@ export class VideoFramePipeline {
       const frameTime = startTime + (i - 1) / effectiveFps
 
       // Composite with tracer
-      const composited = this.compositor.compositeFrame(bitmap as any, {
+      const composited = this.compositor!.compositeFrame(bitmap as any, {
         trajectory,
         currentTime: frameTime,
         startTime,
@@ -266,12 +285,21 @@ export class VideoFramePipeline {
 
       bitmap.close()
 
-      onProgress?.({
-        phase: 'compositing',
-        progress: Math.round((i / totalFrames) * 100),
-        currentFrame: i,
-        totalFrames,
-      })
+      // Update progress every 10 frames to reduce callback overhead
+      if (i % 10 === 0 || i === totalFrames) {
+        onProgress?.({
+          phase: 'compositing',
+          progress: Math.round((i / totalFrames) * 100),
+          currentFrame: i,
+          totalFrames,
+        })
+      }
+
+      // Every batch, yield to event loop and allow GC
+      // This prevents memory from building up indefinitely
+      if (i % COMPOSITING_BATCH_SIZE === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0))
+      }
     }
 
     // Phase 3: Encode frames back to video

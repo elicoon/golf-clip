@@ -1,53 +1,94 @@
 # Bug: Export with Tracer Hangs in VideoFramePipeline
 
-**Status:** Fixed
+**Status:** Fixed (v2)
 **Priority:** P1
-**Component:** video-frame-pipeline.ts, ffmpeg-client.ts
+**Component:** video-frame-pipeline.ts
 **Date:** 2026-02-02
-**Fixed:** 2026-02-02
+**Last Updated:** 2026-02-02
 
 ## Description
 
-When exporting a clip with a tracer overlay, the export hangs indefinitely after calling `pipeline.exportWithTracer()`. The modal shows "Exporting Clips" with "Clip 1 of 1" but no progress percentage or phase information.
+When exporting a clip with a tracer overlay from 4K video, the export hangs during the compositing phase. The root cause was identified as memory exhaustion from processing high-resolution frames without GC breathing room.
 
-## Root Cause
+## Root Cause (Confirmed)
 
-The `isHevcCodec()` function in `ffmpeg-client.ts` was called at the start of `exportWithTracer()` to check if the video uses HEVC codec. This function:
+The hang occurs in **Phase 2: Compositing loop** (lines 253-303 of `video-frame-pipeline.ts`), NOT in frame extraction as initially assumed.
 
-1. Calls `fetchFile(videoBlob)` - converts entire blob to Uint8Array (blocking for large files)
-2. Calls `ffmpeg.writeFile()` - writes entire video to WASM memory (can exhaust memory or hang)
-3. Runs `ffmpeg.exec()` probe command
+The 90% progress was a red herring - the fallback progress interval in extraction caps at 90%, making it appear extraction was hung when it was actually complete.
 
-For large iPhone videos (500MB+), this caused indefinite hangs because FFmpeg WASM couldn't handle writing such large blobs to memory.
+Each 4K frame creates ~70MB in active memory allocations:
+- ImageBitmap decode: ~35MB
+- ImageData for compositing: ~35MB
+- Blob for re-encoding: ~3-5MB
+- Plus Canvas memory overhead
 
-**The HEVC check was redundant** because HEVC is already detected during upload via `detectVideoCodec()` in `VideoDropzone.tsx`, which uses the browser's native video element (fast, no memory issues).
+For 450 frames, this means ~31GB of memory churn, overwhelming the browser's GC.
 
-## Fix Applied
+## Issue Timeline
 
-1. **Removed redundant `isHevcCodec()` call** from `video-frame-pipeline.ts:85`
-   - HEVC is already detected during upload
-   - If HEVC somehow reaches export, frame extraction will fail with clear error
+### Original Issue (FIXED - Phase 1)
 
-2. **Added 10-second timeout to `isHevcCodec()`** in `ffmpeg-client.ts` as safety net
-   - Prevents hangs if function is called elsewhere
-   - Returns `false` on timeout (allows export to proceed, fails at frame extraction if truly HEVC)
-   - Added deprecation warning recommending `detectVideoCodec()` instead
+The `isHevcCodec()` function caused indefinite hangs on large files by writing entire blob to FFmpeg WASM memory.
 
-3. **Updated tests** to remove obsolete HEVC detection tests from pipeline
+### Second Issue (FIXED - Phase 2)
+
+After removing `isHevcCodec()`, exports progressed further but hung at ~90%. Investigation revealed this was the compositing loop, not extraction.
+
+## Fixes Applied
+
+### Phase 1: isHevcCodec Removal (Commit ff3a06d)
+
+1. Removed redundant `isHevcCodec()` call
+2. Added 10-second timeout to `isHevcCodec()` as safety net
+3. Updated tests
+
+### Phase 2: Additional Mitigations (Commits 2a71e8c, dfc08dd)
+
+1. Added 'preparing' phase for progress visibility
+2. Added 2-minute extraction timeout
+3. Added frame count limiting (max 450 frames)
+4. Added FPS reduction (minimum 24fps)
+5. Added 1080p downscaling for long clips (>18s)
+
+### Phase 3: Memory Exhaustion Fix (Current)
+
+1. **Blob-size trigger for downscale** - Blobs >50MB now trigger automatic 1080p downscale (previously only warned at >100MB)
+
+2. **Pipeline-wide timeout** - Added 3-minute overall timeout with per-frame checks during compositing
+
+3. **Batched compositing with GC breathing room** - Process frames in batches of 10 with `setTimeout(0)` between batches to allow GC
+
+4. **Reduced progress callback frequency** - Update progress every 10 frames instead of every frame to reduce overhead
 
 ## Files Modified
 
-- `apps/browser/src/lib/video-frame-pipeline.ts` - Removed isHevcCodec() call
-- `apps/browser/src/lib/ffmpeg-client.ts` - Added timeout safety net
-- `apps/browser/src/lib/video-frame-pipeline.test.ts` - Removed obsolete tests
+- `apps/browser/src/lib/video-frame-pipeline.ts`:
+  - Lines 81-84: Added pipeline timeout and batch size constants
+  - Lines 133-143: Added blob-size trigger for 1080p downscale
+  - Lines 254-258: Added timeout check in compositing loop
+  - Lines 288-296: Reduced progress updates to every 10 frames
+  - Lines 298-302: Added GC breathing room between batches
 
-## Verification
+## Verification Status
 
-- Build passes: `npm run build`
-- Pipeline tests pass: 12/12 tests in video-frame-pipeline.test.ts
-- Local E2E testing: pending
+- Build passes: `npm run build` ✅
+- Pipeline tests pass: 46/46 tests ✅
+- Code review: APPROVED ✅
+- Local E2E: Pending
+- PROD E2E: Pending
+
+## Test Environment
+
+- Video: 4K 60fps from iPhone
+- Segment blob: Up to 30 seconds
+- Browser: Chrome, Safari, Firefox
 
 ## Related
 
-- Implementation plan: `docs/implementation-plans/2026-02-02-export-hang-fix.md`
+- Implementation plan v1: `docs/implementation-plans/2026-02-02-export-hang-fix.md`
+- Implementation plan v2: `docs/implementation-plans/2026-02-02-export-hang-fix-v2.md`
 - Session handoff: `docs/session-handoffs/2026-02-02-e2e-debugging-plan.md`
+- Latest investigation handoff: `docs/session-handoffs/2026-02-02-export-hang-handoff.md`
+- Initial investigation: `docs/session-handoffs/2026-02-02-export-hang-investigation.md`
+- E2E Debug Session v2: `docs/plans/2026-02-02-e2e-debug-session-v2.md`
+- UAT Test Checklist: `docs/uat/export-pipeline-uat.md`
