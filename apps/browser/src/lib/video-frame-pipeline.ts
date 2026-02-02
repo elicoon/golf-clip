@@ -2,7 +2,10 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 import { CanvasCompositor, TracerStyle, TrajectoryPoint } from './canvas-compositor'
-import { isHevcCodec } from './ffmpeg-client'
+// Note: isHevcCodec import removed - HEVC is already detected during upload via
+// detectVideoCodec() in VideoDropzone.tsx. The isHevcCodec check was causing hangs
+// on large files because it wrote the entire blob to FFmpeg WASM memory.
+// See: bug-export-tracer-pipeline-hang.md
 
 /**
  * Error thrown when attempting to export HEVC-encoded video.
@@ -79,14 +82,10 @@ export class VideoFramePipeline {
     const totalFrames = this.calculateFrameCount(duration, fps)
     console.log('[Pipeline] Duration:', duration, 'Total frames:', totalFrames)
 
-    // Check for HEVC codec before attempting frame extraction
-    // FFmpeg WASM cannot decode HEVC, so we need to fail fast with a clear error
-    console.log('[Pipeline] Checking HEVC codec...')
-    const isHevc = await isHevcCodec(videoBlob)
-    console.log('[Pipeline] isHevc:', isHevc)
-    if (isHevc) {
-      throw new HevcExportError()
-    }
+    // Note: HEVC check removed - it was causing hangs on large files because it wrote
+    // the entire blob to FFmpeg WASM memory. HEVC is already detected during upload
+    // via detectVideoCodec() in VideoDropzone.tsx. If an HEVC file somehow reaches
+    // here, the frame extraction will fail and trigger the HevcExportError handling.
 
     // Phase 1: Extract frames from video
     // NOTE: FFmpeg.wasm doesn't reliably emit progress events for image2 format.

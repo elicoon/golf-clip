@@ -1,12 +1,14 @@
 // apps/browser/src/lib/video-frame-pipeline.test.ts
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 
-// Mock ffmpeg-client module
+// Note: isHevcCodec is no longer called by VideoFramePipeline (removed as part of
+// the export hang fix - bug-export-tracer-pipeline-hang.md). HEVC detection happens
+// during upload in VideoDropzone.tsx. The mock is kept but set to always return false.
 vi.mock('./ffmpeg-client', async () => {
   const actual = await vi.importActual('./ffmpeg-client')
   return {
     ...actual,
-    isHevcCodec: vi.fn(),
+    isHevcCodec: vi.fn().mockResolvedValue(false), // Not used by pipeline anymore
   }
 })
 
@@ -314,95 +316,20 @@ describe('VideoFramePipeline 100% progress', () => {
   })
 })
 
-describe('VideoFramePipeline HEVC detection', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('should throw HevcExportError when video is HEVC encoded', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
-    const { VideoFramePipeline, HevcExportError } = await import('./video-frame-pipeline')
-
-    const mockedIsHevc = vi.mocked(isHevcCodec)
-    mockedIsHevc.mockResolvedValue(true)
-
-    const mockFFmpeg = {
-      writeFile: vi.fn(),
-      readFile: vi.fn(),
-      exec: vi.fn(),
-      deleteFile: vi.fn(),
-      on: vi.fn(),
-      off: vi.fn(),
-    }
-
-    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
-    const hevcBlob = new Blob(['hevc-video-data'], { type: 'video/mp4' })
-
-    await expect(pipeline.exportWithTracer({
-      videoBlob: hevcBlob,
-      trajectory: [{ x: 0.5, y: 0.5, time: 0 }],
-      startTime: 0,
-      endTime: 1,
-      fps: 30,
-      quality: 'draft',
-      tracerStyle: {
-        color: '#ff0000',
-        thickness: 2,
-        glowEnabled: false,
-        glowColor: '#ffffff',
-        glowIntensity: 0.5,
-        shadowEnabled: false,
-        shadowColor: '#000000',
-        shadowBlur: 4,
-      },
-    })).rejects.toThrow(HevcExportError)
-
-    expect(mockedIsHevc).toHaveBeenCalledWith(hevcBlob)
-  })
-
-  it('should proceed with export when video is not HEVC', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
-    const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    const mockedIsHevc = vi.mocked(isHevcCodec)
-    mockedIsHevc.mockResolvedValue(false)
-
-    // Mock FFmpeg to simulate frame extraction failure (not HEVC related)
-    const mockFFmpeg = {
-      writeFile: vi.fn(),
-      readFile: vi.fn().mockRejectedValue(new Error('frame_0001.png not found')),
-      exec: vi.fn().mockResolvedValue(0),
-      deleteFile: vi.fn(),
-      on: vi.fn(),
-      off: vi.fn(),
-    }
-
-    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
-    const h264Blob = new Blob(['h264-video-data'], { type: 'video/mp4' })
-
-    // Should throw a different error (frame extraction error), not HevcExportError
-    await expect(pipeline.exportWithTracer({
-      videoBlob: h264Blob,
-      trajectory: [{ x: 0.5, y: 0.5, time: 0 }],
-      startTime: 0,
-      endTime: 1,
-      fps: 30,
-      quality: 'draft',
-      tracerStyle: {
-        color: '#ff0000',
-        thickness: 2,
-        glowEnabled: false,
-        glowColor: '#ffffff',
-        glowIntensity: 0.5,
-        shadowEnabled: false,
-        shadowColor: '#000000',
-        shadowBlur: 4,
-      },
-    })).rejects.toThrow('Frame extraction produced no frames')
-
-    expect(mockedIsHevc).toHaveBeenCalledWith(h264Blob)
-  })
-})
+/**
+ * REMOVED: VideoFramePipeline HEVC detection tests
+ *
+ * These tests were removed because the isHevcCodec check was removed from
+ * exportWithTracer() as part of fixing bug-export-tracer-pipeline-hang.md.
+ *
+ * The isHevcCodec() function was causing hangs on large files because it wrote
+ * the entire video blob to FFmpeg WASM memory. HEVC detection now happens during
+ * upload in VideoDropzone.tsx via the browser-native detectVideoCodec() function.
+ *
+ * If an HEVC video somehow reaches export, the frame extraction will fail and
+ * the error handling will still show the transcode modal (HevcExportError is
+ * still exported for backwards compatibility).
+ */
 
 /**
  * Tests for FFmpeg exit code handling bug.
@@ -642,108 +569,24 @@ describe('VideoFramePipeline FFmpeg exit code handling', () => {
 })
 
 /**
- * Integration tests for HEVC codec handling in export flow.
+ * REMOVED: VideoFramePipeline HEVC codec integration tests
  *
- * These tests verify the complete flow when dealing with HEVC videos,
- * including proper error propagation and recovery options.
+ * These tests were removed because the isHevcCodec check was removed from
+ * exportWithTracer() as part of fixing bug-export-tracer-pipeline-hang.md.
+ * See comment at line 319 for full explanation.
  */
-describe('VideoFramePipeline HEVC codec integration', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
 
-  it('should throw HevcExportError that can be caught by type for UI handling', async () => {
-    /**
-     * UI components need to catch HevcExportError specifically to show
-     * the transcode modal instead of a generic error message.
-     */
-    const { isHevcCodec } = await import('./ffmpeg-client')
-    const { VideoFramePipeline, HevcExportError } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(true)
-
-    const mockFFmpeg = {
-      writeFile: vi.fn(),
-      readFile: vi.fn(),
-      exec: vi.fn(),
-      deleteFile: vi.fn(),
-      on: vi.fn(),
-      off: vi.fn(),
-    }
-
-    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
-
-    let caughtError: Error | null = null
-    try {
-      await pipeline.exportWithTracer({
-        videoBlob: new Blob(['hevc'], { type: 'video/mp4' }),
-        trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
-        startTime: 0,
-        endTime: 1,
-        fps: 30,
-        tracerStyle: {
-          color: '#ff0000',
-          thickness: 2,
-          glowEnabled: false,
-          glowColor: '#ffffff',
-          glowIntensity: 0.5,
-          shadowEnabled: false,
-          shadowColor: '#000000',
-          shadowBlur: 4,
-        },
-      })
-    } catch (e) {
-      caughtError = e as Error
-    }
-
-    // Must be catchable as HevcExportError for UI to show transcode modal
-    expect(caughtError).toBeInstanceOf(HevcExportError)
-    expect(caughtError!.name).toBe('HevcExportError')
-  })
-
-  it('should detect HEVC before attempting frame extraction (fail fast)', async () => {
-    /**
-     * HEVC check should happen BEFORE any heavy FFmpeg operations.
-     * This ensures fast feedback to user and avoids wasted processing.
-     */
-    const { isHevcCodec } = await import('./ffmpeg-client')
-    const { VideoFramePipeline, HevcExportError } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(true)
-
-    const mockFFmpeg = {
-      writeFile: vi.fn(),
-      readFile: vi.fn(),
-      exec: vi.fn(),
-      deleteFile: vi.fn(),
-      on: vi.fn(),
-      off: vi.fn(),
-    }
-
-    const pipeline = new VideoFramePipeline(mockFFmpeg as any)
-
-    await expect(pipeline.exportWithTracer({
-      videoBlob: new Blob(['hevc'], { type: 'video/mp4' }),
-      trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
-      startTime: 0,
-      endTime: 1,
-      fps: 30,
-      tracerStyle: {
-        color: '#ff0000',
-        thickness: 2,
-        glowEnabled: false,
-        glowColor: '#ffffff',
-        glowIntensity: 0.5,
-        shadowEnabled: false,
-        shadowColor: '#000000',
-        shadowBlur: 4,
-      },
-    })).rejects.toThrow(HevcExportError)
-
-    // exec should NOT have been called because HEVC was detected first
-    expect(mockFFmpeg.exec).not.toHaveBeenCalled()
-  })
-})
+/**
+ * REMOVED: VideoFramePipeline - isHevcCodec Hang Prevention tests
+ *
+ * These tests were removed because the isHevcCodec check was removed from
+ * exportWithTracer() as part of fixing bug-export-tracer-pipeline-hang.md.
+ *
+ * The fix: isHevcCodec() was removed from exportWithTracer() because it wrote
+ * the entire blob to FFmpeg WASM memory, causing hangs on large files (500MB+).
+ * HEVC detection now happens during upload in VideoDropzone.tsx via the
+ * browser-native detectVideoCodec() function.
+ */
 
 /**
  * Tests for FFmpeg diagnostic logging during frame extraction failures.
