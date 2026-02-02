@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useProcessingStore, TrajectoryData, TracerConfig, VideoSegment } from '../stores/processingStore'
+import { useReviewActionsStore } from '../stores/reviewActionsStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
@@ -18,7 +19,47 @@ interface ClipReviewProps {
 }
 
 export function ClipReview({ onComplete }: ClipReviewProps) {
-  const { segments, updateSegment, approveSegment, rejectSegment } = useProcessingStore()
+  const {
+    segments: legacySegments,
+    updateSegment: legacyUpdateSegment,
+    approveSegment: legacyApproveSegment,
+    rejectSegment: legacyRejectSegment,
+    videos,
+    activeVideoId,
+    updateVideoSegment,
+    approveVideoSegment,
+    rejectVideoSegment,
+  } = useProcessingStore()
+
+  // Use multi-video segments when available, fall back to legacy segments
+  const activeVideo = activeVideoId ? videos.get(activeVideoId) : undefined
+  const segments = activeVideo?.segments ?? legacySegments
+
+  // Wrapper functions that route to multi-video or legacy store actions
+  const updateSegment = useCallback((id: string, updates: Partial<VideoSegment>) => {
+    if (activeVideoId) {
+      updateVideoSegment(activeVideoId, id, updates)
+    } else {
+      legacyUpdateSegment(id, updates)
+    }
+  }, [activeVideoId, updateVideoSegment, legacyUpdateSegment])
+
+  const approveSegment = useCallback((id: string) => {
+    if (activeVideoId) {
+      approveVideoSegment(activeVideoId, id)
+    } else {
+      legacyApproveSegment(id)
+    }
+  }, [activeVideoId, approveVideoSegment, legacyApproveSegment])
+
+  const rejectSegment = useCallback((id: string) => {
+    if (activeVideoId) {
+      rejectVideoSegment(activeVideoId, id)
+    } else {
+      legacyRejectSegment(id)
+    }
+  }, [activeVideoId, rejectVideoSegment, legacyRejectSegment])
+
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -360,8 +401,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     pipeline: VideoFramePipeline
   ): Promise<Blob | null> => {
     if (!segment.trajectory || segment.trajectory.points.length === 0) {
+      console.log('[Export] No trajectory, returning null for raw download')
       return null // No trajectory - will download raw segment
     }
+
+    console.log('[Export] Building export config...', {
+      blobSize: segment.blob.size,
+      trajectoryPoints: segment.trajectory.points.length,
+      clipStart: segment.clipStart,
+      clipEnd: segment.clipEnd,
+      startTime: segment.startTime,
+    })
 
     const exportConfig: ExportConfig = {
       videoBlob: segment.blob,
@@ -375,18 +425,25 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       apexPoint: apexPoint ?? undefined,
       originPoint: originPoint ?? undefined,
       onProgress: (progress) => {
+        console.log('[Export] Progress:', progress.phase, progress.progress)
         setExportPhase({ phase: progress.phase, progress: progress.progress })
       }
     }
 
-    return await pipeline.exportWithTracer(exportConfig)
+    console.log('[Export] Calling pipeline.exportWithTracer...')
+    const result = await pipeline.exportWithTracer(exportConfig)
+    console.log('[Export] pipeline.exportWithTracer returned')
+    return result
   }, [exportQuality, tracerStyle, apexPoint, originPoint])
 
   // Export approved clips
   // Note: Get segments directly from store to avoid stale closure issue
   // when handleExport is called immediately after approveSegment
   const handleExport = useCallback(async () => {
-    const currentSegments = useProcessingStore.getState().segments
+    // Use multi-video segments when available, fall back to legacy segments
+    const store = useProcessingStore.getState()
+    const activeVid = store.activeVideoId ? store.videos.get(store.activeVideoId) : undefined
+    const currentSegments = activeVid?.segments ?? store.segments
     const approved = currentSegments.filter(s => s.approved === 'approved')
     if (approved.length === 0) {
       onComplete()
@@ -402,7 +459,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     try {
       // Load FFmpeg for tracer export
+      console.log('[Export] Loading FFmpeg...')
       await loadFFmpeg()
+      console.log('[Export] FFmpeg loaded')
       const ffmpeg = getFFmpegInstance()
       const pipeline = new VideoFramePipeline(ffmpeg)
 
@@ -410,10 +469,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         if (exportCancelledRef.current) break
 
         const segment = approved[i]
+        console.log('[Export] Processing segment', i + 1, 'of', approved.length, {
+          hasTrajectory: !!segment.trajectory,
+          trajectoryPoints: segment.trajectory?.points?.length ?? 0,
+          hasObjectUrl: !!segment.objectUrl,
+          hasBlob: !!segment.blob,
+        })
         setExportProgress({ current: i + 1, total: approved.length })
 
         try {
           const exportedBlob = await exportSegmentWithTracer(segment, i, pipeline)
+          console.log('[Export] exportSegmentWithTracer returned:', exportedBlob ? 'blob' : 'null')
 
           if (exportedBlob) {
             // Download the exported MP4
@@ -568,7 +634,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         blob: h264Blob,
         objectUrl: newObjectUrl,
       }
-      useProcessingStore.getState().updateSegment(segment.id, segmentUpdate)
+      // Use multi-video or legacy update based on activeVideoId
+      const store = useProcessingStore.getState()
+      if (activeVideoId) {
+        store.updateVideoSegment(activeVideoId, segment.id, segmentUpdate)
+      } else {
+        store.updateSegment(segment.id, segmentUpdate)
+      }
 
       // Close transcode modal (preserve transcodedSegmentIds to track) and restart export
       setHevcTranscodeModal(prev => ({
@@ -694,6 +766,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     // When last shot is rejected, component will naturally show review-complete UI
     // User can then click the export button when ready (if any shots were approved)
   }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment])
+
+  // Register handlers and progress with the shared store so header can display them
+  const { setHandlers, setProgress, clearHandlers } = useReviewActionsStore()
+  useEffect(() => {
+    setHandlers(handleApprove, handleReject)
+    return () => clearHandlers()
+  }, [handleApprove, handleReject, setHandlers, clearHandlers])
+
+  useEffect(() => {
+    setProgress(currentIndex, totalShots)
+  }, [currentIndex, totalShots, setProgress])
 
   const togglePlayPause = useCallback(() => {
     if (!videoRef.current) return
@@ -960,71 +1043,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
   return (
     <div className="clip-review">
-      <div className="review-header">
-        <h2>Review Shots</h2>
-        <span className="review-progress">{currentIndex + 1} of {totalShots}</span>
-      </div>
-
-      {/* Video transport controls */}
-      <div className="video-transport-controls">
-        <button
-          onClick={skipToStart}
-          className="btn-transport"
-          title="Skip to clip start"
-        >
-          ⏮
-        </button>
-        <button
-          onClick={stepFrameBackward}
-          className="btn-transport"
-          title="Step back 1 frame"
-        >
-          ⏪
-        </button>
-        <button
-          onClick={togglePlayPause}
-          className="btn-transport btn-transport-play"
-          title={isPlaying ? 'Pause' : 'Play'}
-        >
-          {isPlaying ? '⏸' : '▶'}
-        </button>
-        <button
-          onClick={stepFrameForward}
-          className="btn-transport"
-          title="Step forward 1 frame"
-        >
-          ⏩
-        </button>
-        <button
-          onClick={skipToEnd}
-          className="btn-transport"
-          title="Skip to clip end"
-        >
-          ⏭
-        </button>
-      </div>
-
-      <Scrubber
-        videoRef={videoRef}
-        startTime={currentShot.clipStart - currentShot.startTime}
-        endTime={currentShot.clipEnd - currentShot.startTime}
-        videoDuration={currentShot.endTime - currentShot.startTime}
-        onTimeUpdate={(newStart, newEnd) => {
-          // Convert blob-relative times back to global for storage
-          handleTrimUpdate(newStart + currentShot.startTime, newEnd + currentShot.startTime)
-        }}
-      />
-
-      {/* Review action buttons - positioned above video for visibility */}
-      <div className="review-actions">
-        <button onClick={handleReject} className="btn-no-shot">
-          ✕ No Golf Shot
-        </button>
-        <button onClick={handleApprove} className="btn-primary btn-large">
-          ✓ Approve Shot
-        </button>
-      </div>
-
       {/* Instruction banner based on review step */}
       <div className="marking-instruction">
         {reviewStep === 'marking_landing' && (
@@ -1108,6 +1126,56 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           isMarkingLanding={isMarkingLanding}
         />
       </div>
+
+      {/* Video transport controls */}
+      <div className="video-transport-controls">
+        <button
+          onClick={skipToStart}
+          className="btn-transport"
+          title="Skip to clip start"
+        >
+          ⏮
+        </button>
+        <button
+          onClick={stepFrameBackward}
+          className="btn-transport"
+          title="Step back 1 frame"
+        >
+          ⏪
+        </button>
+        <button
+          onClick={togglePlayPause}
+          className="btn-transport btn-transport-play"
+          title={isPlaying ? 'Pause' : 'Play'}
+        >
+          {isPlaying ? '⏸' : '▶'}
+        </button>
+        <button
+          onClick={stepFrameForward}
+          className="btn-transport"
+          title="Step forward 1 frame"
+        >
+          ⏩
+        </button>
+        <button
+          onClick={skipToEnd}
+          className="btn-transport"
+          title="Skip to clip end"
+        >
+          ⏭
+        </button>
+      </div>
+
+      <Scrubber
+        videoRef={videoRef}
+        startTime={currentShot.clipStart - currentShot.startTime}
+        endTime={currentShot.clipEnd - currentShot.startTime}
+        videoDuration={currentShot.endTime - currentShot.startTime}
+        onTimeUpdate={(newStart, newEnd) => {
+          // Convert blob-relative times back to global for storage
+          handleTrimUpdate(newStart + currentShot.startTime, newEnd + currentShot.startTime)
+        }}
+      />
 
       {/* Playback and tracer controls */}
       <div className="tracer-controls">

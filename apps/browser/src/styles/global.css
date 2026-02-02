@@ -65,6 +65,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--spacing-md);
   padding: var(--spacing-md) var(--spacing-lg);
   background-color: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-bg-tertiary);
@@ -72,6 +73,59 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
+}
+
+/* Video queue when in header */
+.app-header .video-queue {
+  flex: 1;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+.app-header .video-queue-title {
+  display: none;
+}
+
+.app-header .video-queue-list {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.app-header .queue-item {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 0.85rem;
+}
+
+/* Review header info in app header */
+.app-header .review-header-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.app-header .review-title {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.app-header .review-progress {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+/* Review actions when in header */
+.app-header .review-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+}
+
+.app-header .review-actions .btn-no-shot,
+.app-header .review-actions .btn-primary {
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: 0.9rem;
 }
 
 .app-header h1 {

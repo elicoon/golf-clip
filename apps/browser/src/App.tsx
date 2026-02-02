@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { VideoDropzone } from './components/VideoDropzone'
 import { ClipReview } from './components/ClipReview'
 import { VideoQueue } from './components/VideoQueue'
+import { ReviewActions } from './components/ReviewActions'
 import { useProcessingStore } from './stores/processingStore'
 
 type AppView = 'upload' | 'review' | 'export'
@@ -42,6 +43,10 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>GolfClip</h1>
+        {/* Video queue in header for easy access */}
+        {hasVideos && <VideoQueue />}
+        {/* Review actions in header during review */}
+        {view === 'review' && <ReviewActions />}
         <div className="header-actions">
           {(view !== 'upload' || hasVideos) && (
             <button onClick={handleReset} className="btn-secondary">
@@ -52,8 +57,6 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        {/* Show queue when there are multiple videos */}
-        {hasVideos && <VideoQueue />}
 
         {error && (
           <div className="app-error">

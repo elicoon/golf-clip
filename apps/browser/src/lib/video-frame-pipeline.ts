@@ -58,6 +58,7 @@ export class VideoFramePipeline {
   }
 
   async exportWithTracer(config: ExportConfig): Promise<Blob> {
+    console.log('[Pipeline] exportWithTracer called')
     const {
       videoBlob,
       trajectory,
@@ -72,12 +73,17 @@ export class VideoFramePipeline {
       onProgress,
     } = config
 
+    console.log('[Pipeline] Config:', { startTime, endTime, fps, quality, trajectoryPoints: trajectory.length })
+
     const duration = endTime - startTime
     const totalFrames = this.calculateFrameCount(duration, fps)
+    console.log('[Pipeline] Duration:', duration, 'Total frames:', totalFrames)
 
     // Check for HEVC codec before attempting frame extraction
     // FFmpeg WASM cannot decode HEVC, so we need to fail fast with a clear error
+    console.log('[Pipeline] Checking HEVC codec...')
     const isHevc = await isHevcCodec(videoBlob)
+    console.log('[Pipeline] isHevc:', isHevc)
     if (isHevc) {
       throw new HevcExportError()
     }
@@ -85,12 +91,15 @@ export class VideoFramePipeline {
     // Phase 1: Extract frames from video
     // NOTE: FFmpeg.wasm doesn't reliably emit progress events for image2 format.
     // We report -1 (indeterminate) initially, with periodic fallback updates.
+    console.log('[Pipeline] Phase 1: Extracting frames')
     onProgress?.({ phase: 'extracting', progress: -1 })
 
     const inputName = 'input.mp4'
     const framePattern = 'frame_%04d.png'
 
+    console.log('[Pipeline] Writing video blob to FFmpeg filesystem...')
     await this.ffmpeg.writeFile(inputName, await fetchFile(videoBlob))
+    console.log('[Pipeline] Video blob written')
 
     // Set up log listener to capture FFmpeg stderr for diagnostics
     let ffmpegLogs = ''
