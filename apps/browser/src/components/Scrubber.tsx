@@ -33,10 +33,15 @@ export function Scrubber({
   const windowStart = lockedWindow
     ? lockedWindow.start
     : Math.max(0, startTime - windowPadding)
-  const windowEnd = lockedWindow
+
+  // Guard against inverted window - ensure windowEnd > windowStart
+  const rawWindowEnd = lockedWindow
     ? lockedWindow.end
     : Math.min(duration || endTime + windowPadding, endTime + windowPadding)
-  const windowDuration = windowEnd - windowStart
+  const windowEnd = Math.max(rawWindowEnd, windowStart + 1) // Ensure at least 1s window
+
+  // Prevent division by zero/negative
+  const windowDuration = Math.max(0.1, windowEnd - windowStart)
 
   // Track video metadata and time updates
   useEffect(() => {
