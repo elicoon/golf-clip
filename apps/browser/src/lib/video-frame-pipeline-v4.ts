@@ -257,25 +257,62 @@ export class VideoFramePipelineV4 {
 
     onProgress?.({ phase: 'extracting', progress: 0 })
 
+    // DIAGNOSTIC: Track callback timing to understand frame drops
+    let callbackCount = 0
+    let skippedBeforeStart = 0
+    let skippedDuplicate = 0
+    let captureStartTime = 0
+    const callbackIntervals: number[] = []
+    let lastCallbackTime = 0
+
     // First pass: capture all frames as ImageBitmaps during playback
     await new Promise<void>((resolve, reject) => {
       let callbackId: number | null = null
       let isCapturing = true
 
-      const captureFrame = async (_now: DOMHighResTimeStamp, metadata: VideoFrameCallbackMetadata) => {
+      const captureFrame = async (now: DOMHighResTimeStamp, metadata: VideoFrameCallbackMetadata) => {
         if (!isCapturing) return
+
+        // DIAGNOSTIC: Track callback frequency
+        callbackCount++
+        if (callbackCount === 1) {
+          captureStartTime = now
+        }
+        if (lastCallbackTime > 0) {
+          callbackIntervals.push(now - lastCallbackTime)
+        }
+        lastCallbackTime = now
 
         const currentVideoTime = video.currentTime
 
         // Check if we've reached the end
         if (currentVideoTime >= endTime) {
           isCapturing = false
+          // DIAGNOSTIC: Log capture statistics
+          const avgInterval = callbackIntervals.length > 0
+            ? callbackIntervals.reduce((a, b) => a + b, 0) / callbackIntervals.length
+            : 0
+          const maxInterval = callbackIntervals.length > 0 ? Math.max(...callbackIntervals) : 0
+          const minInterval = callbackIntervals.length > 0 ? Math.min(...callbackIntervals) : 0
+          console.log('[PipelineV4] DIAGNOSTIC - Callback stats:', {
+            totalCallbacks: callbackCount,
+            skippedBeforeStart,
+            skippedDuplicate,
+            capturedFrames: capturedBitmaps.length,
+            avgIntervalMs: avgInterval.toFixed(2),
+            minIntervalMs: minInterval.toFixed(2),
+            maxIntervalMs: maxInterval.toFixed(2),
+            expectedFps: 1000 / avgInterval,
+            totalCaptureTimeMs: (now - captureStartTime).toFixed(0),
+            videoPlaybackRate: video.playbackRate,
+          })
           resolve()
           return
         }
 
         // Skip if we're before start time (can happen during initial seek)
         if (currentVideoTime < startTime - 0.1) {
+          skippedBeforeStart++
           callbackId = video.requestVideoFrameCallback(captureFrame)
           return
         }
@@ -283,6 +320,7 @@ export class VideoFramePipelineV4 {
         // Avoid duplicate frames (same presentation time)
         const presentationTime = metadata.mediaTime
         if (presentationTime === lastFrameTime) {
+          skippedDuplicate++
           callbackId = video.requestVideoFrameCallback(captureFrame)
           return
         }
