@@ -140,6 +140,15 @@ export class VideoFramePipelineV4 {
     video.playsInline = true
     video.preload = 'auto'
     video.crossOrigin = 'anonymous'
+    // IMPORTANT: Append video to DOM to prevent requestVideoFrameCallback throttling
+    // Chrome throttles rVFC to ~1fps for detached/invisible video elements
+    video.style.position = 'fixed'
+    video.style.top = '-9999px'
+    video.style.left = '-9999px'
+    video.style.width = '1px'
+    video.style.height = '1px'
+    video.style.opacity = '0.01' // Not fully invisible to avoid throttling
+    document.body.appendChild(video)
     video.src = URL.createObjectURL(videoBlob)
 
     await new Promise<void>((resolve, reject) => {
@@ -437,6 +446,8 @@ export class VideoFramePipelineV4 {
     const resultBlob = new Blob([buffer], { type: 'video/mp4' })
 
     URL.revokeObjectURL(video.src)
+    // Clean up: remove video element from DOM
+    video.remove()
 
     onProgress?.({ phase: 'complete', progress: 100 })
 
