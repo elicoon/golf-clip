@@ -352,9 +352,21 @@ return 0.55 + 0.45 * (linearPart + easePart)
 ### Technical Details
 
 - **Frame rate**: 60fps using `requestAnimationFrame`
+- **Trajectory points**: 60 points per second of flight time (e.g., 180 points for 3s flight)
+- **Interpolation**: Leading edge is interpolated between trajectory points for perfectly smooth animation
 - **Rendering**: HTML5 Canvas with `devicePixelRatio` scaling
 - **Curves**: Quadratic Bezier splines for smooth lines
 - **Hold**: Trajectory stays visible 1.5 seconds after animation completes
+
+### V4 Export Tracer Rendering
+
+For exported videos, the tracer is composited during the encoding pass:
+1. For each video frame, calculate `currentTime` relative to trajectory start
+2. Filter trajectory points where `timestamp <= currentTime`
+3. Interpolate leading edge position between last visible point and next point
+4. Draw glow layer (8px, 40% opacity) then main line (4px, 100% opacity)
+
+**Important:** The video element must be positioned in the viewport (not off-screen) during capture, or Chrome will throttle `requestVideoFrameCallback` to ~1fps.
 
 ---
 
