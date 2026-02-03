@@ -140,14 +140,20 @@ export class VideoFramePipelineV4 {
     video.playsInline = true
     video.preload = 'auto'
     video.crossOrigin = 'anonymous'
-    // IMPORTANT: Append video to DOM to prevent requestVideoFrameCallback throttling
-    // Chrome throttles rVFC to ~1fps for detached/invisible video elements
+    // IMPORTANT: Video must be in DOM AND in viewport to prevent rVFC throttling
+    // Chrome throttles requestVideoFrameCallback to ~1fps for:
+    // - Detached video elements
+    // - Elements outside viewport bounds (top: -9999px doesn't work!)
+    // - Elements with visibility: hidden or display: none
+    // Solution: Position in viewport but clip to 1x1 pixel
     video.style.position = 'fixed'
-    video.style.top = '-9999px'
-    video.style.left = '-9999px'
+    video.style.bottom = '0'
+    video.style.right = '0'
     video.style.width = '1px'
     video.style.height = '1px'
-    video.style.opacity = '0.01' // Not fully invisible to avoid throttling
+    video.style.opacity = '0.01'
+    video.style.pointerEvents = 'none'
+    video.style.zIndex = '-1'
     document.body.appendChild(video)
     video.src = URL.createObjectURL(videoBlob)
 
