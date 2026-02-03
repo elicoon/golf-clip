@@ -292,7 +292,11 @@ export class VideoFramePipelineV4 {
           // Draw video to capture canvas (at output resolution - scales down 4K to 1080p)
           captureCtx.drawImage(video, 0, 0, width, height)
 
-          // Then create ImageBitmap from the canvas (fast)
+          // IMPORTANT: Request next frame BEFORE any async work to avoid frame drops
+          // This ensures we don't miss frames while waiting for createImageBitmap
+          callbackId = video.requestVideoFrameCallback(captureFrame)
+
+          // Then create ImageBitmap from the canvas (fast, but still async)
           const bitmap = await createImageBitmap(captureCanvas)
           const relativeTimeUs = Math.round((currentVideoTime - startTime) * 1_000_000)
 
@@ -314,9 +318,6 @@ export class VideoFramePipelineV4 {
             currentTime: currentVideoTime,
             endTime,
           })
-
-          // Request next frame
-          callbackId = video.requestVideoFrameCallback(captureFrame)
         } catch (error) {
           isCapturing = false
           reject(error)
