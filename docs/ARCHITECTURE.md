@@ -383,6 +383,89 @@ sequenceDiagram
 
 ---
 
+## 4b. Browser Export Pipeline (V4)
+
+The browser app exports clips client-side using WebCodecs API with a two-pass real-time capture approach.
+
+### V4 Pipeline Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    V4 TWO-PASS EXPORT PIPELINE                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  PASS 1: REAL-TIME CAPTURE                                                  │
+│  ┌────────────────────────────────────────────────────────────────────┐    │
+│  │  video.play()                                                       │    │
+│  │       │                                                             │    │
+│  │       ▼                                                             │    │
+│  │  requestVideoFrameCallback() ─────────────────────┐                │    │
+│  │       │                                           │                │    │
+│  │       ▼                                           │                │    │
+│  │  captureCtx.drawImage(video, 0, 0, width, height) │  ◀── Loop     │    │
+│  │       │                                           │      until     │    │
+│  │       ▼                                           │      endTime   │    │
+│  │  createImageBitmap(captureCanvas)                 │                │    │
+│  │       │                                           │                │    │
+│  │       ▼                                           │                │    │
+│  │  capturedBitmaps.push({ bitmap, timeUs }) ────────┘                │    │
+│  └────────────────────────────────────────────────────────────────────┘    │
+│                              │                                              │
+│                              ▼                                              │
+│  PASS 2: ENCODING                                                           │
+│  ┌────────────────────────────────────────────────────────────────────┐    │
+│  │  for (bitmap of capturedBitmaps):                                   │    │
+│  │       │                                                             │    │
+│  │       ▼                                                             │    │
+│  │  ctx.drawImage(bitmap, 0, 0)  ───▶  Draw video frame               │    │
+│  │       │                                                             │    │
+│  │       ▼                                                             │    │
+│  │  drawTracer(ctx, trajectory, time)  ───▶  Composite tracer         │    │
+│  │       │                                                             │    │
+│  │       ▼                                                             │    │
+│  │  new VideoFrame(canvas, { timestamp })                              │    │
+│  │       │                                                             │    │
+│  │       ▼                                                             │    │
+│  │  encoder.encode(frame, { keyFrame: i % 30 === 0 })                  │    │
+│  └────────────────────────────────────────────────────────────────────┘    │
+│                              │                                              │
+│                              ▼                                              │
+│  FINALIZATION                                                               │
+│  ┌────────────────────────────────────────────────────────────────────┐    │
+│  │  encoder.flush() → muxer.finalize() → new Blob([buffer])           │    │
+│  └────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Implementation Details
+
+| Aspect | Implementation | Why |
+|--------|---------------|-----|
+| Capture resolution | Output (e.g., 1080p) | Capturing at 4K is too slow, causes frame drops |
+| Frame source | Canvas, not video | `createImageBitmap(video)` returns black in some browsers |
+| Two-pass design | Capture first, encode after | Encoding is slow; would miss frames if done in callback |
+| Timestamp handling | `firstTimestampBehavior: 'offset'` | Clips don't start at t=0; muxer auto-offsets |
+| Keyframes | Every 30 frames | Balance between file size and seek performance |
+
+### Pipeline Comparison
+
+| Pipeline | Method | Speed | FPS | Status |
+|----------|--------|-------|-----|--------|
+| V4 | requestVideoFrameCallback | ~0.85x realtime | Source FPS (60) | **Recommended** |
+| V3 | Frame-by-frame seek | 5-8 min for 4K | 30 fixed | Fallback |
+| V1 | FFmpeg WASM | Very slow, hangs | Varies | Deprecated |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `video-frame-pipeline-v4.ts` | V4 real-time capture + WebCodecs encoding |
+| `video-frame-pipeline-v3.ts` | V3 seek-based fallback pipeline |
+| `ClipReview.tsx` | Export UI with resolution dropdown |
+
+---
+
 ## 5. Frontend Component Architecture
 
 ### Component Hierarchy
@@ -782,6 +865,9 @@ flowchart LR
 | State Management | Zustand | Simple, performant state |
 | Canvas Rendering | HTML5 Canvas | Trajectory animation |
 | Video Playback | HTML5 Video | Native video controls |
+| Video Export | WebCodecs API | Hardware-accelerated encoding |
+| Frame Capture | requestVideoFrameCallback | Real-time frame capture at source fps |
+| MP4 Muxing | mp4-muxer | Browser-side MP4 container creation |
 
 ### Desktop App
 

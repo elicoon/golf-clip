@@ -427,40 +427,81 @@ The review interface supports zooming for precise marker placement:
 
 ### Overview
 
-After reviewing shots, accepted clips are exported as individual video files.
+After reviewing shots, accepted clips are exported as individual video files with optional tracer overlay. The browser app uses WebCodecs-based pipelines for client-side export.
 
-### Export Process
+### Export Pipelines
 
-1. **Start Export**: Frontend sends list of approved clips to backend
-2. **Job Creation**: Backend creates export job with unique ID
-3. **Processing**: For each clip:
-   - FFmpeg extracts the clip segment
-   - If tracer rendering enabled, OpenCV burns tracer onto frames
-   - Clip saved to output directory
-4. **Progress Updates**: Frontend polls for status updates
-5. **Completion**: Modal shows results with output location
+The browser app offers multiple export pipelines:
+
+| Pipeline | Method | Speed | Use Case |
+|----------|--------|-------|----------|
+| **V4 (Recommended)** | Real-time capture via `requestVideoFrameCallback` | ~0.85x realtime | Best for all videos, preserves source framerate |
+| V3 | Frame-by-frame seeking | Slow (5-8min for 4K) | Fallback for browsers without V4 support |
+| V1 (Legacy) | FFmpeg WASM | Very slow, can hang on 4K | Deprecated |
+
+### V4 Pipeline Architecture
+
+V4 uses a two-pass approach for reliable 60fps capture:
+
+**Pass 1: Real-Time Capture**
+1. Seek to clip start time
+2. Play video at 1x speed
+3. `requestVideoFrameCallback()` fires on each decoded frame
+4. Draw video to canvas at output resolution (e.g., 1080p)
+5. Create `ImageBitmap` from canvas, store with timestamp
+6. Stop when reaching clip end time
+
+**Pass 2: Encoding**
+1. For each captured `ImageBitmap`:
+   - Draw to output canvas
+   - Composite tracer overlay
+   - Create `VideoFrame`, encode with `VideoEncoder`
+2. Finalize MP4 with `mp4-muxer`
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    V4 TWO-PASS PIPELINE                              │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  PASS 1: CAPTURE (~10s for 10s clip)                                │
+│  video.play() → requestVideoFrameCallback → drawImage → ImageBitmap │
+│                                                                      │
+│  PASS 2: ENCODE (~2s for 10s clip)                                  │
+│  ImageBitmap → canvas + tracer → VideoFrame → VideoEncoder → MP4    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Resolution Options
+
+Export resolution can be selected from dropdown:
+- **Original**: Source resolution (may be 4K)
+- **1080p (faster)**: Downscale to max 1080p height
+- **720p (fastest)**: Downscale to max 720p height
+
+Downscaling happens during capture, making V4 faster for high-res sources.
 
 ### Output Structure
 
 ```
-[video_name]_clips/
-├── shot_1.mp4
-├── shot_2.mp4
-└── shot_3.mp4
+Downloads/
+├── shot_1_v4.mp4
+├── shot_2_v4.mp4
+└── shot_3_v4.mp4
 ```
 
-### Tracer Rendering
+### Quality Validation
 
-When "Render Shot Tracers" is enabled:
-1. Each frame is read by OpenCV
-2. Trajectory is drawn onto frame at current timestamp
-3. Includes glow effect and proper timing
-4. Frame is encoded back into output video
+Export files under 10MB typically indicate quality issues:
+- Low framerate (should be ~60fps for 60fps source)
+- Missing video content (just tracer on black)
+- Excessive compression
 
 ### Export Options
 
 ```json
 {
+  "resolution": "1080p",
   "render_tracer": true,
   "tracer_style": {
     "color": "#FF0000",
@@ -469,6 +510,22 @@ When "Render Shot Tracers" is enabled:
   }
 }
 ```
+
+### Browser Compatibility
+
+V4 requires `requestVideoFrameCallback` support:
+- Chrome 83+
+- Edge 83+
+- Safari 15.4+
+- Firefox: Not supported (falls back to V3)
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `video-frame-pipeline-v4.ts` | V4 real-time capture pipeline |
+| `video-frame-pipeline-v3.ts` | V3 seek-based pipeline (fallback) |
+| `ClipReview.tsx` | Export UI with pipeline selection |
 
 ---
 

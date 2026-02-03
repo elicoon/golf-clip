@@ -27,6 +27,8 @@ export interface ExportProgressV3 {
   totalFrames?: number
 }
 
+export type ExportResolution = 'original' | '1080p' | '720p'
+
 export interface ExportConfigV3 {
   videoBlob: Blob
   trajectory: TrajectoryPoint[]
@@ -34,6 +36,8 @@ export interface ExportConfigV3 {
   endTime: number
   tracerStyle?: TracerStyle
   onProgress?: (progress: ExportProgressV3) => void
+  /** Output resolution - downscales if source is larger */
+  resolution?: ExportResolution
 }
 
 /**
@@ -99,6 +103,7 @@ export class VideoFramePipelineV3 {
       endTime,
       tracerStyle = DEFAULT_TRACER_STYLE,
       onProgress,
+      resolution = 'original',
     } = config
 
     const duration = endTime - startTime
@@ -107,6 +112,7 @@ export class VideoFramePipelineV3 {
       blobSizeMB: (videoBlob.size / (1024 * 1024)).toFixed(1),
       duration: duration.toFixed(2),
       trajectoryPoints: trajectory.length,
+      resolution,
     })
 
     const startMs = performance.now()
@@ -124,8 +130,26 @@ export class VideoFramePipelineV3 {
       video.onerror = () => reject(new Error('Failed to load video'))
     })
 
-    const width = video.videoWidth
-    const height = video.videoHeight
+    const sourceWidth = video.videoWidth
+    const sourceHeight = video.videoHeight
+
+    // Calculate output dimensions based on resolution setting
+    let width = sourceWidth
+    let height = sourceHeight
+
+    if (resolution !== 'original') {
+      const maxHeight = resolution === '1080p' ? 1080 : 720
+      if (sourceHeight > maxHeight) {
+        const scale = maxHeight / sourceHeight
+        width = Math.round(sourceWidth * scale)
+        height = maxHeight
+        // Ensure even dimensions (required for H.264)
+        width = width % 2 === 0 ? width : width + 1
+        height = height % 2 === 0 ? height : height + 1
+      }
+    }
+
+    console.log('[PipelineV3] Resolution:', sourceWidth, 'x', sourceHeight, '->', width, 'x', height)
     const fps = 30 // Assume 30fps for now, could detect from video
     const totalFrames = Math.ceil(duration * fps)
 
@@ -211,8 +235,8 @@ export class VideoFramePipelineV3 {
       // Seek to frame time
       await seekTo(frameTime)
 
-      // Draw video frame to canvas
-      ctx.drawImage(video, 0, 0, width, height)
+      // Draw video frame to canvas (scale from source to output dimensions)
+      ctx.drawImage(video, 0, 0, sourceWidth, sourceHeight, 0, 0, width, height)
 
       // Draw tracer overlay
       const relativeTime = frameTime - startTime

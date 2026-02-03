@@ -9,7 +9,8 @@ import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
 import { VideoFramePipeline, ExportConfig, HevcExportError } from '../lib/video-frame-pipeline'
 import { VideoFramePipelineV2, ExportConfigV2 } from '../lib/video-frame-pipeline-v2'
-import { VideoFramePipelineV3, ExportConfigV3 } from '../lib/video-frame-pipeline-v3'
+import { VideoFramePipelineV3, ExportConfigV3, ExportResolution } from '../lib/video-frame-pipeline-v3'
+import { VideoFramePipelineV4, ExportConfigV4, isVideoFrameCallbackSupported } from '../lib/video-frame-pipeline-v4'
 import { loadFFmpeg, getFFmpegInstance, transcodeHevcToH264, estimateTranscodeTime } from '../lib/ffmpeg-client'
 import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
 
@@ -94,6 +95,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [exportComplete, setExportComplete] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportQuality, setExportQuality] = useState<'draft' | 'preview' | 'final'>('preview')
+  const [exportResolution, setExportResolution] = useState<ExportResolution>('1080p')
   const exportCancelledRef = useRef(false)
   const defensiveTimeoutRef = useRef<number | null>(null)
   const autoCloseTimerRef = useRef<number | null>(null)
@@ -691,6 +693,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           trajectory: trajectoryPoints,
           startTime: segment.clipStart - segment.startTime,
           endTime: segment.clipEnd - segment.startTime,
+          resolution: exportResolution,
           onProgress: (progress) => {
             setExportPhase({ phase: progress.phase, progress: progress.progress })
           },
@@ -723,6 +726,84 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       setExportError(error instanceof Error ? error.message : 'Export V3 failed')
     }
   }, [onComplete])
+
+  // POC: Export using V4 pipeline with requestVideoFrameCallback (real-time capture)
+  const handleExportV4 = useCallback(async () => {
+    const store = useProcessingStore.getState()
+    const activeVid = store.activeVideoId ? store.videos.get(store.activeVideoId) : undefined
+    const currentSegments = activeVid?.segments ?? store.segments
+    const approved = currentSegments.filter(s => s.approved === 'approved')
+
+    if (approved.length === 0) {
+      alert('No approved shots to export')
+      return
+    }
+
+    if (!isVideoFrameCallbackSupported()) {
+      alert('requestVideoFrameCallback is not supported in this browser. Please use V3 export instead.')
+      return
+    }
+
+    setShowExportModal(true)
+    setExportProgress({ current: 0, total: approved.length })
+    setExportPhase({ phase: 'preparing', progress: 0 })
+    setExportComplete(false)
+    setExportError(null)
+    exportCancelledRef.current = false
+
+    try {
+      console.log('[ExportV4] Starting real-time capture export...')
+      const pipelineV4 = new VideoFramePipelineV4()
+
+      for (let i = 0; i < approved.length; i++) {
+        if (exportCancelledRef.current) break
+
+        const segment = approved[i]
+        setExportProgress({ current: i + 1, total: approved.length })
+
+        console.log('[ExportV4] Exporting segment', i + 1, 'of', approved.length)
+
+        // Get trajectory points or empty array
+        const trajectoryPoints = segment.trajectory?.points ?? []
+
+        const configV4: ExportConfigV4 = {
+          videoBlob: segment.blob,
+          trajectory: trajectoryPoints,
+          startTime: segment.clipStart - segment.startTime,
+          endTime: segment.clipEnd - segment.startTime,
+          resolution: exportResolution,
+          onProgress: (progress) => {
+            setExportPhase({ phase: progress.phase, progress: progress.progress })
+          },
+        }
+
+        const exportedBlob = await pipelineV4.exportWithTracer(configV4)
+
+        // Download
+        const url = URL.createObjectURL(exportedBlob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `shot_${i + 1}_v4.mp4`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      if (!exportCancelledRef.current) {
+        setExportComplete(true)
+        autoCloseTimerRef.current = window.setTimeout(() => {
+          setShowExportModal(false)
+          onComplete()
+        }, 1500)
+      }
+    } catch (error) {
+      console.error('[ExportV4] Export failed:', error)
+      setExportError(error instanceof Error ? error.message : 'Export V4 failed')
+    }
+  }, [onComplete, exportResolution])
 
   // Handle HEVC transcode and retry export
   const handleTranscodeAndExport = useCallback(async () => {
@@ -1104,13 +1185,32 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
               >
                 Export V2 (POC)
               </button>
-              <button
-                onClick={handleExportV3}
-                className="btn-secondary btn-large"
-                title="POC: Export using WebCodecs (hardware accelerated)"
-              >
-                Export V3 (WebCodecs)
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <select
+                  value={exportResolution}
+                  onChange={(e) => setExportResolution(e.target.value as ExportResolution)}
+                  style={{ padding: '8px', borderRadius: '4px' }}
+                >
+                  <option value="original">Original</option>
+                  <option value="1080p">1080p (faster)</option>
+                  <option value="720p">720p (fastest)</option>
+                </select>
+                <button
+                  onClick={handleExportV3}
+                  className="btn-secondary btn-large"
+                  title="POC: Export using WebCodecs (hardware accelerated)"
+                >
+                  Export V3
+                </button>
+                <button
+                  onClick={handleExportV4}
+                  className="btn-secondary btn-large"
+                  title="POC: Export using requestVideoFrameCallback (real-time capture, ~1x speed)"
+                  disabled={!isVideoFrameCallbackSupported()}
+                >
+                  Export V4
+                </button>
+              </div>
             </>
           )}
           <button onClick={onComplete} className="btn-secondary">
