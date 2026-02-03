@@ -429,7 +429,6 @@ export class VideoFramePipelineV4 {
     })
 
     console.log('[PipelineV4] Captured', capturedBitmaps.length, 'frames, now encoding...')
-    console.log('[PipelineV4] Trajectory points:', trajectory.length, 'First timestamp:', trajectory[0]?.timestamp, 'Last timestamp:', trajectory[trajectory.length - 1]?.timestamp)
     video.pause()
 
     // Second pass: encode all captured frames
