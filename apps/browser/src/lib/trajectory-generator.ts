@@ -33,8 +33,8 @@ const HEIGHT_MULTIPLIERS: Record<TracerConfig['height'], number> = {
 /** Default golfer origin position (bottom center of frame) */
 const DEFAULT_ORIGIN: Point2D = { x: 0.5, y: 0.85 }
 
-/** Number of points to sample along the bezier curve */
-const NUM_TRAJECTORY_POINTS = 30
+/** Target trajectory points per second for smooth animation */
+const TRAJECTORY_POINTS_PER_SECOND = 60
 
 /**
  * Generate a trajectory curve from landing point and configuration.
@@ -93,10 +93,12 @@ export function generateTrajectory(
   }
 
   // Generate points along quadratic bezier
+  // Use 60 points per second for smooth animation at 60fps
+  const numPoints = Math.max(30, Math.ceil(config.flightTime * TRAJECTORY_POINTS_PER_SECOND))
   const points: TrajectoryPoint[] = []
 
-  for (let i = 0; i <= NUM_TRAJECTORY_POINTS; i++) {
-    const t = i / NUM_TRAJECTORY_POINTS
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints
     const timestamp = startTimeOffset + t * config.flightTime
 
     // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
@@ -118,7 +120,7 @@ export function generateTrajectory(
     points,
     confidence: 1.0,
     apex_point: {
-      ...points[Math.floor(NUM_TRAJECTORY_POINTS / 2)],
+      ...points[Math.floor(numPoints / 2)],
       x: Math.max(0, Math.min(1, apex.x)),
       y: Math.max(0, Math.min(1, apex.y)),
     },
