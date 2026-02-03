@@ -15,7 +15,6 @@
  * codecs and GPU acceleration where available.
  */
 
-// @ts-expect-error - mp4-muxer doesn't have type declarations
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
 import { TrajectoryPoint } from './canvas-compositor'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
