@@ -59,22 +59,27 @@ function drawTracer(
   // Sort by timestamp
   const sorted = [...trajectory].sort((a, b) => a.timestamp - b.timestamp)
 
-  // Find points before currentTime and interpolate the leading edge
+  // Build visible points with interpolated leading edge for smooth animation
   const visiblePoints: { x: number; y: number }[] = []
 
   for (let i = 0; i < sorted.length; i++) {
-    if (sorted[i].timestamp <= currentTime) {
-      visiblePoints.push({ x: sorted[i].x, y: sorted[i].y })
-    } else if (i > 0) {
-      // Interpolate between last visible point and this one
-      const prev = sorted[i - 1]
-      const next = sorted[i]
-      const t = (currentTime - prev.timestamp) / (next.timestamp - prev.timestamp)
-      if (t > 0 && t < 1) {
-        visiblePoints.push({
-          x: prev.x + t * (next.x - prev.x),
-          y: prev.y + t * (next.y - prev.y),
-        })
+    const point = sorted[i]
+    if (point.timestamp <= currentTime) {
+      visiblePoints.push({ x: point.x * width, y: point.y * height })
+    } else {
+      // Interpolate leading edge between previous point and this one
+      if (i > 0) {
+        const prev = sorted[i - 1]
+        const dt = point.timestamp - prev.timestamp
+        if (dt > 0) {
+          const t = (currentTime - prev.timestamp) / dt
+          if (t > 0) {
+            visiblePoints.push({
+              x: (prev.x + t * (point.x - prev.x)) * width,
+              y: (prev.y + t * (point.y - prev.y)) * height,
+            })
+          }
+        }
       }
       break
     }
@@ -92,9 +97,9 @@ function drawTracer(
   ctx.globalAlpha = 0.4
 
   ctx.beginPath()
-  ctx.moveTo(visiblePoints[0].x * width, visiblePoints[0].y * height)
+  ctx.moveTo(visiblePoints[0].x, visiblePoints[0].y)
   for (let i = 1; i < visiblePoints.length; i++) {
-    ctx.lineTo(visiblePoints[i].x * width, visiblePoints[i].y * height)
+    ctx.lineTo(visiblePoints[i].x, visiblePoints[i].y)
   }
   ctx.stroke()
 
@@ -104,9 +109,9 @@ function drawTracer(
   ctx.globalAlpha = 1.0
 
   ctx.beginPath()
-  ctx.moveTo(visiblePoints[0].x * width, visiblePoints[0].y * height)
+  ctx.moveTo(visiblePoints[0].x, visiblePoints[0].y)
   for (let i = 1; i < visiblePoints.length; i++) {
-    ctx.lineTo(visiblePoints[i].x * width, visiblePoints[i].y * height)
+    ctx.lineTo(visiblePoints[i].x, visiblePoints[i].y)
   }
   ctx.stroke()
 
