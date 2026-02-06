@@ -1,0 +1,182 @@
+.export-options-panel {
+  width: 100%;
+  max-width: 700px;
+  margin: 24px auto;
+}
+
+.export-options-panel h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.1rem;
+  color: #fff;
+  text-align: center;
+}
+
+.export-options-warning {
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.4);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+  color: #ffc107;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.export-options-loading {
+  text-align: center;
+  padding: 40px;
+  color: #888;
+}
+
+.export-options-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.export-option-card {
+  background: #252542;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.export-option-card:hover:not(.disabled) {
+  background: #2d2d4a;
+  border-color: #4a4a6a;
+}
+
+.export-option-card.selected {
+  border-color: #4caf50;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.export-option-card.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.export-option-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.export-option-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.export-option-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.export-option-badge.recommended {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.export-option-badge.unavailable {
+  background: rgba(255, 255, 255, 0.1);
+  color: #888;
+}
+
+.export-option-description {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 0.8rem;
+  color: #aaa;
+  line-height: 1.5;
+}
+
+.export-option-description li {
+  margin-bottom: 4px;
+}
+
+.export-option-description .unavailable-reason {
+  color: #f44336;
+  font-style: italic;
+}
+
+.export-options-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.export-resolution-select {
+  padding: 10px 16px;
+  border-radius: 6px;
+  border: 1px solid #4a4a6a;
+  background: #252542;
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.export-options-details {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.export-options-details summary {
+  cursor: pointer;
+  text-align: center;
+  padding: 8px;
+}
+
+.export-options-details summary:hover {
+  color: #aaa;
+}
+
+.detail-content {
+  background: #0f0f1a;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.detail-label {
+  color: #888;
+}
+
+.detail-value {
+  color: #ccc;
+  text-align: right;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-value.status-good {
+  color: #4caf50;
+}
+
+.detail-value.status-bad {
+  color: #f44336;
+}
+
+/* Responsive: stack cards on smaller screens */
+@media (max-width: 600px) {
+  .export-options-grid {
+    grid-template-columns: 1fr;
+  }
+}
