@@ -20,20 +20,6 @@ import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
 import { TrajectoryPoint } from './canvas-compositor'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 
-/**
- * Error thrown when Chrome throttles requestVideoFrameCallback,
- * resulting in low FPS capture. User can retry or use offline fallback.
- */
-export class ThrottleDetectedError extends Error {
-  public readonly capturedFps: number
-
-  constructor(message: string, capturedFps: number) {
-    super(message)
-    this.name = 'ThrottleDetectedError'
-    this.capturedFps = capturedFps
-  }
-}
-
 export interface ExportProgressV4 {
   phase: 'preparing' | 'extracting' | 'encoding' | 'muxing' | 'complete'
   progress: number // 0-100
@@ -444,61 +430,6 @@ export class VideoFramePipelineV4 {
 
     console.log('[PipelineV4] Captured', capturedBitmaps.length, 'frames, now encoding...')
     video.pause()
-
-    // THROTTLE DETECTION: Check if we captured enough frames
-    const capturedFps = capturedBitmaps.length / duration
-
-    // Get actual source FPS from video metadata if available
-    // Chrome doesn't expose frame count directly, but we can check playback quality
-    const playbackQuality = video.getVideoPlaybackQuality?.()
-    const totalVideoFrames = playbackQuality?.totalVideoFrames ?? 0
-    const actualSourceFps = totalVideoFrames > 0 ? totalVideoFrames / duration : 0
-
-    // Absolute minimum: if we captured less than 50fps from a 60fps source, something is wrong
-    // Most phone videos are 30fps or 60fps. Capturing <50fps from 60fps source = throttled.
-    const ABSOLUTE_MIN_FPS = 20
-
-    // Use actual source FPS if available, otherwise estimate from callback intervals
-    let estimatedSourceFps: number
-    if (actualSourceFps > 0) {
-      estimatedSourceFps = actualSourceFps
-    } else {
-      // Fallback: estimate from callback intervals (can be wrong if throttled from start)
-      const earlyIntervals = callbackIntervals.slice(0, Math.min(30, callbackIntervals.length))
-      const avgIntervalMs = earlyIntervals.length > 0
-        ? earlyIntervals.reduce((a, b) => a + b, 0) / earlyIntervals.length
-        : 16.67 // Default to 60fps if no intervals
-      estimatedSourceFps = 1000 / avgIntervalMs
-    }
-
-    // Throttle if:
-    // 1. Captured less than 20fps absolute (definitely wrong), OR
-    // 2. Captured less than 75% of estimated source FPS
-    const THROTTLE_RATIO = 0.75
-    const expectedMinFps = estimatedSourceFps * THROTTLE_RATIO
-    const isThrottled = capturedFps < ABSOLUTE_MIN_FPS ||
-      capturedFps < expectedMinFps
-
-    if (isThrottled) {
-      // Clean up before throwing
-      URL.revokeObjectURL(video.src)
-      video.remove()
-      for (const { bitmap } of capturedBitmaps) {
-        bitmap.close()
-      }
-      encoder.close()
-
-      console.warn('[PipelineV4] THROTTLE DETECTED:', {
-        capturedFps: capturedFps.toFixed(1),
-        actualSourceFps: actualSourceFps > 0 ? actualSourceFps.toFixed(1) : 'N/A',
-        estimatedSourceFps: estimatedSourceFps.toFixed(1),
-        expectedMinFps: expectedMinFps.toFixed(1),
-      })
-      throw new ThrottleDetectedError(
-        `Export captured only ${capturedFps.toFixed(0)} fps (expected ~${Math.round(estimatedSourceFps)}). Chrome may be throttling video processing.`,
-        capturedFps
-      )
-    }
 
     // Second pass: encode all captured frames
     onProgress?.({ phase: 'encoding', progress: 0 })

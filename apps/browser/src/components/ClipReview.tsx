@@ -5,13 +5,14 @@ import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
 import { HevcTranscodeModal, HevcTranscodeModalState, initialHevcTranscodeModalState } from './HevcTranscodeModal'
-import { ExportOptionsPanel } from './ExportOptionsPanel'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
-import { VideoFramePipelineV4, ExportConfigV4, ExportResolution, isVideoFrameCallbackSupported, ThrottleDetectedError } from '../lib/video-frame-pipeline-v4'
-import { transcodeHevcToH264 } from '../lib/ffmpeg-client'
+import { VideoFramePipeline, ExportConfig, HevcExportError } from '../lib/video-frame-pipeline'
+import { VideoFramePipelineV2, ExportConfigV2 } from '../lib/video-frame-pipeline-v2'
+import { VideoFramePipelineV3, ExportConfigV3, ExportResolution } from '../lib/video-frame-pipeline-v3'
+import { VideoFramePipelineV4, ExportConfigV4, isVideoFrameCallbackSupported } from '../lib/video-frame-pipeline-v4'
+import { loadFFmpeg, getFFmpegInstance, transcodeHevcToH264, estimateTranscodeTime } from '../lib/ffmpeg-client'
 import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
-import { ExportMethod } from '../lib/gpu-detection'
 
 /** Minimum delay for trajectory generation to show loading state feedback */
 const TRAJECTORY_GENERATION_MIN_DELAY_MS = 300
@@ -93,6 +94,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [exportPhase, setExportPhase] = useState<{ phase: string; progress: number }>({ phase: '', progress: 0 })
   const [exportComplete, setExportComplete] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [exportQuality, setExportQuality] = useState<'draft' | 'preview' | 'final'>('preview')
   const [exportResolution, setExportResolution] = useState<ExportResolution>('1080p')
   const exportCancelledRef = useRef(false)
   const defensiveTimeoutRef = useRef<number | null>(null)
@@ -397,7 +399,335 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
   // Export a single segment with tracer overlay
   // Returns the blob if successful, null if skipped (no trajectory)
-  // Export approved clips using V4 pipeline with requestVideoFrameCallback
+  const exportSegmentWithTracer = useCallback(async (
+    segment: typeof segments[0],
+    _segmentIndex: number,
+    pipeline: VideoFramePipeline
+  ): Promise<Blob | null> => {
+    if (!segment.trajectory || segment.trajectory.points.length === 0) {
+      console.log('[Export] No trajectory, returning null for raw download')
+      return null // No trajectory - will download raw segment
+    }
+
+    console.log('[Export] Building export config...', {
+      blobSize: segment.blob.size,
+      trajectoryPoints: segment.trajectory.points.length,
+      clipStart: segment.clipStart,
+      clipEnd: segment.clipEnd,
+      startTime: segment.startTime,
+    })
+
+    const exportConfig: ExportConfig = {
+      videoBlob: segment.blob,
+      trajectory: segment.trajectory.points,
+      startTime: segment.clipStart - segment.startTime,
+      endTime: segment.clipEnd - segment.startTime,
+      fps: 30,
+      quality: exportQuality,
+      tracerStyle: tracerStyle,
+      landingPoint: segment.landingPoint ?? undefined,
+      apexPoint: apexPoint ?? undefined,
+      originPoint: originPoint ?? undefined,
+      onProgress: (progress) => {
+        console.log('[Export] Progress:', progress.phase, progress.progress)
+        setExportPhase({ phase: progress.phase, progress: progress.progress })
+      }
+    }
+
+    console.log('[Export] Calling pipeline.exportWithTracer...')
+    const result = await pipeline.exportWithTracer(exportConfig)
+    console.log('[Export] pipeline.exportWithTracer returned')
+    return result
+  }, [exportQuality, tracerStyle, apexPoint, originPoint])
+
+  // Export approved clips
+  // Note: Get segments directly from store to avoid stale closure issue
+  // when handleExport is called immediately after approveSegment
+  const handleExport = useCallback(async () => {
+    // Use multi-video segments when available, fall back to legacy segments
+    const store = useProcessingStore.getState()
+    const activeVid = store.activeVideoId ? store.videos.get(store.activeVideoId) : undefined
+    const currentSegments = activeVid?.segments ?? store.segments
+    const approved = currentSegments.filter(s => s.approved === 'approved')
+    if (approved.length === 0) {
+      onComplete()
+      return
+    }
+
+    setShowExportModal(true)
+    setExportProgress({ current: 0, total: approved.length })
+    setExportPhase({ phase: '', progress: 0 })
+    setExportComplete(false)
+    setExportError(null)
+    exportCancelledRef.current = false
+
+    try {
+      // Load FFmpeg for tracer export
+      console.log('[Export] Loading FFmpeg...')
+      await loadFFmpeg()
+      console.log('[Export] FFmpeg loaded')
+      const ffmpeg = getFFmpegInstance()
+      const pipeline = new VideoFramePipeline(ffmpeg)
+
+      for (let i = 0; i < approved.length; i++) {
+        if (exportCancelledRef.current) break
+
+        const segment = approved[i]
+        console.log('[Export] Processing segment', i + 1, 'of', approved.length, {
+          hasTrajectory: !!segment.trajectory,
+          trajectoryPoints: segment.trajectory?.points?.length ?? 0,
+          hasObjectUrl: !!segment.objectUrl,
+          hasBlob: !!segment.blob,
+        })
+        setExportProgress({ current: i + 1, total: approved.length })
+
+        try {
+          const exportedBlob = await exportSegmentWithTracer(segment, i, pipeline)
+          console.log('[Export] exportSegmentWithTracer returned:', exportedBlob ? 'blob' : 'null')
+
+          if (exportedBlob) {
+            // Download the exported MP4
+            const url = URL.createObjectURL(exportedBlob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `shot_${i + 1}.mp4`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            URL.revokeObjectURL(url)
+          } else {
+            // No trajectory - download raw segment as MP4
+            const a = document.createElement('a')
+            a.href = segment.objectUrl
+            a.download = `shot_${i + 1}.mp4`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+          }
+        } catch (segmentError) {
+          // Check if it's an HEVC error - show transcode modal
+          if (segmentError instanceof HevcExportError) {
+            const fileSizeMB = Math.round(segment.blob.size / (1024 * 1024))
+            const { formatted: estimatedTime } = estimateTranscodeTime(fileSizeMB)
+
+            // Hide export modal and show HEVC transcode modal
+            setShowExportModal(false)
+            setHevcTranscodeModal({
+              show: true,
+              segmentIndex: i,
+              segmentBlob: segment.blob,
+              estimatedTime,
+              isTranscoding: false,
+              transcodeProgress: 0,
+              transcodeStartTime: null,
+            })
+            return // Exit export loop - user will choose to transcode or cancel
+          }
+          // Re-throw other errors
+          throw segmentError
+        }
+
+        // Small delay between downloads to avoid browser throttling
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      if (!exportCancelledRef.current) {
+        setExportComplete(true)
+        // Auto-close modal after showing success for 1.5 seconds
+        // Track timer so Done button can cancel it to prevent double onComplete
+        autoCloseTimerRef.current = window.setTimeout(() => {
+          autoCloseTimerRef.current = null
+          // Clear defensive timeout when modal auto-closes on success
+          if (defensiveTimeoutRef.current) {
+            clearTimeout(defensiveTimeoutRef.current)
+            defensiveTimeoutRef.current = null
+          }
+          setShowExportModal(false)
+          onComplete()
+        }, 1500)
+      }
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'An error occurred during export')
+    } finally {
+      // Clear any existing defensive timeout before potentially setting a new one
+      if (defensiveTimeoutRef.current) {
+        clearTimeout(defensiveTimeoutRef.current)
+        defensiveTimeoutRef.current = null
+      }
+      // Defensive: Ensure modal closes even if exception occurs after downloads
+      // This handles edge cases where exceptions bypass setExportComplete(true)
+      // Only set the timeout if export wasn't cancelled
+      if (!exportCancelledRef.current) {
+        // Wait 10 seconds - if modal is still open without error/complete, force close
+        defensiveTimeoutRef.current = window.setTimeout(() => {
+          // Only force close if we're in a stuck state (modal open, no error, not complete, not cancelled)
+          // Use functional updates to check current state values at timeout time
+          setShowExportModal(currentShowModal => {
+            if (currentShowModal && !exportCancelledRef.current) {
+              // Check if we're in a stuck state by looking at what the modal would show
+              // If we get here, the modal is open - but is it showing error or complete?
+              // We can't directly check exportError/exportComplete, so we force close
+              // and let the normal flow handle it if it's actually showing something
+              console.warn('[ClipReview] Export modal stuck - forcing close after timeout')
+              return false // Force close
+            }
+            return currentShowModal
+          })
+          defensiveTimeoutRef.current = null  // Clear after running
+        }, 10000)
+      }
+    }
+  }, [onComplete, exportSegmentWithTracer])
+
+  // POC: Export using V2 pipeline with FFmpeg filter approach
+  const handleExportV2 = useCallback(async () => {
+    const store = useProcessingStore.getState()
+    const activeVid = store.activeVideoId ? store.videos.get(store.activeVideoId) : undefined
+    const currentSegments = activeVid?.segments ?? store.segments
+    const approved = currentSegments.filter(s => s.approved === 'approved')
+
+    if (approved.length === 0) {
+      alert('No approved shots to export')
+      return
+    }
+
+    setShowExportModal(true)
+    setExportProgress({ current: 0, total: approved.length })
+    setExportPhase({ phase: 'preparing', progress: 0 })
+    setExportComplete(false)
+    setExportError(null)
+    exportCancelledRef.current = false
+
+    try {
+      console.log('[ExportV2] Loading FFmpeg...')
+      await loadFFmpeg()
+      const ffmpeg = getFFmpegInstance()
+      const pipelineV2 = new VideoFramePipelineV2(ffmpeg)
+
+      for (let i = 0; i < approved.length; i++) {
+        if (exportCancelledRef.current) break
+
+        const segment = approved[i]
+        setExportProgress({ current: i + 1, total: approved.length })
+
+        console.log('[ExportV2] Exporting segment', i + 1, 'of', approved.length)
+
+        // Get trajectory points or empty array
+        const trajectoryPoints = segment.trajectory?.points ?? []
+
+        const configV2: ExportConfigV2 = {
+          videoBlob: segment.blob,
+          trajectory: trajectoryPoints,
+          startTime: segment.clipStart - segment.startTime,
+          endTime: segment.clipEnd - segment.startTime,
+          quality: exportQuality,
+          onProgress: (progress) => {
+            setExportPhase({ phase: progress.phase, progress: progress.progress })
+          },
+        }
+
+        const exportedBlob = await pipelineV2.exportWithTracer(configV2)
+
+        // Download
+        const url = URL.createObjectURL(exportedBlob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `shot_${i + 1}_v2.mp4`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      if (!exportCancelledRef.current) {
+        setExportComplete(true)
+        autoCloseTimerRef.current = window.setTimeout(() => {
+          setShowExportModal(false)
+          onComplete()
+        }, 1500)
+      }
+    } catch (error) {
+      console.error('[ExportV2] Export failed:', error)
+      setExportError(error instanceof Error ? error.message : 'Export V2 failed')
+    }
+  }, [onComplete, exportQuality])
+
+  // POC: Export using V3 pipeline with WebCodecs (hardware accelerated)
+  const handleExportV3 = useCallback(async () => {
+    const store = useProcessingStore.getState()
+    const activeVid = store.activeVideoId ? store.videos.get(store.activeVideoId) : undefined
+    const currentSegments = activeVid?.segments ?? store.segments
+    const approved = currentSegments.filter(s => s.approved === 'approved')
+
+    if (approved.length === 0) {
+      alert('No approved shots to export')
+      return
+    }
+
+    setShowExportModal(true)
+    setExportProgress({ current: 0, total: approved.length })
+    setExportPhase({ phase: 'preparing', progress: 0 })
+    setExportComplete(false)
+    setExportError(null)
+    exportCancelledRef.current = false
+
+    try {
+      console.log('[ExportV3] Starting WebCodecs export...')
+      const pipelineV3 = new VideoFramePipelineV3()
+
+      for (let i = 0; i < approved.length; i++) {
+        if (exportCancelledRef.current) break
+
+        const segment = approved[i]
+        setExportProgress({ current: i + 1, total: approved.length })
+
+        console.log('[ExportV3] Exporting segment', i + 1, 'of', approved.length)
+
+        // Get trajectory points or empty array
+        const trajectoryPoints = segment.trajectory?.points ?? []
+
+        const configV3: ExportConfigV3 = {
+          videoBlob: segment.blob,
+          trajectory: trajectoryPoints,
+          startTime: segment.clipStart - segment.startTime,
+          endTime: segment.clipEnd - segment.startTime,
+          resolution: exportResolution,
+          onProgress: (progress) => {
+            setExportPhase({ phase: progress.phase, progress: progress.progress })
+          },
+        }
+
+        const exportedBlob = await pipelineV3.exportWithTracer(configV3)
+
+        // Download
+        const url = URL.createObjectURL(exportedBlob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `shot_${i + 1}_v3.mp4`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      if (!exportCancelledRef.current) {
+        setExportComplete(true)
+        autoCloseTimerRef.current = window.setTimeout(() => {
+          setShowExportModal(false)
+          onComplete()
+        }, 1500)
+      }
+    } catch (error) {
+      console.error('[ExportV3] Export failed:', error)
+      setExportError(error instanceof Error ? error.message : 'Export V3 failed')
+    }
+  }, [onComplete])
+
+  // POC: Export using V4 pipeline with requestVideoFrameCallback (real-time capture)
   const handleExportV4 = useCallback(async () => {
     const store = useProcessingStore.getState()
     const activeVid = store.activeVideoId ? store.videos.get(store.activeVideoId) : undefined
@@ -453,7 +783,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         const url = URL.createObjectURL(exportedBlob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `shot_${i + 1}.mp4`
+        a.download = `shot_${i + 1}_v4.mp4`
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
@@ -471,30 +801,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       }
     } catch (error) {
       console.error('[ExportV4] Export failed:', error)
-      if (error instanceof ThrottleDetectedError) {
-        // Specific handling for throttle detection - offer retry
-        setExportError(
-          `Chrome throttled the export to ${error.capturedFps.toFixed(0)} fps. ` +
-          `Try closing other tabs, keeping this tab focused, or use "Retry Export" below.`
-        )
-      } else {
-        setExportError(error instanceof Error ? error.message : 'Export V4 failed')
-      }
+      setExportError(error instanceof Error ? error.message : 'Export V4 failed')
     }
   }, [onComplete, exportResolution])
-
-  // Handle export method selection from options panel
-  const handleExportMethodSelect = useCallback((method: ExportMethod) => {
-    if (method === 'browser-accelerated') {
-      handleExportV4()
-    } else if (method === 'offline-export') {
-      // TODO: Implement FFmpeg-based offline export
-      alert('Offline export coming soon. For now, please enable hardware acceleration in Chrome settings.')
-    } else if (method === 'cloud-processing') {
-      // TODO: Implement cloud processing
-      alert('Cloud processing coming soon.')
-    }
-  }, [handleExportV4])
 
   // Handle HEVC transcode and retry export
   const handleTranscodeAndExport = useCallback(async () => {
@@ -570,7 +879,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       }))
 
       // Restart export (it will now use the transcoded segment)
-      handleExportV4()
+      handleExport()
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         // User cancelled - reset to initial modal state (not closed)
@@ -592,7 +901,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     } finally {
       transcodeAbortRef.current = null
     }
-  }, [hevcTranscodeModal.segmentBlob, hevcTranscodeModal.segmentIndex, hevcTranscodeModal.transcodedSegmentIds, handleExportV4])
+  }, [hevcTranscodeModal.segmentBlob, hevcTranscodeModal.segmentIndex, hevcTranscodeModal.transcodedSegmentIds, handleExport])
 
   // Cancel HEVC transcode modal (go back to review)
   const handleCancelHevcTranscode = useCallback(() => {
@@ -829,16 +1138,81 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <p className="review-complete-summary">
           {approvedCount} shots approved
         </p>
-
         {approvedCount > 0 && (
-          <ExportOptionsPanel
-            onExport={handleExportMethodSelect}
-            exportResolution={exportResolution}
-            onResolutionChange={setExportResolution}
-          />
+          <div className="export-quality-selector">
+            <label className="quality-label">Export Quality:</label>
+            <div className="quality-options">
+              <button
+                className={`quality-option ${exportQuality === 'draft' ? 'active' : ''}`}
+                onClick={() => setExportQuality('draft')}
+                title="Fast export, lower quality"
+              >
+                <span className="quality-name">Draft</span>
+                <span className="quality-desc">Fast</span>
+              </button>
+              <button
+                className={`quality-option ${exportQuality === 'preview' ? 'active' : ''}`}
+                onClick={() => setExportQuality('preview')}
+                title="Balanced quality and speed"
+              >
+                <span className="quality-name">Preview</span>
+                <span className="quality-desc">Balanced</span>
+              </button>
+              <button
+                className={`quality-option ${exportQuality === 'final' ? 'active' : ''}`}
+                onClick={() => setExportQuality('final')}
+                title="Best quality, slower export"
+              >
+                <span className="quality-name">Final</span>
+                <span className="quality-desc">Best</span>
+              </button>
+            </div>
+            <p className="export-format-hint" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+              All clips export as .mp4
+            </p>
+          </div>
         )}
-
         <div className="review-complete-actions">
+          {approvedCount > 0 && (
+            <>
+              <button onClick={handleExport} className="btn-primary btn-large">
+                Export {approvedCount} Clip{approvedCount !== 1 ? 's' : ''}
+              </button>
+              <button
+                onClick={handleExportV2}
+                className="btn-secondary btn-large"
+                title="POC: Export using FFmpeg filter approach (faster for 4K)"
+              >
+                Export V2 (POC)
+              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <select
+                  value={exportResolution}
+                  onChange={(e) => setExportResolution(e.target.value as ExportResolution)}
+                  style={{ padding: '8px', borderRadius: '4px' }}
+                >
+                  <option value="original">Original</option>
+                  <option value="1080p">1080p (faster)</option>
+                  <option value="720p">720p (fastest)</option>
+                </select>
+                <button
+                  onClick={handleExportV3}
+                  className="btn-secondary btn-large"
+                  title="POC: Export using WebCodecs (hardware accelerated)"
+                >
+                  Export V3
+                </button>
+                <button
+                  onClick={handleExportV4}
+                  className="btn-secondary btn-large"
+                  title="POC: Export using requestVideoFrameCallback (real-time capture, ~1x speed)"
+                  disabled={!isVideoFrameCallbackSupported()}
+                >
+                  Export V4
+                </button>
+              </div>
+            </>
+          )}
           <button onClick={onComplete} className="btn-secondary">
             Process Another Video
           </button>
@@ -856,24 +1230,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                   <>
                     <div className="export-error-icon">!</div>
                     <p className="export-error-message">{exportError}</p>
-                    <div className="export-error-actions">
-                      <button
-                        onClick={() => {
-                          setExportError(null)
-                          setExportComplete(false)
-                          handleExportV4()
-                        }}
-                        className="btn-primary"
-                      >
-                        Retry Export
-                      </button>
-                      <button
-                        onClick={() => { setShowExportModal(false); setExportError(null) }}
-                        className="btn-secondary"
-                      >
-                        Close
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => { setShowExportModal(false); setExportError(null) }}
+                      className="btn-secondary"
+                    >
+                      Close
+                    </button>
                   </>
                 ) : !exportComplete ? (
                   <>
@@ -1141,24 +1503,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                 <>
                   <div className="export-error-icon">!</div>
                   <p className="export-error-message">{exportError}</p>
-                  <div className="export-error-actions">
-                    <button
-                      onClick={() => {
-                        setExportError(null)
-                        setExportComplete(false)
-                        handleExportV4()
-                      }}
-                      className="btn-primary"
-                    >
-                      Retry Export
-                    </button>
-                    <button
-                      onClick={() => { setShowExportModal(false); setExportError(null) }}
-                      className="btn-secondary"
-                    >
-                      Close
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => { setShowExportModal(false); setExportError(null) }}
+                    className="btn-secondary"
+                  >
+                    Close
+                  </button>
                 </>
               ) : !exportComplete ? (
                 <>
