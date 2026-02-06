@@ -1483,6 +1483,13 @@ kbd {
   text-align: center;
 }
 
+.export-error-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: center;
+  margin-top: var(--spacing-md);
+}
+
 /* ============================================
    Complete View
    ============================================ */

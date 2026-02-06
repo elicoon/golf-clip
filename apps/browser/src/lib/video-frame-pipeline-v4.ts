@@ -20,6 +20,20 @@ import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
 import { TrajectoryPoint } from './canvas-compositor'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 
+/**
+ * Error thrown when Chrome throttles requestVideoFrameCallback,
+ * resulting in low FPS capture. User can retry or use offline fallback.
+ */
+export class ThrottleDetectedError extends Error {
+  public readonly capturedFps: number
+
+  constructor(message: string, capturedFps: number) {
+    super(message)
+    this.name = 'ThrottleDetectedError'
+    this.capturedFps = capturedFps
+  }
+}
+
 export interface ExportProgressV4 {
   phase: 'preparing' | 'extracting' | 'encoding' | 'muxing' | 'complete'
   progress: number // 0-100
@@ -430,6 +444,49 @@ export class VideoFramePipelineV4 {
 
     console.log('[PipelineV4] Captured', capturedBitmaps.length, 'frames, now encoding...')
     video.pause()
+
+    // THROTTLE DETECTION: Check if we captured enough frames
+    const capturedFps = capturedBitmaps.length / duration
+
+    // Absolute minimum: no real video has less than 20fps
+    // If we captured less than 20fps, Chrome is definitely throttling
+    const ABSOLUTE_MIN_FPS = 20
+
+    // Also check relative to estimated source FPS
+    // Use callback intervals to estimate source rate (but this can be wrong if throttled from start)
+    const earlyIntervals = callbackIntervals.slice(0, Math.min(30, callbackIntervals.length))
+    const avgIntervalMs = earlyIntervals.length > 0
+      ? earlyIntervals.reduce((a, b) => a + b, 0) / earlyIntervals.length
+      : 16.67 // Default to 60fps if no intervals
+    const estimatedSourceFps = 1000 / avgIntervalMs
+
+    // Throttle if:
+    // 1. Captured less than 20fps absolute (definitely wrong), OR
+    // 2. Captured less than 75% of estimated source FPS AND less than 50fps
+    const THROTTLE_RATIO = 0.75
+    const expectedMinFps = estimatedSourceFps * THROTTLE_RATIO
+    const isThrottled = capturedFps < ABSOLUTE_MIN_FPS ||
+      (capturedFps < expectedMinFps && capturedFps < 50)
+
+    if (isThrottled) {
+      // Clean up before throwing
+      URL.revokeObjectURL(video.src)
+      video.remove()
+      for (const { bitmap } of capturedBitmaps) {
+        bitmap.close()
+      }
+      encoder.close()
+
+      console.warn('[PipelineV4] THROTTLE DETECTED:', {
+        capturedFps: capturedFps.toFixed(1),
+        estimatedSourceFps: estimatedSourceFps.toFixed(1),
+        expectedMinFps: expectedMinFps.toFixed(1),
+      })
+      throw new ThrottleDetectedError(
+        `Export captured only ${capturedFps.toFixed(0)} fps (expected ~${Math.round(estimatedSourceFps)}). Chrome may be throttling video processing.`,
+        capturedFps
+      )
+    }
 
     // Second pass: encode all captured frames
     onProgress?.({ phase: 'encoding', progress: 0 })
