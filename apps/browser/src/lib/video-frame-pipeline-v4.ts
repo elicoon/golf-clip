@@ -448,25 +448,36 @@ export class VideoFramePipelineV4 {
     // THROTTLE DETECTION: Check if we captured enough frames
     const capturedFps = capturedBitmaps.length / duration
 
-    // Absolute minimum: no real video has less than 20fps
-    // If we captured less than 20fps, Chrome is definitely throttling
+    // Get actual source FPS from video metadata if available
+    // Chrome doesn't expose frame count directly, but we can check playback quality
+    const playbackQuality = video.getVideoPlaybackQuality?.()
+    const totalVideoFrames = playbackQuality?.totalVideoFrames ?? 0
+    const actualSourceFps = totalVideoFrames > 0 ? totalVideoFrames / duration : 0
+
+    // Absolute minimum: if we captured less than 50fps from a 60fps source, something is wrong
+    // Most phone videos are 30fps or 60fps. Capturing <50fps from 60fps source = throttled.
     const ABSOLUTE_MIN_FPS = 20
 
-    // Also check relative to estimated source FPS
-    // Use callback intervals to estimate source rate (but this can be wrong if throttled from start)
-    const earlyIntervals = callbackIntervals.slice(0, Math.min(30, callbackIntervals.length))
-    const avgIntervalMs = earlyIntervals.length > 0
-      ? earlyIntervals.reduce((a, b) => a + b, 0) / earlyIntervals.length
-      : 16.67 // Default to 60fps if no intervals
-    const estimatedSourceFps = 1000 / avgIntervalMs
+    // Use actual source FPS if available, otherwise estimate from callback intervals
+    let estimatedSourceFps: number
+    if (actualSourceFps > 0) {
+      estimatedSourceFps = actualSourceFps
+    } else {
+      // Fallback: estimate from callback intervals (can be wrong if throttled from start)
+      const earlyIntervals = callbackIntervals.slice(0, Math.min(30, callbackIntervals.length))
+      const avgIntervalMs = earlyIntervals.length > 0
+        ? earlyIntervals.reduce((a, b) => a + b, 0) / earlyIntervals.length
+        : 16.67 // Default to 60fps if no intervals
+      estimatedSourceFps = 1000 / avgIntervalMs
+    }
 
     // Throttle if:
     // 1. Captured less than 20fps absolute (definitely wrong), OR
-    // 2. Captured less than 75% of estimated source FPS AND less than 50fps
+    // 2. Captured less than 75% of estimated source FPS
     const THROTTLE_RATIO = 0.75
     const expectedMinFps = estimatedSourceFps * THROTTLE_RATIO
     const isThrottled = capturedFps < ABSOLUTE_MIN_FPS ||
-      (capturedFps < expectedMinFps && capturedFps < 50)
+      capturedFps < expectedMinFps
 
     if (isThrottled) {
       // Clean up before throwing
@@ -479,6 +490,7 @@ export class VideoFramePipelineV4 {
 
       console.warn('[PipelineV4] THROTTLE DETECTED:', {
         capturedFps: capturedFps.toFixed(1),
+        actualSourceFps: actualSourceFps > 0 ? actualSourceFps.toFixed(1) : 'N/A',
         estimatedSourceFps: estimatedSourceFps.toFixed(1),
         expectedMinFps: expectedMinFps.toFixed(1),
       })
