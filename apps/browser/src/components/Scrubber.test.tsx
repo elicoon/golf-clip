@@ -326,9 +326,9 @@ describe('Scrubber Coordinate System', () => {
       expect(endPercent).toBeCloseTo(80, 1)
     })
 
-    // This test documents incorrect Scrubber usage (passing global times).
-    // The actual fix is in ClipReview which converts times to blob-relative.
-    it.skip('should have distinct handle positions when times are valid (BUG: global times cause both handles at 0%)', () => {
+    // Defensive: Scrubber expands its window to accommodate global times
+    // Primary fix is in ClipReview (converts to blob-relative), but Scrubber handles it gracefully
+    it('should have distinct handle positions when global times are passed', () => {
       const videoRef = createMockVideoRef({
         blobDuration: 10, // Blob is 10 seconds (extracted from 45-55s)
         currentTime: 0,
@@ -609,9 +609,9 @@ describe('Scrubber Coordinate System', () => {
       expect(playheadPercent).toBeCloseTo(25, 1) // Playhead at start of clip
     })
 
-    // This test documents incorrect Scrubber usage (passing global times).
-    // The actual fix is in ClipReview which converts times to blob-relative.
-    it.skip('should have handles with positive separation when using global times (BUG DEMONSTRATION)', () => {
+    // Defensive: Scrubber expands its window to accommodate global times
+    // Primary fix is in ClipReview (converts to blob-relative), but Scrubber handles it gracefully
+    it('should have handles with positive separation when using global times', () => {
       // Same scenario but with GLOBAL times (the bug)
       const videoRef = createMockVideoRef({
         blobDuration: 20,
