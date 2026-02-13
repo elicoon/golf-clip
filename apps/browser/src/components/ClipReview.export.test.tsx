@@ -784,19 +784,17 @@ describe('Export Modal Edge Cases', () => {
 })
 
 // =============================================================================
-// EXPORT PIPELINE HANG TESTS (Bug: isHevcCodec blocks on large blobs)
+// EXPORT PIPELINE HANG TESTS (Bug: codec check blocks on large blobs)
 // =============================================================================
 
 /**
  * Tests for export pipeline hang bug.
  *
- * BUG: Export with tracer hangs indefinitely because isHevcCodec() in
- * video-frame-pipeline.ts:85 reads the ENTIRE video blob into WASM memory,
- * which hangs for large files (500MB+).
+ * BUG: Export with tracer hangs indefinitely when a codec check reads the
+ * ENTIRE video blob into WASM memory, which hangs for large files (500MB+).
  *
  * ROOT CAUSE:
- * - isHevcCodec() in ffmpeg-client.ts (lines 99-132) writes entire blob to FFmpeg FS
- * - For large files, fetchFile(videoBlob) and ffmpeg.writeFile() hang
+ * - Writing entire blob to FFmpeg FS for codec detection hangs on large files
  * - This check is redundant because HEVC is already detected during upload via detectVideoCodec()
  *
  * SYMPTOMS:
@@ -805,7 +803,7 @@ describe('Export Modal Edge Cases', () => {
  * - No onProgress callbacks fire
  * - Console shows "Calling pipeline.exportWithTracer..." then hangs
  */
-describe('Export Pipeline Hang Prevention (isHevcCodec Bug)', () => {
+describe('Export Pipeline Hang Prevention', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -918,7 +916,7 @@ describe('Export Pipeline Hang Prevention (isHevcCodec Bug)', () => {
     /**
      * This test simulates the exact bug scenario:
      * - Large video blob (500MB+)
-     * - isHevcCodec called on full blob
+     * - Codec check called on full blob
      * - Export hangs indefinitely
      *
      * After fix: Export should complete or timeout gracefully.
@@ -987,7 +985,7 @@ describe('Export Pipeline Hang Prevention (isHevcCodec Bug)', () => {
   it('should show phase name in progress UI during export', async () => {
     /**
      * Progress UI should show which phase we're in (extracting, compositing, encoding).
-     * This helps debug hangs - if no phase shown, hang is in pre-phase (isHevcCodec).
+     * This helps debug hangs - if no phase shown, hang is in pre-phase codec detection.
      */
     const approvedSegment = createApprovedSegmentWithTrajectory({ id: 'seg-1' })
     setupMockStoreWithApprovedSegments([approvedSegment])
@@ -1029,7 +1027,7 @@ describe('Export Pipeline Hang Prevention (isHevcCodec Bug)', () => {
  * Tests for export flow with pre-detected codec information.
  *
  * OPTIMIZATION: Since codec is detected during upload via detectVideoCodec(),
- * we should use that cached result instead of re-checking with isHevcCodec().
+ * we should use that cached result instead of re-checking codec at export time.
  */
 describe('Export with Pre-Detected Codec Info', () => {
   beforeEach(() => {
@@ -1046,7 +1044,7 @@ describe('Export with Pre-Detected Codec Info', () => {
   it('should export H.264 video without additional codec check', async () => {
     /**
      * When segment has isHevc: false from upload detection,
-     * export should proceed without calling isHevcCodec().
+     * export should proceed without an additional codec check.
      */
     const approvedSegment = createApprovedSegmentWithTrajectory({ id: 'seg-1' })
     // Segment already knows it's not HEVC (from upload detection)

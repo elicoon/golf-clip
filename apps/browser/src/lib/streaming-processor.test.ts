@@ -17,7 +17,6 @@ vi.mock('./ffmpeg-client', () => ({
   loadFFmpeg: vi.fn().mockResolvedValue(undefined),
   extractAudioFromSegment: vi.fn().mockResolvedValue(new Float32Array(44100)),
   extractVideoSegment: vi.fn().mockResolvedValue(new Blob(['mock'], { type: 'video/mp4' })),
-  isHevcCodec: vi.fn().mockResolvedValue(false),
   transcodeHevcToH264: vi.fn().mockResolvedValue(new Blob(['mock'], { type: 'video/mp4' })),
   isFFmpegLoaded: vi.fn(() => true),
   detectVideoCodec: vi.fn().mockResolvedValue({ codec: 'h264', isHevc: false, isPlayable: true }),

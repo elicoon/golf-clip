@@ -2,9 +2,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 import { CanvasCompositor, TracerStyle, TrajectoryPoint } from './canvas-compositor'
-// Note: isHevcCodec import removed - HEVC is already detected during upload via
-// detectVideoCodec() in VideoDropzone.tsx. The isHevcCodec check was causing hangs
-// on large files because it wrote the entire blob to FFmpeg WASM memory.
+// HEVC detection uses detectVideoCodec() in VideoDropzone.tsx during upload.
 // See: bug-export-tracer-pipeline-hang.md
 
 /**

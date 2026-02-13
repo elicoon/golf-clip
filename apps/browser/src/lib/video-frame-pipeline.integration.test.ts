@@ -21,12 +21,11 @@ vi.mock('@ffmpeg/util', () => ({
   }),
 }))
 
-// Mock isHevcCodec from ffmpeg-client to avoid requiring FFmpeg to be loaded
+// Mock ffmpeg-client to avoid requiring FFmpeg to be loaded
 vi.mock('./ffmpeg-client', async () => {
   const actual = await vi.importActual('./ffmpeg-client')
   return {
     ...actual,
-    isHevcCodec: vi.fn().mockResolvedValue(false), // Assume H.264 in tests
   }
 })
 

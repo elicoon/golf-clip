@@ -1,14 +1,10 @@
 // apps/browser/src/lib/video-frame-pipeline.test.ts
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 
-// Note: isHevcCodec is no longer called by VideoFramePipeline (removed as part of
-// the export hang fix - bug-export-tracer-pipeline-hang.md). HEVC detection happens
-// during upload in VideoDropzone.tsx. The mock is kept but set to always return false.
 vi.mock('./ffmpeg-client', async () => {
   const actual = await vi.importActual('./ffmpeg-client')
   return {
     ...actual,
-    isHevcCodec: vi.fn().mockResolvedValue(false), // Not used by pipeline anymore
   }
 })
 
@@ -169,8 +165,6 @@ describe('VideoFramePipeline extraction progress fallback', () => {
   })
 
   it('should emit periodic progress updates during extraction even when FFmpeg is silent', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const progressUpdates: { phase: string; progress: number }[] = []
 
@@ -245,8 +239,6 @@ describe('VideoFramePipeline 100% progress', () => {
   })
 
   it('should report exactly 100% progress when export completes', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const progressUpdates: { phase: string; progress: number }[] = []
 
@@ -317,21 +309,6 @@ describe('VideoFramePipeline 100% progress', () => {
 })
 
 /**
- * REMOVED: VideoFramePipeline HEVC detection tests
- *
- * These tests were removed because the isHevcCodec check was removed from
- * exportWithTracer() as part of fixing bug-export-tracer-pipeline-hang.md.
- *
- * The isHevcCodec() function was causing hangs on large files because it wrote
- * the entire video blob to FFmpeg WASM memory. HEVC detection now happens during
- * upload in VideoDropzone.tsx via the browser-native detectVideoCodec() function.
- *
- * If an HEVC video somehow reaches export, the frame extraction will fail and
- * the error handling will still show the transcode modal (HevcExportError is
- * still exported for backwards compatibility).
- */
-
-/**
  * Tests for FFmpeg exit code handling bug.
  *
  * BUG: The current implementation does NOT check FFmpeg's exit code after frame extraction.
@@ -368,10 +345,7 @@ describe('VideoFramePipeline FFmpeg exit code handling', () => {
      * - exec() return value is checked
      * - Non-zero exit code throws error with exit code in message
      */
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false) // Bypasses HEVC check
 
     // FFmpeg returns exit code 1 (failure) but doesn't throw
     const mockFFmpeg = {
@@ -414,10 +388,7 @@ describe('VideoFramePipeline FFmpeg exit code handling', () => {
      * Current code: "Frame extraction produced no frames. The video may be corrupted..."
      * Expected: Error message that includes "exit code 1" or similar
      */
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const mockFFmpeg = {
       writeFile: vi.fn().mockResolvedValue(undefined),
@@ -464,10 +435,7 @@ describe('VideoFramePipeline FFmpeg exit code handling', () => {
     /**
      * Sanity check: When FFmpeg succeeds (exit code 0), export should work.
      */
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const mockFFmpeg = {
       writeFile: vi.fn().mockResolvedValue(undefined),
@@ -520,10 +488,7 @@ describe('VideoFramePipeline FFmpeg exit code handling', () => {
      * - Frame extraction is where codec incompatibility manifests
      * - Current code only has try/catch, not exit code check
      */
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     let execCallCount = 0
     const mockFFmpeg = {
@@ -569,26 +534,6 @@ describe('VideoFramePipeline FFmpeg exit code handling', () => {
 })
 
 /**
- * REMOVED: VideoFramePipeline HEVC codec integration tests
- *
- * These tests were removed because the isHevcCodec check was removed from
- * exportWithTracer() as part of fixing bug-export-tracer-pipeline-hang.md.
- * See comment at line 319 for full explanation.
- */
-
-/**
- * REMOVED: VideoFramePipeline - isHevcCodec Hang Prevention tests
- *
- * These tests were removed because the isHevcCodec check was removed from
- * exportWithTracer() as part of fixing bug-export-tracer-pipeline-hang.md.
- *
- * The fix: isHevcCodec() was removed from exportWithTracer() because it wrote
- * the entire blob to FFmpeg WASM memory, causing hangs on large files (500MB+).
- * HEVC detection now happens during upload in VideoDropzone.tsx via the
- * browser-native detectVideoCodec() function.
- */
-
-/**
  * Tests for FFmpeg diagnostic logging during frame extraction failures.
  *
  * When frame extraction fails, FFmpeg's log output (stderr) contains valuable
@@ -630,10 +575,7 @@ describe('VideoFramePipeline - Large Blob Handling', () => {
   }
 
   it('should log warning for large blobs (>100MB)', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const consoleSpy = vi.spyOn(console, 'warn')
 
@@ -681,10 +623,7 @@ describe('VideoFramePipeline - Large Blob Handling', () => {
   })
 
   it('should reduce FPS from 60 to 24 for clips exceeding frame limit', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const consoleSpy = vi.spyOn(console, 'warn')
     let capturedVfFilter = ''
@@ -736,10 +675,7 @@ describe('VideoFramePipeline - Large Blob Handling', () => {
   })
 
   it('should add downscale filter for very long clips (>18 seconds)', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const consoleSpy = vi.spyOn(console, 'warn')
     let capturedVfFilter = ''
@@ -794,10 +730,7 @@ describe('VideoFramePipeline - Large Blob Handling', () => {
   })
 
   it('should NOT downscale short clips (<15 seconds at 30fps)', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     let capturedVfFilter = ''
 
@@ -887,10 +820,7 @@ describe('VideoFramePipeline - Frame Extraction Timeout', () => {
   })
 
   it('should include timeout in extraction start log', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const consoleSpy = vi.spyOn(console, 'log')
 
@@ -933,10 +863,7 @@ describe('VideoFramePipeline - Frame Extraction Timeout', () => {
   })
 
   it('should complete successfully when exec finishes quickly', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const mockFFmpeg = {
       writeFile: vi.fn().mockResolvedValue(undefined),
@@ -1000,10 +927,7 @@ describe('VideoFramePipeline - Memory Cleanup', () => {
   }
 
   it('should delete input file after successful export', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const mockFFmpeg = {
       writeFile: vi.fn().mockResolvedValue(undefined),
@@ -1040,10 +964,7 @@ describe('VideoFramePipeline - Memory Cleanup', () => {
   })
 
   it('should delete output file after successful export', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const mockFFmpeg = {
       writeFile: vi.fn().mockResolvedValue(undefined),
@@ -1080,10 +1001,7 @@ describe('VideoFramePipeline - Memory Cleanup', () => {
   })
 
   it('should delete all frame files after successful export', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const mockFFmpeg = {
       writeFile: vi.fn().mockResolvedValue(undefined),
@@ -1121,10 +1039,7 @@ describe('VideoFramePipeline - Memory Cleanup', () => {
   })
 
   it('should continue cleanup even if individual delete fails', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     let deleteCallCount = 0
     const mockFFmpeg = {
@@ -1200,10 +1115,7 @@ describe('VideoFramePipeline - Progress Reporting Accuracy', () => {
   }
 
   it('should report preparing phase with -1 (indeterminate) initially', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const progressUpdates: { phase: string; progress: number }[] = []
 
@@ -1244,10 +1156,7 @@ describe('VideoFramePipeline - Progress Reporting Accuracy', () => {
   })
 
   it('should report preparing phase completing at 100%', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const progressUpdates: { phase: string; progress: number }[] = []
 
@@ -1289,10 +1198,7 @@ describe('VideoFramePipeline - Progress Reporting Accuracy', () => {
   })
 
   it('should report all phases in correct order', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const phaseOrder: string[] = []
 
@@ -1336,10 +1242,7 @@ describe('VideoFramePipeline - Progress Reporting Accuracy', () => {
   })
 
   it('should include currentFrame and totalFrames during compositing', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const compositingUpdates: { currentFrame?: number; totalFrames?: number }[] = []
 
@@ -1387,10 +1290,7 @@ describe('VideoFramePipeline - Progress Reporting Accuracy', () => {
   })
 
   it('should cap encoding progress at 99% until complete', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const encodingUpdates: number[] = []
 
@@ -1496,10 +1396,7 @@ describe('VideoFramePipeline - 4K Video Handling', () => {
   }
 
   it('should log blob size in MB for visibility', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const consoleLogSpy = vi.spyOn(console, 'log')
 
@@ -1546,10 +1443,7 @@ describe('VideoFramePipeline - 4K Video Handling', () => {
   })
 
   it('should log fetchFile and writeFile timing for performance monitoring', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const consoleLogSpy = vi.spyOn(console, 'log')
 
@@ -1597,10 +1491,7 @@ describe('VideoFramePipeline - 4K Video Handling', () => {
   })
 
   it('should use force_original_aspect_ratio in scale filter', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     let capturedVfFilter = ''
 
@@ -1671,10 +1562,7 @@ describe('VideoFramePipeline - Diagnostic Logging (Bug Fix)', () => {
    * This helps debug codec issues without requiring users to understand FFmpeg.
    */
   it('should capture FFmpeg log output when frame extraction fails', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const consoleSpy = vi.spyOn(console, 'error')
     const logListeners: Array<(data: { message: string }) => void> = []
@@ -1734,10 +1622,7 @@ describe('VideoFramePipeline - Diagnostic Logging (Bug Fix)', () => {
    * Test that log listeners are cleaned up after failure.
    */
   it('should clean up log listeners when frame extraction fails', async () => {
-    const { isHevcCodec } = await import('./ffmpeg-client')
     const { VideoFramePipeline } = await import('./video-frame-pipeline')
-
-    vi.mocked(isHevcCodec).mockResolvedValue(false)
 
     const onCalls: string[] = []
     const offCalls: string[] = []
