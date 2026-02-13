@@ -87,6 +87,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [isMarkingOrigin, setIsMarkingOrigin] = useState(false)
   const [isMarkingLanding, setIsMarkingLanding] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [impactTimeAdjusted, setImpactTimeAdjusted] = useState(false)
 
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
@@ -258,6 +259,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setReviewStep('marking_landing')
     setTrajectory(null)
     setVideoError(null) // Clear video error on shot change
+    setImpactTimeAdjusted(false)
     // Reset feedback tracking for new shot
     initialTracerParamsRef.current = null
     tracerModifiedRef.current = false
@@ -396,6 +398,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setIsMarkingApex(false)
     setIsMarkingOrigin(false)
   }, [])
+
+  const handleSetImpactTime = useCallback(() => {
+    if (!videoRef.current || !currentShot) return
+    const globalImpactTime = currentShot.startTime + videoRef.current.currentTime
+    if (globalImpactTime < currentShot.clipStart || globalImpactTime > currentShot.clipEnd) {
+      return // Silent reject - out of bounds
+    }
+    updateSegment(currentShot.id, { strikeTime: globalImpactTime })
+    setImpactTimeAdjusted(true)
+    setHasUnsavedChanges(true)
+  }, [currentShot, updateSegment])
 
   // Export a single segment with tracer overlay
   // Returns the blob if successful, null if skipped (no trajectory)
@@ -1343,6 +1356,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           isGenerating={isGenerating}
           isCollapsed={!showConfigPanel}
           onToggleCollapse={() => setShowConfigPanel(!showConfigPanel)}
+          onSetImpactTime={handleSetImpactTime}
+          impactTime={currentShot ? currentShot.strikeTime - currentShot.startTime : 0}
+          impactTimeAdjusted={impactTimeAdjusted}
         />
       )}
 
