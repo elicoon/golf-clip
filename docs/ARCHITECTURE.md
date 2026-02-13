@@ -383,15 +383,15 @@ sequenceDiagram
 
 ---
 
-## 4b. Browser Export Pipeline (V4)
+## 4b. Browser Export Pipeline
 
 The browser app exports clips client-side using WebCodecs API with a two-pass real-time capture approach.
 
-### V4 Pipeline Architecture
+### Export Pipeline Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    V4 TWO-PASS EXPORT PIPELINE                               │
+│                    TWO-PASS EXPORT PIPELINE                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  PASS 1: REAL-TIME CAPTURE                                                  │
@@ -448,20 +448,11 @@ The browser app exports clips client-side using WebCodecs API with a two-pass re
 | Timestamp handling | `firstTimestampBehavior: 'offset'` | Clips don't start at t=0; muxer auto-offsets |
 | Keyframes | Every 30 frames | Balance between file size and seek performance |
 
-### Pipeline Comparison
-
-| Pipeline | Method | Speed | FPS | Status |
-|----------|--------|-------|-----|--------|
-| V4 | requestVideoFrameCallback | ~0.85x realtime | Source FPS (60) | **Recommended** |
-| V3 | Frame-by-frame seek | 5-8 min for 4K | 30 fixed | Fallback |
-| V1 | FFmpeg WASM | Very slow, hangs | Varies | Deprecated |
-
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `video-frame-pipeline-v4.ts` | V4 real-time capture + WebCodecs encoding |
-| `video-frame-pipeline-v3.ts` | V3 seek-based fallback pipeline |
+| `video-frame-pipeline-v4.ts` | Real-time capture + WebCodecs encoding |
 | `ClipReview.tsx` | Export UI with resolution dropdown |
 
 ---

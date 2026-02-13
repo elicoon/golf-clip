@@ -244,7 +244,7 @@ describe('VideoFramePipeline Integration', () => {
         },
       })
 
-      expect(progressUpdates).toEqual(['extracting', 'compositing', 'encoding', 'complete'])
+      expect(progressUpdates).toEqual(['preparing', 'extracting', 'compositing', 'encoding', 'complete'])
     })
 
     it('should report frame progress during compositing', async () => {

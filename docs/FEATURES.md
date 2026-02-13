@@ -439,21 +439,15 @@ The review interface supports zooming for precise marker placement:
 
 ### Overview
 
-After reviewing shots, accepted clips are exported as individual video files with optional tracer overlay. The browser app uses WebCodecs-based pipelines for client-side export.
+After reviewing shots, accepted clips are exported as individual video files with optional tracer overlay. The browser app uses WebCodecs API with real-time video frame capture for hardware-accelerated client-side export.
 
-### Export Pipelines
+### Export Pipeline
 
-The browser app offers multiple export pipelines:
+The export pipeline uses `requestVideoFrameCallback` for real-time frame capture at approximately 0.85x realtime speed, preserving the source video's framerate.
 
-| Pipeline | Method | Speed | Use Case |
-|----------|--------|-------|----------|
-| **V4 (Recommended)** | Real-time capture via `requestVideoFrameCallback` | ~0.85x realtime | Best for all videos, preserves source framerate |
-| V3 | Frame-by-frame seeking | Slow (5-8min for 4K) | Fallback for browsers without V4 support |
-| V1 (Legacy) | FFmpeg WASM | Very slow, can hang on 4K | Deprecated |
+### Pipeline Architecture
 
-### V4 Pipeline Architecture
-
-V4 uses a two-pass approach for reliable 60fps capture:
+The export uses a two-pass approach for reliable capture:
 
 **Pass 1: Real-Time Capture**
 1. Seek to clip start time
@@ -472,7 +466,7 @@ V4 uses a two-pass approach for reliable 60fps capture:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    V4 TWO-PASS PIPELINE                              │
+│                       TWO-PASS PIPELINE                              │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  PASS 1: CAPTURE (~10s for 10s clip)                                │
@@ -491,15 +485,15 @@ Export resolution can be selected from dropdown:
 - **1080p (faster)**: Downscale to max 1080p height
 - **720p (fastest)**: Downscale to max 720p height
 
-Downscaling happens during capture, making V4 faster for high-res sources.
+Downscaling happens during capture, making export faster for high-res sources.
 
 ### Output Structure
 
 ```
 Downloads/
-├── shot_1_v4.mp4
-├── shot_2_v4.mp4
-└── shot_3_v4.mp4
+├── shot_1.mp4
+├── shot_2.mp4
+└── shot_3.mp4
 ```
 
 ### Quality Validation
@@ -525,19 +519,18 @@ Export files under 10MB typically indicate quality issues:
 
 ### Browser Compatibility
 
-V4 requires `requestVideoFrameCallback` support:
+Export requires `requestVideoFrameCallback` support:
 - Chrome 83+
 - Edge 83+
 - Safari 15.4+
-- Firefox: Not supported (falls back to V3)
+- Firefox: Not currently supported
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `video-frame-pipeline-v4.ts` | V4 real-time capture pipeline |
-| `video-frame-pipeline-v3.ts` | V3 seek-based pipeline (fallback) |
-| `ClipReview.tsx` | Export UI with pipeline selection |
+| `video-frame-pipeline-v4.ts` | Real-time capture pipeline |
+| `ClipReview.tsx` | Export UI and controls |
 
 ---
 

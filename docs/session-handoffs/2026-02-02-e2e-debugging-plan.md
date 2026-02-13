@@ -143,9 +143,10 @@ The export pipeline is only reached AFTER the video has been successfully proces
 - [x] Code reviewed (2026-02-02) - approved, no critical issues
 - [x] Documentation updated (bug doc status updated to Fixed)
 - [x] Local E2E passed (2026-02-02) - build passes, 296/312 tests pass (16 failures are pre-existing layout tests, unrelated to fix)
-- [ ] Committed to git
-- [ ] Deployed to PROD
-- [ ] PROD E2E passed
+- [x] Committed to git (2026-02-02) - commit ff3a06d
+- [x] Pushed to remote (2026-02-02) - origin/master updated
+- [x] Deployed to PROD (2026-02-02) - https://browser-seven-sigma.vercel.app
+- [ ] PROD E2E passed (manual testing required with large video file)
 
 ---
 

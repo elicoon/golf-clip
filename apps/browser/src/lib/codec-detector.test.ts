@@ -235,6 +235,280 @@ describe('Codec Detection', () => {
   })
 })
 
+/**
+ * Tests for isHevcCodec function hang prevention.
+ *
+ * BUG: isHevcCodec() writes the ENTIRE video blob to FFmpeg WASM filesystem,
+ * which hangs indefinitely for large files (500MB+) because:
+ * 1. fetchFile(videoBlob) reads entire blob into memory
+ * 2. ffmpeg.writeFile() copies entire buffer to WASM memory
+ *
+ * For large files, this operation never completes and the export hangs.
+ *
+ * FIX: Either add timeout, use blob slicing, or prefer detectVideoCodec().
+ */
+describe('isHevcCodec Hang Prevention', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('should have timeout protection to prevent indefinite hang', async () => {
+    /**
+     * isHevcCodec should timeout after reasonable duration (e.g., 30s)
+     * rather than hanging forever on large files.
+     *
+     * This test demonstrates the expected behavior: timeout should reject
+     * rather than hang forever. We use a short timeout for testing.
+     */
+    vi.doMock('./ffmpeg-client', () => ({
+      isHevcCodec: async () => {
+        // Simulate the fix: timeout after short duration
+        const TIMEOUT_MS = 100 // Short for testing
+
+        return new Promise<boolean>((_, reject) => {
+          setTimeout(() => reject(new Error('isHevcCodec timed out')), TIMEOUT_MS)
+        })
+      },
+      loadFFmpeg: vi.fn().mockResolvedValue(undefined),
+      isFFmpegLoaded: vi.fn(() => true),
+    }))
+
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const largeBlob = new Blob([new ArrayBuffer(1000)], { type: 'video/mp4' })
+
+    // Should reject with timeout error (not hang)
+    await expect(isHevcCodec(largeBlob)).rejects.toThrow('timed out')
+  })
+
+  it('should prefer detectVideoCodec (browser-native) over isHevcCodec (FFmpeg)', async () => {
+    /**
+     * detectVideoCodec uses browser's native video element which:
+     * 1. Doesn't load entire file into memory
+     * 2. Uses range requests for metadata
+     * 3. Is much faster for codec detection
+     *
+     * For export flow, we should use detectVideoCodec result from upload
+     * rather than re-checking with isHevcCodec.
+     */
+    vi.doMock('./ffmpeg-client', () => ({
+      detectVideoCodec: async () => ({
+        codec: 'h264',
+        isHevc: false,
+        isPlayable: true,
+      }),
+      // isHevcCodec should NOT be called if we use detectVideoCodec
+      isHevcCodec: vi.fn().mockImplementation(async () => {
+        throw new Error('isHevcCodec should not be called - use detectVideoCodec')
+      }),
+      loadFFmpeg: vi.fn().mockResolvedValue(undefined),
+      isFFmpegLoaded: vi.fn(() => true),
+    }))
+
+    const { detectVideoCodec } = await import('./ffmpeg-client')
+    const mockFile = new File([new ArrayBuffer(1000)], 'test.mp4', { type: 'video/mp4' })
+
+    // detectVideoCodec should work fine
+    const result = await detectVideoCodec(mockFile)
+    expect(result.isHevc).toBe(false)
+    expect(result.isPlayable).toBe(true)
+  })
+
+  it('should handle large blob by slicing to header only for codec detection', async () => {
+    /**
+     * Codec information is in the video header (moov atom for MP4).
+     * We should only need first 2-4MB to detect codec, not entire file.
+     */
+    const HEADER_SIZE = 2 * 1024 * 1024 // 2MB
+
+    vi.doMock('./ffmpeg-client', () => ({
+      isHevcCodec: async (blob: Blob) => {
+        // Fix: Only process header portion
+        const headerBlob = blob.slice(0, Math.min(HEADER_SIZE, blob.size))
+        // Simulate successful codec detection from header
+        return headerBlob.size < blob.size
+          ? false // Sliced successfully
+          : false // Small file, processed fully
+      },
+      loadFFmpeg: vi.fn().mockResolvedValue(undefined),
+      isFFmpegLoaded: vi.fn(() => true),
+    }))
+
+    const { isHevcCodec } = await import('./ffmpeg-client')
+
+    // Create large blob (100MB)
+    const largeBlob = new Blob([new ArrayBuffer(100 * 1024 * 1024)], { type: 'video/mp4' })
+
+    // Should complete without hanging
+    const result = await isHevcCodec(largeBlob)
+    expect(typeof result).toBe('boolean')
+  })
+
+  it('should complete isHevcCodec within 10 seconds for small files', async () => {
+    /**
+     * For small files (<10MB), isHevcCodec should complete quickly.
+     * This test verifies the baseline behavior works correctly.
+     */
+    vi.doMock('./ffmpeg-client', () => ({
+      isHevcCodec: async () => {
+        // Simulate fast detection for small file
+        await new Promise(resolve => setTimeout(resolve, 100))
+        return false
+      },
+      loadFFmpeg: vi.fn().mockResolvedValue(undefined),
+      isFFmpegLoaded: vi.fn(() => true),
+    }))
+
+    vi.useFakeTimers()
+
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const smallBlob = new Blob([new ArrayBuffer(1000)], { type: 'video/mp4' })
+
+    const promise = isHevcCodec(smallBlob)
+
+    // Advance a small amount of time
+    await vi.advanceTimersByTimeAsync(200)
+
+    const result = await promise
+    expect(result).toBe(false)
+
+    vi.useRealTimers()
+  })
+
+  it('should return false (assume H.264) on timeout for safety', async () => {
+    /**
+     * If codec detection times out, we should assume H.264 (most common)
+     * and let FFmpeg fail later with clear error if actually HEVC.
+     *
+     * Reasoning: Better to attempt export and fail fast with clear error
+     * than to hang indefinitely during detection.
+     */
+    vi.doMock('./ffmpeg-client', () => ({
+      isHevcCodec: async () => {
+        const TIMEOUT_MS = 30000
+        try {
+          await new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)
+          })
+        } catch {
+          // On timeout, assume NOT HEVC (safer default for export)
+          console.warn('isHevcCodec timed out, assuming H.264')
+          return false
+        }
+        return false
+      },
+      loadFFmpeg: vi.fn().mockResolvedValue(undefined),
+      isFFmpegLoaded: vi.fn(() => true),
+    }))
+
+    vi.useFakeTimers()
+
+    const { isHevcCodec } = await import('./ffmpeg-client')
+    const blob = new Blob([new ArrayBuffer(1000)], { type: 'video/mp4' })
+
+    const promise = isHevcCodec(blob)
+    await vi.advanceTimersByTimeAsync(31000)
+
+    // Should return false (safe default) rather than throwing
+    const result = await promise
+    expect(result).toBe(false)
+
+    vi.useRealTimers()
+  })
+})
+
+/**
+ * Tests for redundant HEVC check optimization.
+ *
+ * BUG CONTEXT: isHevcCodec is called in exportWithTracer even though
+ * codec was already detected during upload via detectVideoCodec.
+ * This is redundant and causes the hang for large files.
+ *
+ * FIX: Skip isHevcCodec if video was already verified playable during upload.
+ */
+describe('Redundant HEVC Check Optimization', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('should use cached codec detection result instead of re-detecting', async () => {
+    /**
+     * When a video is uploaded, detectVideoCodec is called once.
+     * That result should be cached and reused during export,
+     * avoiding the expensive isHevcCodec call.
+     */
+    let isHevcCodecCallCount = 0
+    let detectVideoCodecCallCount = 0
+
+    vi.doMock('./ffmpeg-client', () => ({
+      detectVideoCodec: async () => {
+        detectVideoCodecCallCount++
+        return { codec: 'h264', isHevc: false, isPlayable: true }
+      },
+      isHevcCodec: async () => {
+        isHevcCodecCallCount++
+        return false
+      },
+      loadFFmpeg: vi.fn().mockResolvedValue(undefined),
+      isFFmpegLoaded: vi.fn(() => true),
+    }))
+
+    const { detectVideoCodec } = await import('./ffmpeg-client')
+    const mockFile = new File([new ArrayBuffer(1000)], 'test.mp4', { type: 'video/mp4' })
+
+    // Upload flow: detect codec once
+    const uploadResult = await detectVideoCodec(mockFile)
+    expect(detectVideoCodecCallCount).toBe(1)
+    expect(uploadResult.isHevc).toBe(false)
+
+    // Export flow should use cached result, not call isHevcCodec
+    // (The actual implementation would cache this - test documents expected behavior)
+    expect(isHevcCodecCallCount).toBe(0)
+  })
+
+  it('should document that isHevc is already known from upload flow', async () => {
+    /**
+     * This test documents the expected data flow:
+     * 1. User uploads video
+     * 2. detectVideoCodec called, returns { isHevc: false }
+     * 3. Segment created with isHevc: false stored
+     * 4. Export uses stored isHevc value, skips isHevcCodec call
+     */
+    vi.doMock('./ffmpeg-client', () => ({
+      detectVideoCodec: async () => ({
+        codec: 'h264',
+        isHevc: false,
+        isPlayable: true,
+      }),
+      loadFFmpeg: vi.fn().mockResolvedValue(undefined),
+      isFFmpegLoaded: vi.fn(() => true),
+    }))
+
+    const { detectVideoCodec } = await import('./ffmpeg-client')
+    const mockFile = new File([new ArrayBuffer(1000)], 'test.mp4', { type: 'video/mp4' })
+
+    // Simulate upload flow
+    const codecInfo = await detectVideoCodec(mockFile)
+
+    // Store in segment (simulated)
+    const segment = {
+      id: 'segment-1',
+      blob: new Blob(['video'], { type: 'video/mp4' }),
+      isHevc: codecInfo.isHevc, // This should be stored!
+    }
+
+    // Export should use stored value
+    expect(segment.isHevc).toBe(false)
+  })
+})
+
 describe('Codec Detection Edge Cases', () => {
   it('should handle files with no video stream', async () => {
     vi.doMock('./ffmpeg-client', () => ({

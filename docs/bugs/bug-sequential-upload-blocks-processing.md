@@ -1,9 +1,10 @@
 # Bug: Sequential Upload Blocks Processing
 
-**Status:** Open
+**Status:** Fixed
 **Priority:** High
 **Component:** VideoDropzone.tsx, appStore.ts
 **Date:** 2026-01-29
+**Fixed:** 2026-02-02
 
 ## Description
 
@@ -32,3 +33,7 @@ When multiple videos are uploaded, the system waits for ALL videos to finish upl
 
 - `apps/browser/src/components/VideoDropzone.tsx`
 - `apps/browser/src/stores/processingStore.ts`
+
+## Resolution
+
+Fixed on 2026-02-02. Upload and processing are now decoupled so that processing begins for each video as soon as its upload completes.

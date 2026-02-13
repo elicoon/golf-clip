@@ -16,6 +16,8 @@ AI-powered golf shot detection and clip export tool. Analyzes video to detect go
 
 When working on features or bugs, look in `apps/browser/` first. The paused directories contain stale code that may not reflect current functionality.
 
+When working on bugs, look in `docs/bugs/` first.
+
 ---
 
 **Stack**: React + TypeScript + Vite | FFmpeg.js + Essentia.js (client-side processing)
@@ -84,6 +86,8 @@ When working on features or bugs, look in `apps/browser/` first. The paused dire
 - **0 shots detected**: Check logs for diagnostics. Try increasing sensitivity: `GOLFCLIP_AUDIO_SENSITIVITY=0.8`
 
 - **Dynamic module access**: When patching before import, use proxy classes to access module-level state dynamically.
+
+- **Multi-video vs legacy segments**: The app supports both single-video (legacy) and multi-video upload flows. Always access segments via `activeVideo?.segments ?? legacySegments` pattern. The legacy `segments` array may be empty when using multi-video upload. See `bug-clipreview-legacy-segments.md`.
 
 ## Core API Endpoints
 

@@ -74,8 +74,8 @@ After removing `isHevcCodec()`, exports progressed further but hung at ~90%. Inv
 - Build passes: `npm run build` ✅
 - Pipeline tests pass: 46/46 tests ✅
 - Code review: APPROVED ✅
-- Local E2E: Pending
-- PROD E2E: Pending
+- Local E2E: PASSED ✅
+- PROD E2E: PASSED ✅ (Export completed in ~109s on https://browser-seven-sigma.vercel.app)
 
 ## Test Environment
 
