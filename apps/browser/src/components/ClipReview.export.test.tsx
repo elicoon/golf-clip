@@ -98,26 +98,13 @@ vi.mock('../lib/feedback-service', () => ({
   submitTracerFeedback: vi.fn(),
 }))
 
-// Mock ffmpeg-client - resolve immediately
-vi.mock('../lib/ffmpeg-client', () => ({
-  loadFFmpeg: vi.fn().mockResolvedValue(undefined),
-  getFFmpegInstance: vi.fn().mockReturnValue({}),
-  transcodeHevcToH264: vi.fn().mockResolvedValue(new Blob(['transcoded'], { type: 'video/mp4' })),
-  estimateTranscodeTime: vi.fn().mockReturnValue({ minMinutes: 1, maxMinutes: 2, formatted: '1-2 minutes' }),
-}))
-
-// Mock video-frame-pipeline
+// Mock video-frame-pipeline-v4
 const mockExportWithTracer = vi.fn()
-vi.mock('../lib/video-frame-pipeline', () => ({
-  VideoFramePipeline: vi.fn().mockImplementation(() => ({
+vi.mock('../lib/video-frame-pipeline-v4', () => ({
+  VideoFramePipelineV4: vi.fn().mockImplementation(() => ({
     exportWithTracer: (...args: unknown[]) => mockExportWithTracer(...args),
   })),
-  HevcExportError: class HevcExportError extends Error {
-    constructor(message = 'HEVC error') {
-      super(message)
-      this.name = 'HevcExportError'
-    }
-  },
+  isVideoFrameCallbackSupported: vi.fn().mockReturnValue(true),
 }))
 
 // Mock trajectory generator

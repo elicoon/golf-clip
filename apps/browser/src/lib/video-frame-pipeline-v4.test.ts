@@ -38,16 +38,6 @@ describe('VideoFramePipelineV4 - Module Structure', () => {
     expect(typeof module.isVideoFrameCallbackSupported).toBe('function')
   })
 
-  it('should export ExportResolution type matching V3', async () => {
-    // Import both to verify types are compatible
-    const v3 = await import('./video-frame-pipeline-v3')
-    const v4 = await import('./video-frame-pipeline-v4')
-
-    // Both modules should export the same types
-    expect(v3.VideoFramePipelineV3).toBeDefined()
-    expect(v4.VideoFramePipelineV4).toBeDefined()
-  })
-
   it('should have exportWithTracer method on pipeline instance', async () => {
     const { VideoFramePipelineV4 } = await import('./video-frame-pipeline-v4')
     const pipeline = new VideoFramePipelineV4()

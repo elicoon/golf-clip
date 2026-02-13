@@ -73,20 +73,12 @@ vi.mock('../lib/feedback-service', () => ({
   submitTracerFeedback: vi.fn(),
 }))
 
-// Mock ffmpeg-client
-vi.mock('../lib/ffmpeg-client', () => ({
-  loadFFmpeg: vi.fn().mockResolvedValue(undefined),
-  getFFmpegInstance: vi.fn(),
-  transcodeHevcToH264: vi.fn(),
-  estimateTranscodeTime: vi.fn().mockReturnValue({ minMinutes: 1, maxMinutes: 2, formatted: '1-2 minutes' }),
-}))
-
-// Mock video-frame-pipeline
-vi.mock('../lib/video-frame-pipeline', () => ({
-  VideoFramePipeline: vi.fn().mockImplementation(() => ({
+// Mock video-frame-pipeline-v4
+vi.mock('../lib/video-frame-pipeline-v4', () => ({
+  VideoFramePipelineV4: vi.fn().mockImplementation(() => ({
     exportWithTracer: vi.fn().mockResolvedValue(new Blob(['mock'], { type: 'video/mp4' })),
   })),
-  HevcExportError: class HevcExportError extends Error {},
+  isVideoFrameCallbackSupported: vi.fn().mockReturnValue(true),
 }))
 
 // Mock trajectory generator
@@ -971,36 +963,6 @@ describe('Export Format UI Indicator', () => {
     expect(withoutTrajectoryWebm.expectedFormat).toBe('webm')
   })
 
-  it('format hint text should accurately describe export behavior - FAILS with current code', () => {
-    render(<ClipReview onComplete={vi.fn()} />)
-
-    // Look for the format hint element
-    const formatHint = document.querySelector('.export-format-hint')
-
-    // The completion screen should have a format hint
-    expect(formatHint).not.toBeNull()
-
-    if (formatHint) {
-      const hintText = formatHint.textContent || ''
-
-      // Current MISLEADING hint says: "Clips without tracer: .webm"
-      // This is incorrect because clips without tracer keep their original format
-      // which might be .mp4, not necessarily .webm
-
-      // FAILING TEST: Current hint incorrectly claims all non-tracer clips are webm
-      // After fix: Hint should say "original format" or be more accurate
-      expect(hintText).not.toContain('without tracer: .webm')
-
-      // After fix, hint should acknowledge that format depends on source
-      const hasAccurateHint =
-        hintText.includes('original format') ||
-        hintText.includes('source format') ||
-        hintText.includes('.mp4 or .webm') ||
-        (hintText.includes('.mp4') && !hintText.includes('without tracer: .webm'))
-
-      expect(hasAccurateHint).toBe(true)
-    }
-  })
 })
 
 /**

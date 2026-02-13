@@ -82,20 +82,12 @@ vi.mock('../lib/feedback-service', () => ({
   submitTracerFeedback: vi.fn(),
 }))
 
-// Mock ffmpeg-client
-vi.mock('../lib/ffmpeg-client', () => ({
-  loadFFmpeg: vi.fn().mockResolvedValue(undefined),
-  getFFmpegInstance: vi.fn(),
-  transcodeHevcToH264: vi.fn(),
-  estimateTranscodeTime: vi.fn().mockReturnValue({ minMinutes: 1, maxMinutes: 2, formatted: '1-2 minutes' }),
-}))
-
-// Mock video-frame-pipeline
-vi.mock('../lib/video-frame-pipeline', () => ({
-  VideoFramePipeline: vi.fn().mockImplementation(() => ({
+// Mock video-frame-pipeline-v4
+vi.mock('../lib/video-frame-pipeline-v4', () => ({
+  VideoFramePipelineV4: vi.fn().mockImplementation(() => ({
     exportWithTracer: vi.fn().mockResolvedValue(new Blob(['mock'], { type: 'video/mp4' })),
   })),
-  HevcExportError: class HevcExportError extends Error {},
+  isVideoFrameCallbackSupported: vi.fn().mockReturnValue(true),
 }))
 
 // Mock trajectory generator
