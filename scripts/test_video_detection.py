@@ -14,7 +14,7 @@ from backend.detection.visual import BallDetector
 
 def main():
     # Path to test video
-    video_path = Path("C:/Users/Eli/Downloads/IMG_2198.MP4")
+    video_path = Path.home() / "Downloads" / "IMG_2198.MP4"
 
     if not video_path.exists():
         print(f"Video not found: {video_path}")
