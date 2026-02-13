@@ -1135,12 +1135,19 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
             }
           }
           break
+        case 'i':
+        case 'I':
+          e.preventDefault()
+          if (reviewStep === 'reviewing') {
+            handleSetImpactTime()
+          }
+          break
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [togglePlayPause, handlePrevious, handleNext, handleApprove, handleReject, reviewStep, trajectory, currentShot, handleTrimUpdate])
+  }, [togglePlayPause, handlePrevious, handleNext, handleApprove, handleReject, reviewStep, trajectory, currentShot, handleTrimUpdate, handleSetImpactTime])
 
   if (!currentShot) {
     const approvedCount = segments.filter(s => s.approved === 'approved').length
