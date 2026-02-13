@@ -89,84 +89,9 @@ export function isFFmpegLoaded(): boolean {
   return loaded
 }
 
-/**
- * Check if a video file uses HEVC/H.265 codec (common in iPhone MOV files).
- * Chrome on Windows doesn't support HEVC natively.
- *
- * WARNING: This function writes the ENTIRE blob to FFmpeg WASM memory, which can
- * hang for large files. Prefer using detectVideoCodec() instead, which uses the
- * browser's native video element and is much faster.
- *
- * This function is kept for backwards compatibility but includes a timeout
- * to prevent hangs.
- *
- * @param videoBlob - The video blob to check
- * @returns true if the video uses HEVC codec
- * @deprecated Use detectVideoCodec() instead - it's faster and doesn't hang on large files
- */
-export async function isHevcCodec(videoBlob: Blob): Promise<boolean> {
-  const TIMEOUT_MS = 10000 // 10 second timeout to prevent hangs
-
-  console.log('[isHevcCodec] Starting codec check, blob size:', videoBlob.size)
-
-  // Warn if blob is large - this operation will be slow
-  if (videoBlob.size > 100 * 1024 * 1024) { // > 100MB
-    console.warn('[isHevcCodec] Large blob detected. Consider using detectVideoCodec() instead.')
-  }
-
-  if (!ffmpeg || !loaded) {
-    throw new Error('FFmpeg not loaded. Call loadFFmpeg() first.')
-  }
-
-  // Capture reference for TypeScript - we've already verified it's non-null above
-  const ffmpegInstance = ffmpeg
-
-  const inputName = 'probe_input.mp4'
-  let logs = ''
-
-  // Capture FFmpeg log output
-  const logHandler = ({ message }: { message: string }) => {
-    logs += message + '\n'
-  }
-  ffmpegInstance.on('log', logHandler)
-
-  // Create a promise that rejects after timeout
-  const timeoutPromise = new Promise<boolean>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error('HEVC codec check timed out after ' + TIMEOUT_MS + 'ms'))
-    }, TIMEOUT_MS)
-  })
-
-  const checkPromise = async (): Promise<boolean> => {
-    try {
-      console.log('[isHevcCodec] Writing blob to FFmpeg filesystem...')
-      await ffmpegInstance.writeFile(inputName, await fetchFile(videoBlob))
-      console.log('[isHevcCodec] Blob written, running ffmpeg probe...')
-
-      // Run ffmpeg with no output - it will log codec info
-      await ffmpegInstance.exec(['-i', inputName, '-f', 'null', '-'])
-      console.log('[isHevcCodec] Probe complete')
-
-      // Check logs for HEVC indicators
-      const logsLower = logs.toLowerCase()
-      const isHevc = logsLower.includes('hevc') || logsLower.includes('h265') || logsLower.includes('hvc1')
-      console.log('[isHevcCodec] Result:', isHevc)
-      return isHevc
-    } finally {
-      ffmpegInstance.off('log', logHandler)
-      try { await ffmpegInstance.deleteFile(inputName) } catch { /* ignore */ }
-    }
-  }
-
-  try {
-    return await Promise.race([checkPromise(), timeoutPromise])
-  } catch (error) {
-    console.warn('[isHevcCodec] Check failed or timed out, assuming non-HEVC:', error)
-    ffmpegInstance.off('log', logHandler)
-    try { await ffmpegInstance.deleteFile(inputName) } catch { /* ignore */ }
-    return false // Assume non-HEVC on timeout - let frame extraction fail if it is HEVC
-  }
-}
+// HEVC transcoding in-browser is inherently slow (~4x realtime for 4K) due to
+// single-threaded WASM FFmpeg. This is a known, accepted limitation.
+// For large files, recommend desktop pre-transcoding.
 
 /**
  * Fast video playability check using browser's native video element.
@@ -354,6 +279,103 @@ export async function transcodeHevcToH264(
     }
     try { await ffmpeg.deleteFile(inputName) } catch { /* ignore */ }
     try { await ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Mux audio from the original segment into a video-only MP4 blob.
+ *
+ * The V4 export pipeline produces video-only clips (WebCodecs VideoEncoder has no
+ * audio support). This function extracts the audio track from the source segment
+ * (which was extracted with `-c copy` and retains audio) and remuxes it with the
+ * video-only blob using stream copy (no re-encode).
+ *
+ * @param videoOnlyBlob - The video-only MP4 from the V4 pipeline
+ * @param sourceSegmentBlob - The original segment blob (contains audio)
+ * @param clipStartInSegment - Start of clip relative to segment start (seconds)
+ * @param clipEndInSegment - End of clip relative to segment start (seconds)
+ * @returns Muxed MP4 blob with audio, or the original video-only blob if no audio
+ */
+export async function muxAudioIntoClip(
+  videoOnlyBlob: Blob,
+  sourceSegmentBlob: Blob,
+  clipStartInSegment: number,
+  clipEndInSegment: number,
+): Promise<Blob> {
+  if (!ffmpeg || !loaded) {
+    throw new Error('FFmpeg not loaded. Call loadFFmpeg() first.')
+  }
+
+  const videoFile = 'mux_video.mp4'
+  const sourceFile = 'mux_source.mp4'
+  const audioFile = 'mux_audio.aac'
+  const outputFile = 'mux_output.mp4'
+
+  try {
+    // Write both files to FFmpeg filesystem
+    await ffmpeg.writeFile(videoFile, await fetchFile(videoOnlyBlob))
+    await ffmpeg.writeFile(sourceFile, await fetchFile(sourceSegmentBlob))
+
+    // Step 1: Extract audio from the source segment for the clip time range
+    const duration = clipEndInSegment - clipStartInSegment
+    const extractExitCode = await ffmpeg.exec([
+      '-ss', clipStartInSegment.toString(),
+      '-i', sourceFile,
+      '-t', duration.toString(),
+      '-vn',           // No video
+      '-acodec', 'copy', // Stream copy (no re-encode)
+      audioFile,
+    ])
+
+    if (extractExitCode !== 0) {
+      // No audio track or extraction failed — return video-only
+      console.log('[muxAudio] No audio track found or extraction failed, returning video-only')
+      return videoOnlyBlob
+    }
+
+    // Verify audio file was actually created and has content
+    let audioData: Uint8Array | string
+    try {
+      audioData = await ffmpeg.readFile(audioFile)
+    } catch {
+      console.log('[muxAudio] Audio file not created, returning video-only')
+      return videoOnlyBlob
+    }
+    if (!(audioData instanceof Uint8Array) || audioData.length < 100) {
+      console.log('[muxAudio] Audio file empty or too small, returning video-only')
+      return videoOnlyBlob
+    }
+
+    // Step 2: Mux video + audio together
+    const muxExitCode = await ffmpeg.exec([
+      '-i', videoFile,
+      '-i', audioFile,
+      '-c', 'copy',         // Stream copy both
+      '-movflags', '+faststart',
+      outputFile,
+    ])
+
+    if (muxExitCode !== 0) {
+      console.warn('[muxAudio] Muxing failed, returning video-only')
+      return videoOnlyBlob
+    }
+
+    const data = await ffmpeg.readFile(outputFile)
+    if (!(data instanceof Uint8Array)) {
+      console.warn('[muxAudio] Unexpected output format, returning video-only')
+      return videoOnlyBlob
+    }
+
+    console.log('[muxAudio] Audio muxed successfully',
+      { videoSize: videoOnlyBlob.size, muxedSize: data.length })
+
+    return new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' })
+  } finally {
+    // Cleanup all temp files
+    try { await ffmpeg.deleteFile(videoFile) } catch { /* ignore */ }
+    try { await ffmpeg.deleteFile(sourceFile) } catch { /* ignore */ }
+    try { await ffmpeg.deleteFile(audioFile) } catch { /* ignore */ }
+    try { await ffmpeg.deleteFile(outputFile) } catch { /* ignore */ }
   }
 }
 
