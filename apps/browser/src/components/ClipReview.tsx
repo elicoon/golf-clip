@@ -87,6 +87,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [isMarkingOrigin, setIsMarkingOrigin] = useState(false)
   const [isMarkingLanding, setIsMarkingLanding] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [impactTimeAdjusted, setImpactTimeAdjusted] = useState(false)
 
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
@@ -258,6 +259,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setReviewStep('marking_landing')
     setTrajectory(null)
     setVideoError(null) // Clear video error on shot change
+    setImpactTimeAdjusted(false)
     // Reset feedback tracking for new shot
     initialTracerParamsRef.current = null
     tracerModifiedRef.current = false
@@ -396,6 +398,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setIsMarkingApex(false)
     setIsMarkingOrigin(false)
   }, [])
+
+  const handleSetImpactTime = useCallback(() => {
+    if (!videoRef.current || !currentShot) return
+    const globalImpactTime = currentShot.startTime + videoRef.current.currentTime
+    if (globalImpactTime < currentShot.clipStart || globalImpactTime > currentShot.clipEnd) {
+      return // Silent reject - out of bounds
+    }
+    updateSegment(currentShot.id, { strikeTime: globalImpactTime })
+    setImpactTimeAdjusted(true)
+    setHasUnsavedChanges(true)
+  }, [currentShot, updateSegment])
 
   // Export a single segment with tracer overlay
   // Returns the blob if successful, null if skipped (no trajectory)
@@ -1308,88 +1321,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
   return (
     <div className="clip-review">
-      {/* Instruction banner based on review step */}
-      <div className="marking-instruction">
-        {reviewStep === 'marking_landing' && (
-          <>
-            <span className="step-badge">Step 1</span>
-            <span className="instruction-text">Click where the ball landed</span>
-          </>
-        )}
-        {reviewStep === 'reviewing' && (
-          <>
-            <span className="step-badge complete">Ready</span>
-            <span className="instruction-text">Review the trajectory, then approve or reject</span>
-          </>
-        )}
-      </div>
-
-      {/* TracerConfigPanel - above video for easy access */}
-      {reviewStep === 'reviewing' && (
-        <TracerConfigPanel
-          config={tracerConfig}
-          onChange={handleConfigChange}
-          style={tracerStyle}
-          onStyleChange={handleStyleChange}
-          onGenerate={handleGenerate}
-          onMarkApex={handleMarkApex}
-          onMarkOrigin={handleMarkOrigin}
-          onMarkLanding={handleMarkLanding}
-          hasChanges={hasUnsavedChanges}
-          apexMarked={!!apexPoint}
-          originMarked={!!originPoint}
-          landingMarked={!!landingPoint}
-          isMarkingLanding={isMarkingLanding}
-          isGenerating={isGenerating}
-          isCollapsed={!showConfigPanel}
-          onToggleCollapse={() => setShowConfigPanel(!showConfigPanel)}
-        />
-      )}
-
-      <div className="video-container">
-        {videoError ? (
-          <div className="video-error-overlay">
-            <div className="video-error-content">
-              <span className="video-error-icon">⚠</span>
-              <h3>Video Cannot Play</h3>
-              <p>{videoError}</p>
-              <p className="video-error-hint">
-                The video may use HEVC/H.265 encoding which browsers cannot play natively.
-                Try processing a different video or re-export the original as H.264.
-              </p>
-              <button onClick={handleReject} className="btn-secondary">
-                Skip This Clip
-              </button>
-            </div>
-          </div>
-        ) : (
-          <video
-            ref={videoRef}
-            src={currentShot.objectUrl}
-            className="review-video"
-            muted={isMuted}
-            playsInline
-            onClick={togglePlayPause}
-            onCanPlay={handleVideoCanPlay}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onError={handleVideoError}
-          />
-        )}
-        <TrajectoryEditor
-          videoRef={videoRef as React.RefObject<HTMLVideoElement>}
-          trajectory={trajectory}
-          currentTime={currentTime}
-          showTracer={showTracer}
-          landingPoint={landingPoint}
-          apexPoint={apexPoint}
-          originPoint={originPoint}
-          onCanvasClick={handleCanvasClick}
-          markingStep={reviewStep}
-          isMarkingApex={isMarkingApex}
-          isMarkingOrigin={isMarkingOrigin}
-          isMarkingLanding={isMarkingLanding}
-        />
+      {/* Review header with shot counter */}
+      <div className="review-header">
+        <span className="review-title">Review Shots</span>
+        <span className="review-progress">{currentIndex + 1} of {totalShots}</span>
       </div>
 
       {/* Video transport controls */}
@@ -1441,6 +1376,103 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           handleTrimUpdate(newStart + currentShot.startTime, newEnd + currentShot.startTime)
         }}
       />
+
+      {/* Review action buttons - positioned above video */}
+      <div className="review-actions">
+        <button onClick={handleReject} className="btn-no-shot">
+          ✕ No Golf Shot
+        </button>
+        <button onClick={handleApprove} className="btn-primary btn-large">
+          ✓ Approve Shot
+        </button>
+      </div>
+
+      {/* Instruction banner based on review step */}
+      <div className="marking-instruction">
+        {reviewStep === 'marking_landing' && (
+          <>
+            <span className="step-badge">Step 1</span>
+            <span className="instruction-text">Click where the ball landed</span>
+          </>
+        )}
+        {reviewStep === 'reviewing' && (
+          <>
+            <span className="step-badge complete">Ready</span>
+            <span className="instruction-text">Review the trajectory, then approve or reject</span>
+          </>
+        )}
+      </div>
+
+      {/* TracerConfigPanel - above video for easy access */}
+      {reviewStep === 'reviewing' && (
+        <TracerConfigPanel
+          config={tracerConfig}
+          onChange={handleConfigChange}
+          style={tracerStyle}
+          onStyleChange={handleStyleChange}
+          onGenerate={handleGenerate}
+          onMarkApex={handleMarkApex}
+          onMarkOrigin={handleMarkOrigin}
+          onMarkLanding={handleMarkLanding}
+          hasChanges={hasUnsavedChanges}
+          apexMarked={!!apexPoint}
+          originMarked={!!originPoint}
+          landingMarked={!!landingPoint}
+          isMarkingLanding={isMarkingLanding}
+          isGenerating={isGenerating}
+          isCollapsed={!showConfigPanel}
+          onToggleCollapse={() => setShowConfigPanel(!showConfigPanel)}
+          onSetImpactTime={handleSetImpactTime}
+          impactTime={currentShot ? currentShot.strikeTime - currentShot.startTime : 0}
+          impactTimeAdjusted={impactTimeAdjusted}
+        />
+      )}
+
+      <div className="video-container">
+        {videoError ? (
+          <div className="video-error-overlay">
+            <div className="video-error-content">
+              <span className="video-error-icon">⚠</span>
+              <h3>Video Cannot Play</h3>
+              <p>{videoError}</p>
+              <p className="video-error-hint">
+                The video may use HEVC/H.265 encoding which browsers cannot play natively.
+                Try processing a different video or re-export the original as H.264.
+              </p>
+              <button onClick={handleReject} className="btn-secondary">
+                Skip This Clip
+              </button>
+            </div>
+          </div>
+        ) : (
+          <video
+            ref={videoRef}
+            src={currentShot.objectUrl}
+            className="review-video"
+            muted={isMuted}
+            playsInline
+            onClick={togglePlayPause}
+            onCanPlay={handleVideoCanPlay}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onError={handleVideoError}
+          />
+        )}
+        <TrajectoryEditor
+          videoRef={videoRef as React.RefObject<HTMLVideoElement>}
+          trajectory={trajectory}
+          currentTime={currentTime}
+          showTracer={showTracer}
+          landingPoint={landingPoint}
+          apexPoint={apexPoint}
+          originPoint={originPoint}
+          onCanvasClick={handleCanvasClick}
+          markingStep={reviewStep}
+          isMarkingApex={isMarkingApex}
+          isMarkingOrigin={isMarkingOrigin}
+          isMarkingLanding={isMarkingLanding}
+        />
+      </div>
 
       {/* Playback and tracer controls */}
       <div className="tracer-controls">
