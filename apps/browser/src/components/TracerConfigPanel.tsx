@@ -2,6 +2,7 @@
 import { useCallback, useState } from 'react'
 import { TracerConfig } from '../stores/processingStore'
 import { TracerStyle } from '../types/tracer'
+import { formatTime } from './Scrubber'
 
 interface TracerConfigPanelProps {
   config: TracerConfig
@@ -20,6 +21,10 @@ interface TracerConfigPanelProps {
   isGenerating: boolean
   isCollapsed: boolean
   onToggleCollapse: () => void
+  // Impact time adjustment
+  onSetImpactTime?: () => void
+  impactTime?: number
+  impactTimeAdjusted?: boolean
 }
 
 type HeightOption = 'low' | 'medium' | 'high'
@@ -42,6 +47,9 @@ export function TracerConfigPanel({
   isGenerating,
   isCollapsed,
   onToggleCollapse,
+  onSetImpactTime,
+  impactTime,
+  impactTimeAdjusted,
 }: TracerConfigPanelProps) {
   const [showStyleOptions, setShowStyleOptions] = useState(false)
   const handleHeightChange = useCallback(
@@ -211,6 +219,23 @@ export function TracerConfigPanel({
             </button>
             <span className="optional-hint">(if auto wrong)</span>
           </div>
+
+          {/* Impact Time */}
+          {onSetImpactTime && (
+            <div className="config-row">
+              <label>Impact Time</label>
+              <button
+                type="button"
+                className={`btn-option btn-impact ${impactTimeAdjusted ? 'marked' : ''}`}
+                onClick={onSetImpactTime}
+                disabled={isGenerating}
+                title={`Current: ${formatTime(impactTime ?? 0)} - Click to set to current video position`}
+              >
+                {impactTimeAdjusted ? `Adjusted: ${formatTime(impactTime ?? 0)}` : 'Set to Playhead'}
+              </button>
+              <span className="optional-hint">(if auto wrong)</span>
+            </div>
+          )}
 
           {/* Landing Point */}
           {onMarkLanding && (
