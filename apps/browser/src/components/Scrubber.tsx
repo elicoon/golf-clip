@@ -299,7 +299,7 @@ export function Scrubber({
   )
 }
 
-function formatTime(seconds: number): string {
+export function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   const ms = Math.floor((seconds % 1) * 100)
