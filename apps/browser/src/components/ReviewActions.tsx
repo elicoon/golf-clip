@@ -4,7 +4,7 @@
 import { useReviewActionsStore } from '../stores/reviewActionsStore'
 
 export function ReviewActions() {
-  const { handleApprove, handleReject, currentIndex, totalShots } = useReviewActionsStore()
+  const { handleApprove, handleReject, canApprove, currentIndex, totalShots } = useReviewActionsStore()
 
   // Don't render if handlers aren't registered (ClipReview not mounted or no current shot)
   if (!handleApprove || !handleReject) {
@@ -21,7 +21,7 @@ export function ReviewActions() {
         <button onClick={handleReject} className="btn-no-shot">
           ✕ No Golf Shot
         </button>
-        <button onClick={handleApprove} className="btn-primary btn-large">
+        <button onClick={handleApprove} className="btn-primary btn-large" disabled={!canApprove}>
           ✓ Approve Shot
         </button>
       </div>

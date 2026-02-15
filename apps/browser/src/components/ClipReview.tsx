@@ -936,6 +936,8 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
   const handleApprove = useCallback(() => {
     if (!currentShot) return
+    // Prevent approval before landing is marked and tracer reviewed
+    if (reviewStep !== 'reviewing') return
 
     // Submit shot feedback (TRUE_POSITIVE = user confirmed this is a real golf shot)
     const initialTiming = initialClipTimingRef.current
@@ -986,7 +988,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     }
     // When last shot is approved, component will naturally show review-complete UI
     // User can then click the export button when ready
-  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, landingPoint, trajectory, originPoint, apexPoint, tracerConfig, tracerStyle])
+  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, landingPoint, trajectory, originPoint, apexPoint, tracerConfig, tracerStyle, reviewStep])
 
   const handleReject = useCallback(() => {
     if (!currentShot) return
@@ -1011,11 +1013,15 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment])
 
   // Register handlers and progress with the shared store so header can display them
-  const { setHandlers, setProgress, clearHandlers } = useReviewActionsStore()
+  const { setHandlers, setCanApprove, setProgress, clearHandlers } = useReviewActionsStore()
   useEffect(() => {
     setHandlers(handleApprove, handleReject)
     return () => clearHandlers()
   }, [handleApprove, handleReject, setHandlers, clearHandlers])
+
+  useEffect(() => {
+    setCanApprove(reviewStep === 'reviewing')
+  }, [reviewStep, setCanApprove])
 
   useEffect(() => {
     setProgress(currentIndex, totalShots)
@@ -1382,7 +1388,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <button onClick={handleReject} className="btn-no-shot">
           ✕ No Golf Shot
         </button>
-        <button onClick={handleApprove} className="btn-primary btn-large">
+        <button
+          onClick={handleApprove}
+          className="btn-primary btn-large"
+          disabled={reviewStep !== 'reviewing'}
+        >
           ✓ Approve Shot
         </button>
       </div>

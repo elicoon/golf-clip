@@ -364,15 +364,16 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
   })
 
   describe('Button Functionality Still Works', () => {
-    it('should call approveSegment when Approve Shot button is clicked', () => {
+    it('should NOT call approveSegment when Approve Shot button is clicked before landing is marked', () => {
       render(<ClipReview onComplete={vi.fn()} />)
 
-      // First, generate a trajectory by clicking on the video (required for approval)
-      // But for this test, we'll just check the approve button exists and is clickable
+      // Approve button should be disabled in marking_landing state
       const approveButton = screen.getByRole('button', { name: /approve/i })
+      expect(approveButton).toBeDisabled()
       fireEvent.click(approveButton)
 
-      expect(mockApproveSegment).toHaveBeenCalledWith('shot-1')
+      // Should NOT approve — user hasn't marked landing yet
+      expect(mockApproveSegment).not.toHaveBeenCalled()
     })
 
     it('should call rejectSegment when No Golf Shot button is clicked', () => {
@@ -398,6 +399,51 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
 
       fireEvent.keyDown(window, { key: 'Escape' })
       expect(mockRejectSegment).toHaveBeenCalledWith('shot-1')
+    })
+
+    it('should NOT approve on Enter key when in marking_landing step', () => {
+      render(<ClipReview onComplete={vi.fn()} />)
+
+      // Press Enter before marking landing — should NOT approve
+      fireEvent.keyDown(window, { key: 'Enter' })
+      expect(mockApproveSegment).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Landing Mark Enforcement', () => {
+    it('should have Approve button disabled when landing has not been marked', () => {
+      render(<ClipReview onComplete={vi.fn()} />)
+
+      const approveButton = screen.getByRole('button', { name: /approve/i })
+      expect(approveButton).toBeDisabled()
+    })
+
+    it('should have "No Golf Shot" button always enabled regardless of review step', () => {
+      render(<ClipReview onComplete={vi.fn()} />)
+
+      const rejectButton = screen.getByRole('button', { name: /no golf shot/i })
+      expect(rejectButton).not.toBeDisabled()
+    })
+
+    it('should enable Approve button after landing is marked and trajectory generated', () => {
+      render(<ClipReview onComplete={vi.fn()} />)
+
+      // Initially disabled
+      const approveButton = screen.getByRole('button', { name: /approve/i })
+      expect(approveButton).toBeDisabled()
+
+      // Simulate clicking on the video to mark landing (triggers canvas click handler)
+      // The TrajectoryEditor canvas overlays the video, so we find it and fire click
+      const canvas = document.querySelector('canvas')
+      expect(canvas).not.toBeNull()
+      // Simulate a click at (0.5, 0.5) on canvas — triggers handleCanvasClick
+      const rect = { left: 0, top: 0, width: 800, height: 600 }
+      Object.defineProperty(canvas!, 'getBoundingClientRect', { value: () => rect })
+      fireEvent.click(canvas!, { clientX: 400, clientY: 300 })
+
+      // After marking landing, reviewStep transitions to 'reviewing' and button should be enabled
+      const updatedApproveButton = screen.getByRole('button', { name: /approve/i })
+      expect(updatedApproveButton).not.toBeDisabled()
     })
   })
 
