@@ -376,28 +376,44 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
       expect(mockApproveSegment).not.toHaveBeenCalled()
     })
 
-    it('should call rejectSegment when No Golf Shot button is clicked', () => {
+    it('should show confirmation dialog when No Golf Shot button is clicked, then reject on confirm', () => {
       render(<ClipReview onComplete={vi.fn()} />)
 
       const rejectButton = screen.getByRole('button', { name: /no golf shot/i })
       fireEvent.click(rejectButton)
 
+      // Should NOT reject immediately — confirmation dialog should appear
+      expect(mockRejectSegment).not.toHaveBeenCalled()
+      expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument()
+
+      // Confirm the dialog
+      fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
       expect(mockRejectSegment).toHaveBeenCalledWith('shot-1')
     })
 
-    it('should handle Enter key for approval (with trajectory)', () => {
-      // This test verifies the keyboard shortcut still works
+    it('should show confirmation dialog on Escape key, then reject on confirm', () => {
+      // This test verifies the keyboard shortcut still works (via confirmation)
       render(<ClipReview onComplete={vi.fn()} />)
 
-      // Escape key should reject
+      // Escape key should show dialog, not reject immediately
       fireEvent.keyDown(window, { key: 'Escape' })
+      expect(mockRejectSegment).not.toHaveBeenCalled()
+      expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument()
+
+      // Confirm the dialog
+      fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
       expect(mockRejectSegment).toHaveBeenCalledWith('shot-1')
     })
 
-    it('should handle Escape key for rejection', () => {
+    it('should handle Escape key for rejection (with confirmation)', () => {
       render(<ClipReview onComplete={vi.fn()} />)
 
       fireEvent.keyDown(window, { key: 'Escape' })
+      // Dialog appears, not immediate rejection
+      expect(mockRejectSegment).not.toHaveBeenCalled()
+
+      // Confirm
+      fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
       expect(mockRejectSegment).toHaveBeenCalledWith('shot-1')
     })
 
