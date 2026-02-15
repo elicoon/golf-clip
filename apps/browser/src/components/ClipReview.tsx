@@ -1167,7 +1167,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <div className="review-complete-icon">✓</div>
         <h2>All shots have been reviewed!</h2>
         <p className="review-complete-summary">
-          {approvedCount} shots approved
+          {approvedCount} {approvedCount === 1 ? 'shot' : 'shots'} approved
         </p>
         {approvedCount > 0 && (
           <div className="export-quality-selector">

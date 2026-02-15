@@ -15,6 +15,7 @@ export default function App() {
   // Get active video state
   const activeVideo = activeVideoId ? videos.get(activeVideoId) : undefined
   const hasVideos = videos.size > 0
+  const approvedCount = (activeVideo?.segments || segments).filter(s => s.approved === 'approved').length
 
   const handleReviewComplete = () => {
     setView('export')
@@ -81,7 +82,7 @@ export default function App() {
             <div className="review-complete-icon">OK</div>
             <h2>Review Complete!</h2>
             <p className="export-message">
-              {(activeVideo?.segments || segments).filter(s => s.approved === 'approved').length} shots approved
+              {approvedCount} {approvedCount === 1 ? 'shot' : 'shots'} approved
             </p>
             <button onClick={handleReset} className="btn-primary btn-large">
               Process Another Video
