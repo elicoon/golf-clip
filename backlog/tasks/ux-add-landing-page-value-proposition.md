@@ -1,6 +1,6 @@
 ### Add Value Proposition Text to Landing Page
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** feature
 - **Scope:** small
