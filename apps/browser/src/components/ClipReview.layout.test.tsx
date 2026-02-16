@@ -159,7 +159,7 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
       expect(reviewActionsIndex).toBeLessThan(videoContainerIndex)
     })
 
-    it('should position review-actions after Scrubber but before video-container', () => {
+    it('should position review-actions before video-container, transport/scrubber after', () => {
       render(<ClipReview onComplete={vi.fn()} />)
 
       const clipReview = document.querySelector('.clip-review')
@@ -173,11 +173,14 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
       )
       const reviewActionsIndex = children.findIndex(el => el.classList.contains('review-actions'))
       const videoContainerIndex = children.findIndex(el => el.classList.contains('video-container'))
+      const transportIndex = children.findIndex(el => el.className.includes('video-transport-controls'))
 
-      // Expected order: Scrubber -> review-actions -> video-container
-      expect(scrubberIndex).toBeGreaterThanOrEqual(0)
-      expect(reviewActionsIndex).toBeGreaterThan(scrubberIndex)
-      expect(videoContainerIndex).toBeGreaterThan(reviewActionsIndex)
+      // Expected order: review-actions -> video-container -> transport -> scrubber
+      // (controls are below the video)
+      expect(reviewActionsIndex).toBeGreaterThanOrEqual(0)
+      expect(reviewActionsIndex).toBeLessThan(videoContainerIndex)
+      expect(videoContainerIndex).toBeLessThan(transportIndex)
+      expect(transportIndex).toBeLessThan(scrubberIndex)
     })
 
     it('should have review-actions within first 5 elements of clip-review', () => {
@@ -467,31 +470,31 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
 
       // Expected structure (in order):
       // 1. review-header
-      // 2. video-transport-controls
-      // 3. scrubber-container (Scrubber component)
-      // 4. review-actions (ABOVE video)
-      // 5. marking-instruction
-      // 6. video-container
+      // 2. review-actions (ABOVE video)
+      // 3. marking-instruction
+      // 4. video-container
+      // 5. video-transport-controls (BELOW video)
+      // 6. scrubber-container (Scrubber component, BELOW video)
       // ... other elements below
 
       const headerIndex = classNames.findIndex(c => c.includes('review-header'))
-      const transportIndex = classNames.findIndex(c => c.includes('video-transport-controls'))
-      const scrubberIndex = classNames.findIndex(c => c.includes('scrubber-container'))
       const reviewActionsIndex = classNames.findIndex(c => c.includes('review-actions'))
       const videoContainerIndex = classNames.findIndex(c => c.includes('video-container'))
+      const transportIndex = classNames.findIndex(c => c.includes('video-transport-controls'))
+      const scrubberIndex = classNames.findIndex(c => c.includes('scrubber-container'))
 
       // All should exist
       expect(headerIndex).toBeGreaterThanOrEqual(0)
-      expect(transportIndex).toBeGreaterThanOrEqual(0)
-      expect(scrubberIndex).toBeGreaterThanOrEqual(0)
       expect(reviewActionsIndex).toBeGreaterThanOrEqual(0)
       expect(videoContainerIndex).toBeGreaterThanOrEqual(0)
+      expect(transportIndex).toBeGreaterThanOrEqual(0)
+      expect(scrubberIndex).toBeGreaterThanOrEqual(0)
 
-      // Verify order
-      expect(headerIndex).toBeLessThan(transportIndex)
-      expect(transportIndex).toBeLessThan(scrubberIndex)
-      expect(scrubberIndex).toBeLessThan(reviewActionsIndex)
+      // Verify order: header -> actions -> video -> transport -> scrubber
+      expect(headerIndex).toBeLessThan(reviewActionsIndex)
       expect(reviewActionsIndex).toBeLessThan(videoContainerIndex)
+      expect(videoContainerIndex).toBeLessThan(transportIndex)
+      expect(transportIndex).toBeLessThan(scrubberIndex)
     })
 
     it('should not have redundant navigation sections', () => {

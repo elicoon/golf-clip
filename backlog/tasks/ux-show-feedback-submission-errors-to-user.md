@@ -1,6 +1,6 @@
 ### Show Feedback Submission Errors to User Instead of Silent Console Logs
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** bug-fix
 - **Scope:** small

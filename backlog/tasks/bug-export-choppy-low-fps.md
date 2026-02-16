@@ -1,7 +1,7 @@
 # Bug: Export Choppy / Low FPS
 
 **Date:** 2026-02-02
-**Status:** CLOSED (Cannot Reproduce)
+**Status:** done
 **Severity:** Critical
 **Component:** Browser Export Pipeline
 **Closed:** 2026-02-04
