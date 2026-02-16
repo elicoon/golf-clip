@@ -232,13 +232,12 @@ When you mark landing:
 - SSE progress bar during trajectory generation
 - Detection warnings display for troubleshooting
 - "Show Tracer" checkbox to toggle trajectory visibility
-- "Render Shot Tracers" checkbox for export
-- "No golf shot" (red) / "Next" buttons for shot review
+- "No Golf Shot" (red) / "Approve Shot" buttons for shot review
 - "Accept" / "Configure" buttons for tracer review
 - Markers rendered via TrajectoryEditor: landing (arrow), apex (diamond)
 - Custom SVG cursors matching marker icons during placement
 - Autoplay: video seeks to clip start and plays after trajectory generation completes
-- Video zoom (1x-4x) with pan support when zoomed in
+- FPS-aware frame stepping via `requestVideoFrameCallback`
 
 **PointStatusTracker.tsx** - Visual step progress indicator:
 - Shows 2 main steps: "Mark Landing" and "Review Tracer"
@@ -308,46 +307,37 @@ Motion tracking in first 200ms post-impact:
 
 ### Overview
 
-The tracer animation is carefully tuned to match real golf ball physics, making it look natural and professional.
+The tracer animation draws a progressive trajectory line as the video plays, using quadratic Bezier curves for smooth ball flight paths.
 
-### Physics-Based Timing
+### Trajectory Generation (`trajectory-generator.ts`)
 
-Research on actual golf ball flight shows:
-- Ball launches at ~160 mph, lands at ~70 mph
-- Ball covers most distance early (when moving fast)
-- Descent is nearly constant speed (drag limits acceleration)
+Trajectories are generated as quadratic Bezier curves:
 
-### Animation Model
+- **P0** = origin (ball position at impact, default bottom-center)
+- **P2** = landing (user-marked position)
+- **Apex** = midpoint raised by height multiplier (low: 0.15, medium: 0.25, high: 0.35)
+- **P1 (control point)** = calculated so curve passes through apex at t=0.5: `P1 = 2*apex - 0.5*(P0 + P2)`
 
-| Flight Phase | % of Time | % of Distance | Reason |
-|--------------|-----------|---------------|--------|
-| Initial burst | 0-25% | 0-45% | Ball at peak velocity (160+ mph) |
-| Approaching apex | 25-50% | 45-55% | Decelerating due to drag + gravity |
-| Descent | 50-100% | 55-100% | Nearly linear (terminal velocity ~72 mph limits acceleration) |
+Shot shape adds lateral curve offset to the control point (hook: -0.15 through slice: +0.15).
 
-### Easing Functions
+### Animation Timing (`TrajectoryEditor.tsx`)
 
-Implementation uses:
-- `easeOutQuart` for explosive start
-- `easeInOutQuad` for smooth apex transition
-- 90% linear + 10% ease-out for natural descent
+The animation maps video playback time to trajectory progress using a monotonic easing blend:
 
 ```typescript
-// Stage 1: Explosive start
-if (t <= 0.25) {
-  return 0.45 * easeOutQuart(t / 0.25)
-}
-
-// Stage 2: Approaching apex
-if (t <= 0.50) {
-  return 0.45 + 0.10 * easeInOutQuad((t - 0.25) / 0.25)
-}
-
-// Stage 3: Near-linear descent
-const linearPart = ((t - 0.50) / 0.50) * 0.9
-const easePart = easeOut((t - 0.50) / 0.50) * 0.1
-return 0.55 + 0.45 * (linearPart + easePart)
+// easeOutCubic: fast start, slowing down
+const easeOut = 1 - Math.pow(1 - t, 3)
+const linear = t
+// Blend from 70% easeOut (early) toward 30% easeOut (late)
+const easeWeight = 0.7 - 0.4 * t
+const progress = easeOut * easeWeight + linear * (1 - easeWeight)
 ```
+
+This creates a natural ball flight feel: fast off the clubface, decelerating toward landing.
+
+### Design Note: Original 3-Stage Easing Model
+
+An earlier design proposed a more sophisticated 3-stage easing model based on real golf ball physics research (160mph launch, 72mph terminal velocity), with separate `easeOutQuart`, `easeInOutQuad`, and linear+ease stages. The current implementation simplified this to the single easeOutCubic/linear blend above, which produces a similar visual effect with less complexity.
 
 ### Technical Details
 
@@ -379,11 +369,9 @@ The review interface lets you verify detected shots, adjust clip boundaries, and
 ### Components
 
 **Video Player**
-- Streams video from backend via Range requests (supports seeking)
+- Client-side video playback (no backend streaming required)
 - Canvas overlay for trajectory rendering
 - Click-to-mark functionality for landing points
-- Zoom controls (1x-4x) for precise marker placement
-- Pan support when zoomed in
 
 **Timeline Scrubber**
 - Draggable start/end handles
@@ -406,32 +394,32 @@ The review interface lets you verify detected shots, adjust clip boundaries, and
 | Key | Action |
 |-----|--------|
 | Space | Play/Pause |
-| Left Arrow | Previous frame |
-| Right Arrow | Next frame |
+| Left Arrow | Previous frame (FPS-aware) |
+| Right Arrow | Next frame (FPS-aware) |
 | Shift+Left Arrow | Back 1 second |
 | Shift+Right Arrow | Forward 1 second |
+| Up Arrow | Previous shot |
+| Down Arrow | Next shot |
 | [ | Set start to current time |
 | ] | Set end to current time |
-| + / - | Zoom in/out |
-| 0 | Reset zoom |
+| I | Set impact time to current position |
 | Enter | Accept shot |
 | Esc | No golf shot (skip) |
 
 ### State Management
 
-Uses Zustand for state (`stores/appStore.ts`):
-- `shots`: Array of detected shots with boundaries and confidence
-- `currentShotIndex`: Which shot is being reviewed
-- `trajectory`: Current trajectory data for rendering
+Uses Zustand for state (`stores/processingStore.ts`):
+- `videos`: Map of video states with segments, trajectories, and approval status
+- `activeVideoId`: Which video is currently being reviewed
+- `segments`: Legacy single-video segments array
 
-### Video Zoom Controls
+### Frame Stepping
 
-The review interface supports zooming for precise marker placement:
-- **Zoom in/out**: +/- buttons or keyboard shortcuts
-- **Pan**: Click and drag when zoomed in (cursor changes to grab)
-- **Reset**: Click reset button or press 0 to return to 1x
-- Zoom range: 1x to 4x in 0.5x increments
-- All marking functionality works at any zoom level
+Frame step buttons (⏩/⏪) and arrow keys use FPS-aware stepping:
+- Video FPS is auto-detected via `requestVideoFrameCallback` on first frame load
+- Steps snap to frame boundaries: `Math.floor(currentTime / frameDuration + epsilon) + 1`
+- Falls back to 30fps if detection fails
+- Each click produces a distinct visible video frame
 
 ---
 
@@ -709,11 +697,15 @@ origin_feedback (id, job_id FK, shot_id, auto_origin vs manual_origin, error met
 
 ---
 
+## Implemented Enhancements
+
+- **Multi-video upload**: Upload multiple videos at once via drag-and-drop or file picker. Videos are queued and processed sequentially. `VideoQueue.tsx` shows queue status in the header.
+
 ## Future Enhancements
 
-- **Multi-video upload**: Allow users to upload multiple videos at once
 - **Parallel processing**: Process uploaded videos in parallel instead of sequentially
 - **Automatic Landing Detection**: Computer vision to find ball landing
 - **Multiple Tracer Styles**: Different colors, effects, animations
 - **Hole Overlays**: Display hole number, yardage, shot count
 - **Cloud Processing**: Offload heavy processing to cloud
+- **Video Zoom Controls**: Zoom (1x-4x) with pan support for precise marker placement during review
