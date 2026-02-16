@@ -613,22 +613,34 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
   const stepFrameForward = useCallback(() => {
     if (!videoRef.current) return
+    videoRef.current.pause()
+    setIsPlaying(false)
+    if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
     videoRef.current.currentTime += 1/60
   }, [])
 
   const stepFrameBackward = useCallback(() => {
     if (!videoRef.current) return
+    videoRef.current.pause()
+    setIsPlaying(false)
+    if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
     videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 1/60)
   }, [])
 
   const skipToStart = useCallback(() => {
     if (!videoRef.current || !currentShot) return
+    videoRef.current.pause()
+    setIsPlaying(false)
+    if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
     const clipStartInVideo = currentShot.clipStart - currentShot.startTime
     videoRef.current.currentTime = clipStartInVideo
   }, [currentShot])
 
   const skipToEnd = useCallback(() => {
     if (!videoRef.current || !currentShot) return
+    videoRef.current.pause()
+    setIsPlaying(false)
+    if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
     const clipEndInVideo = currentShot.clipEnd - currentShot.startTime
     videoRef.current.currentTime = clipEndInVideo
   }, [currentShot])
