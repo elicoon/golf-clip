@@ -1,5 +1,5 @@
 // apps/browser/src/components/VideoDropzone.tsx
-import { useCallback, useState, useRef } from 'react'
+import { useCallback, useState, useRef, useEffect } from 'react'
 import { useProcessingStore } from '../stores/processingStore'
 import { processVideoFile } from '../lib/streaming-processor'
 import { loadFFmpeg, detectVideoCodec, transcodeHevcToH264 } from '../lib/ffmpeg-client'
@@ -81,6 +81,13 @@ export function VideoDropzone() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
   const transcodeAbortRef = useRef<AbortController | null>(null)
+
+  // Auto-dismiss error after 5 seconds
+  useEffect(() => {
+    if (!error) return
+    const timer = setTimeout(() => setError(null), 5000)
+    return () => clearTimeout(timer)
+  }, [error])
 
   const validateFile = (file: File): string | null => {
     const hasValidType = ACCEPTED_TYPES.includes(file.type)
@@ -204,17 +211,26 @@ export function VideoDropzone() {
     }
 
     // Process each file - don't await, let them run in parallel
+    const skippedFiles: string[] = []
+    let validCount = 0
     for (const file of files) {
       const validationError = validateFile(file)
       if (validationError) {
-        // For multi-file, show error but continue with valid files
-        console.warn(`Skipping ${file.name}: ${validationError}`)
+        skippedFiles.push(file.name)
         continue
       }
 
+      validCount++
       const videoId = generateVideoId()
       // Fire and forget - don't block
       processFileInBackground(file, videoId)
+    }
+
+    // Show error for invalid files
+    if (skippedFiles.length > 0 && validCount === 0) {
+      setError('Unsupported file type. Please select a video file (MP4, MOV, M4V).')
+    } else if (skippedFiles.length > 0) {
+      setError(`Skipped ${skippedFiles.length} unsupported file(s): ${skippedFiles.join(', ')}`)
     }
   }, [])
 
@@ -222,16 +238,28 @@ export function VideoDropzone() {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
 
+    setError(null)
+
     // Process each file - don't await
+    const skippedFiles: string[] = []
+    let validCount = 0
     for (const file of files) {
       const validationError = validateFile(file)
       if (validationError) {
-        console.warn(`Skipping ${file.name}: ${validationError}`)
+        skippedFiles.push(file.name)
         continue
       }
 
+      validCount++
       const videoId = generateVideoId()
       processFileInBackground(file, videoId)
+    }
+
+    // Show error for invalid files
+    if (skippedFiles.length > 0 && validCount === 0) {
+      setError('Unsupported file type. Please select a video file (MP4, MOV, M4V).')
+    } else if (skippedFiles.length > 0) {
+      setError(`Skipped ${skippedFiles.length} unsupported file(s): ${skippedFiles.join(', ')}`)
     }
 
     e.target.value = ''
