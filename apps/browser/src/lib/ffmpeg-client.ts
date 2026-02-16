@@ -58,8 +58,35 @@ export async function extractAudioFromSegment(
       outputName
     )
 
-    const exitCode = await ffmpeg.exec(args)
+    // Capture FFmpeg log output to detect specific failure reasons
+    const logMessages: string[] = []
+    const logHandler = ({ message }: { message: string }) => {
+      logMessages.push(message)
+    }
+    ffmpeg.on('log', logHandler)
+
+    let exitCode: number
+    try {
+      exitCode = await ffmpeg.exec(args)
+    } finally {
+      ffmpeg.off('log', logHandler)
+    }
+
     if (exitCode !== 0) {
+      // Check logs for audio-stream-related failures
+      const logText = logMessages.join('\n')
+      const noAudioPatterns = [
+        /does not contain any stream/i,
+        /Stream map.*does not match any stream/i,
+        /Output file.*does not contain any stream/i,
+      ]
+      const isNoAudio = noAudioPatterns.some(p => p.test(logText))
+      if (isNoAudio) {
+        console.warn('[ffmpeg-client] No audio track detected. FFmpeg logs:', logText)
+        throw new Error(
+          'This video has no audio track. GolfClip needs audio to detect golf shots.'
+        )
+      }
       throw new Error(`FFmpeg failed with exit code ${exitCode}`)
     }
 

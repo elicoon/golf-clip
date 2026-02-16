@@ -216,6 +216,104 @@ describe('FFmpegClient', () => {
     expect(typeof module.extractVideoSegment).toBe('function')
   })
 
+  it('throws friendly error when video has no audio track', async () => {
+    const listeners: Record<string, ((...args: unknown[]) => void)[]> = {}
+    vi.doMock('@ffmpeg/ffmpeg', () => ({
+      FFmpeg: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+        this.load = vi.fn().mockResolvedValue(undefined)
+        this.on = vi.fn().mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
+          if (!listeners[event]) listeners[event] = []
+          listeners[event].push(handler)
+        })
+        this.off = vi.fn().mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
+          listeners[event] = (listeners[event] || []).filter(h => h !== handler)
+        })
+        this.writeFile = vi.fn().mockResolvedValue(undefined)
+        this.exec = vi.fn().mockImplementation(() => {
+          // Simulate FFmpeg logging a no-audio error before returning non-zero
+          for (const h of listeners['log'] || []) {
+            h({ message: 'Output file #0 does not contain any stream' })
+          }
+          return Promise.resolve(1)
+        })
+        this.readFile = vi.fn()
+        this.deleteFile = vi.fn().mockResolvedValue(undefined)
+      }),
+    }))
+    vi.doMock('@ffmpeg/util', () => ({
+      toBlobURL: vi.fn().mockResolvedValue('blob:mock'),
+      fetchFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+    }))
+
+    const { loadFFmpeg, extractAudioFromSegment } = await import('./ffmpeg-client')
+    await loadFFmpeg()
+
+    const testBlob = new Blob(['test'], { type: 'video/mp4' })
+    await expect(extractAudioFromSegment(testBlob)).rejects.toThrow(
+      'This video has no audio track. GolfClip needs audio to detect golf shots.'
+    )
+  })
+
+  it('throws generic error for non-audio FFmpeg failures', async () => {
+    vi.doMock('@ffmpeg/ffmpeg', () => ({
+      FFmpeg: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+        this.load = vi.fn().mockResolvedValue(undefined)
+        this.on = vi.fn()
+        this.off = vi.fn()
+        this.writeFile = vi.fn().mockResolvedValue(undefined)
+        this.exec = vi.fn().mockResolvedValue(1) // Non-zero but no audio-related logs
+        this.readFile = vi.fn()
+        this.deleteFile = vi.fn().mockResolvedValue(undefined)
+      }),
+    }))
+    vi.doMock('@ffmpeg/util', () => ({
+      toBlobURL: vi.fn().mockResolvedValue('blob:mock'),
+      fetchFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+    }))
+
+    const { loadFFmpeg, extractAudioFromSegment } = await import('./ffmpeg-client')
+    await loadFFmpeg()
+
+    const testBlob = new Blob(['test'], { type: 'video/mp4' })
+    await expect(extractAudioFromSegment(testBlob)).rejects.toThrow(
+      'FFmpeg failed with exit code 1'
+    )
+  })
+
+  it('cleans up log listener after audio extraction (even on error)', async () => {
+    const listeners: Record<string, ((...args: unknown[]) => void)[]> = {}
+    const mockOff = vi.fn().mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
+      listeners[event] = (listeners[event] || []).filter(h => h !== handler)
+    })
+    vi.doMock('@ffmpeg/ffmpeg', () => ({
+      FFmpeg: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+        this.load = vi.fn().mockResolvedValue(undefined)
+        this.on = vi.fn().mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
+          if (!listeners[event]) listeners[event] = []
+          listeners[event].push(handler)
+        })
+        this.off = mockOff
+        this.writeFile = vi.fn().mockResolvedValue(undefined)
+        this.exec = vi.fn().mockResolvedValue(1)
+        this.readFile = vi.fn()
+        this.deleteFile = vi.fn().mockResolvedValue(undefined)
+      }),
+    }))
+    vi.doMock('@ffmpeg/util', () => ({
+      toBlobURL: vi.fn().mockResolvedValue('blob:mock'),
+      fetchFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+    }))
+
+    const { loadFFmpeg, extractAudioFromSegment } = await import('./ffmpeg-client')
+    await loadFFmpeg()
+
+    const testBlob = new Blob(['test'], { type: 'video/mp4' })
+    await expect(extractAudioFromSegment(testBlob)).rejects.toThrow()
+
+    // Verify log listener was cleaned up
+    expect(mockOff).toHaveBeenCalledWith('log', expect.any(Function))
+  })
+
   it('throws when extracting video segment without loading FFmpeg first', async () => {
     vi.resetModules()
     const { extractVideoSegment } = await import('./ffmpeg-client')
