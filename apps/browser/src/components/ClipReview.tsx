@@ -99,6 +99,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   // Video playback error state
   const [videoError, setVideoError] = useState<string | null>(null)
 
+  // Feedback submission error state (non-blocking)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
+  const feedbackErrorTimerRef = useRef<number | null>(null)
+
   // Confirm dialog state for destructive actions (Escape / "No Golf Shot")
   const [showRejectConfirm, setShowRejectConfirm] = useState(false)
 
@@ -254,11 +258,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     }
   }, [currentShot, autoLoopEnabled])
 
-  // Cleanup auto-close timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       if (autoCloseTimerRef.current) {
         clearTimeout(autoCloseTimerRef.current)
+      }
+      if (feedbackErrorTimerRef.current) {
+        clearTimeout(feedbackErrorTimerRef.current)
       }
     }
   }, [])
@@ -271,6 +278,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setReviewStep('marking_landing')
     setTrajectory(null)
     setVideoError(null) // Clear video error on shot change
+    setFeedbackError(null) // Clear feedback error on shot change
     setShowRejectConfirm(false)
     setImpactTimeAdjusted(false)
     // Reset feedback tracking for new shot
@@ -284,6 +292,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       }
     }
   }, [currentShot?.id])
+
+  // Show a non-blocking feedback error that auto-dismisses after 6 seconds
+  const showFeedbackError = useCallback((message: string) => {
+    setFeedbackError(message)
+    if (feedbackErrorTimerRef.current) {
+      clearTimeout(feedbackErrorTimerRef.current)
+    }
+    feedbackErrorTimerRef.current = window.setTimeout(() => {
+      setFeedbackError(null)
+    }, 6000)
+  }, [])
 
   // Handle video playback errors
   const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -529,9 +548,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     // Prevent approval before landing is marked and tracer reviewed
     if (reviewStep !== 'reviewing') return
 
-    // Submit shot feedback (TRUE_POSITIVE = user confirmed this is a real golf shot)
+    // Submit feedback asynchronously (non-blocking — shot is approved regardless)
     const initialTiming = initialClipTimingRef.current
-    submitShotFeedback({
+    const shotFeedbackPromise = Promise.resolve(submitShotFeedback({
       shotIndex: currentIndex,
       feedbackType: 'TRUE_POSITIVE',
       confidence: currentShot.confidence,
@@ -539,12 +558,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       clipEnd: initialTiming?.clipEnd,
       userAdjustedStart: currentShot.clipStart !== initialTiming?.clipStart ? currentShot.clipStart : undefined,
       userAdjustedEnd: currentShot.clipEnd !== initialTiming?.clipEnd ? currentShot.clipEnd : undefined,
-    })
+    }))
 
     // Submit tracer feedback if user set a landing point
+    let tracerFeedbackPromise
     if (landingPoint && trajectory) {
       const feedbackType = tracerModifiedRef.current ? 'CONFIGURED' : 'AUTO_ACCEPTED'
-      submitTracerFeedback({
+      tracerFeedbackPromise = Promise.resolve(submitTracerFeedback({
         shotIndex: currentIndex,
         feedbackType,
         autoParams: initialTracerParamsRef.current || undefined,
@@ -560,15 +580,23 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           flightTime: tracerConfig.flightTime,
         },
         tracerStyle: tracerStyle,
-      })
+      }))
     } else {
       // User approved without setting up tracer - skip feedback
-      submitTracerFeedback({
+      tracerFeedbackPromise = Promise.resolve(submitTracerFeedback({
         shotIndex: currentIndex,
         feedbackType: 'SKIP',
         finalParams: {},
-      })
+      }))
     }
+
+    // Check feedback results and show error if any failed
+    Promise.all([shotFeedbackPromise, tracerFeedbackPromise]).then(([shotResult, tracerResult]) => {
+      const failedResult = shotResult?.success === false ? shotResult : tracerResult?.success === false ? tracerResult : null
+      if (failedResult) {
+        showFeedbackError(failedResult.error || "Feedback couldn't be saved — check your connection")
+      }
+    })
 
     approveSegment(currentShot.id)
 
@@ -578,19 +606,23 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     }
     // When last shot is approved, component will naturally show review-complete UI
     // User can then click the export button when ready
-  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, landingPoint, trajectory, originPoint, apexPoint, tracerConfig, tracerStyle, reviewStep])
+  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, landingPoint, trajectory, originPoint, apexPoint, tracerConfig, tracerStyle, reviewStep, showFeedbackError])
 
   const handleReject = useCallback(() => {
     if (!currentShot) return
 
-    // Submit shot feedback (FALSE_POSITIVE = detector incorrectly identified this as a golf shot)
+    // Submit shot feedback asynchronously (non-blocking — shot is rejected regardless)
     const initialTiming = initialClipTimingRef.current
-    submitShotFeedback({
+    Promise.resolve(submitShotFeedback({
       shotIndex: currentIndex,
       feedbackType: 'FALSE_POSITIVE',
       confidence: currentShot.confidence,
       clipStart: initialTiming?.clipStart,
       clipEnd: initialTiming?.clipEnd,
+    })).then((result) => {
+      if (result && !result.success) {
+        showFeedbackError(result.error || "Feedback couldn't be saved — check your connection")
+      }
     })
 
     rejectSegment(currentShot.id)
@@ -600,7 +632,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     }
     // When last shot is rejected, component will naturally show review-complete UI
     // User can then click the export button when ready (if any shots were approved)
-  }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment])
+  }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment, showFeedbackError])
 
   // Wrapper that shows confirmation dialog instead of rejecting immediately
   const handleRejectWithConfirm = useCallback(() => {
@@ -910,6 +942,20 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           ✓ Approve Shot
         </button>
       </div>
+
+      {/* Non-blocking feedback error banner */}
+      {feedbackError && (
+        <div className="feedback-error" role="alert">
+          <span>{feedbackError}</span>
+          <button
+            className="error-dismiss"
+            onClick={() => setFeedbackError(null)}
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Instruction banner based on review step */}
       <div className="marking-instruction">

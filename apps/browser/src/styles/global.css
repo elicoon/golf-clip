@@ -1673,10 +1673,13 @@ kbd {
 }
 
 .feedback-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   color: var(--color-danger);
   font-size: 0.875rem;
   margin-bottom: var(--spacing-md);
-  padding: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
   background-color: var(--color-danger-dim);
   border-radius: var(--border-radius-sm);
 }

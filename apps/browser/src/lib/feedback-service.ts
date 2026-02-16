@@ -42,11 +42,16 @@ const SESSION_ID = (typeof crypto !== 'undefined' && crypto.randomUUID)
   ? crypto.randomUUID()
   : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
 
-export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId'>): Promise<void> {
+export interface FeedbackResult {
+  success: boolean
+  error?: string
+}
+
+export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId'>): Promise<FeedbackResult> {
   const client = getSupabaseClient()
   if (!client) {
     console.warn('Supabase not configured, skipping feedback submission')
-    return
+    return { success: true }
   }
 
   const { error } = await client.from('shot_feedback').insert({
@@ -64,14 +69,17 @@ export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId
 
   if (error) {
     console.error('Failed to submit shot feedback:', error)
+    return { success: false, error: "Feedback couldn't be saved — check your connection" }
   }
+
+  return { success: true }
 }
 
-export async function submitTracerFeedback(feedback: Omit<TracerFeedback, 'sessionId'>): Promise<void> {
+export async function submitTracerFeedback(feedback: Omit<TracerFeedback, 'sessionId'>): Promise<FeedbackResult> {
   const client = getSupabaseClient()
   if (!client) {
     console.warn('Supabase not configured, skipping feedback submission')
-    return
+    return { success: true }
   }
 
   const { error } = await client.from('tracer_feedback').insert({
@@ -103,5 +111,8 @@ export async function submitTracerFeedback(feedback: Omit<TracerFeedback, 'sessi
 
   if (error) {
     console.error('Failed to submit tracer feedback:', error)
+    return { success: false, error: "Feedback couldn't be saved — check your connection" }
   }
+
+  return { success: true }
 }
