@@ -61,53 +61,32 @@ graph TB
 
 ```
 golf-clip/
-├── packages/
-│   ├── frontend/              # Shared React app (TypeScript + Vite)
-│   │   └── src/
-│   │       ├── App.tsx
-│   │       ├── components/    # UI components
-│   │       └── stores/        # Zustand state management
-│   ├── detection/             # Shared ML/detection code (Python)
-│   │   └── src/golfclip_detection/
-│   └── api-schemas/           # Shared Pydantic schemas
 ├── apps/
-│   ├── desktop/               # Desktop app (Tauri + SQLite)
+│   ├── browser/               # ← ACTIVE: Production web app (Vercel)
+│   │   └── src/
+│   │       ├── App.tsx        # View routing (upload/review/export)
+│   │       ├── components/    # UI components
+│   │       ├── stores/        # Zustand state management
+│   │       └── lib/           # Processing pipeline, trajectory gen
+│   ├── desktop/               # PAUSED: Desktop app (Tauri + SQLite)
 │   │   └── backend/
 │   │       ├── api/           # FastAPI routes
 │   │       ├── core/          # Database, config
 │   │       ├── detection/     # Shot detection algorithms
 │   │       ├── models/        # CRUD operations
 │   │       └── processing/    # Video/tracer rendering
-│   └── webapp/                # Cloud webapp (PostgreSQL + R2)
+│   └── webapp/                # PAUSED: Cloud webapp (PostgreSQL + R2)
 │       └── backend/
+├── packages/
+│   ├── frontend/              # PAUSED: Tauri desktop frontend
+│   ├── detection/             # PAUSED: Shared ML/detection code (Python)
+│   └── api-schemas/           # PAUSED: Shared Pydantic schemas
 ├── scripts/                   # Development scripts
 ├── tests/                     # Root-level tests
 └── docs/                      # Documentation
 ```
 
-### Package Relationships
-
-```mermaid
-graph LR
-    subgraph "Packages"
-        F[frontend]
-        D[detection]
-        S[api-schemas]
-    end
-
-    subgraph "Apps"
-        Desktop[desktop/backend]
-        Webapp[webapp/backend]
-    end
-
-    F --> Desktop
-    F --> Webapp
-    D --> Desktop
-    D --> Webapp
-    S --> Desktop
-    S --> Webapp
-    S --> F
-```
+**Note:** Only `apps/browser/` is actively developed. All other apps and packages are paused. The browser app does client-side processing (FFmpeg.js + Essentia.js) and does not depend on the paused packages.
 
 ---
 
@@ -465,31 +444,40 @@ The browser app exports clips client-side using WebCodecs API with a two-pass re
 graph TB
     App[App.tsx]
 
-    subgraph "Views"
+    subgraph "Views (state-based routing)"
         VD[VideoDropzone]
-        PV[ProcessingView]
         CR[ClipReview]
-        EC[ExportComplete]
+    end
+
+    subgraph "Header Components"
+        VQ[VideoQueue]
+        RA[ReviewActions]
     end
 
     subgraph "Clip Review Components"
         TE[TrajectoryEditor]
         SC[Scrubber]
-        PST[PointStatusTracker]
         TCP[TracerConfigPanel]
-        TFM[TracerFeedbackModal]
+        EOP[ExportOptionsPanel]
+    end
+
+    subgraph "Shared Components"
+        CD[ConfirmDialog]
+        HTM[HevcTranscodeModal]
     end
 
     App --> VD
-    App --> PV
     App --> CR
-    App --> EC
+    App --> VQ
+    App --> RA
 
     CR --> TE
     CR --> SC
-    CR --> PST
     CR --> TCP
-    CR --> TFM
+    CR --> EOP
+
+    VD --> HTM
+    CR --> CD
 
     style App fill:#e3f2fd
     style CR fill:#fff3e0
@@ -503,44 +491,43 @@ graph TB
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  App.tsx                                                                     │
-│  ├── View routing based on job status                                        │
-│  ├── API URL configuration                                                   │
-│  └── Global error handling                                                   │
+│  ├── State-based view routing: 'upload' | 'review' | 'export'               │
+│  ├── About box on landing page                                               │
+│  └── Inline export-complete view (not a separate component)                  │
 │                                                                              │
 │  VideoDropzone.tsx                                                           │
 │  ├── File upload via drag-and-drop or click                                  │
-│  ├── Multi-video queue support                                               │
-│  └── Dev mode: manual path entry                                             │
-│                                                                              │
-│  ProcessingView.tsx                                                          │
-│  ├── SSE progress tracking                                                   │
-│  ├── Progress bar with step names                                            │
-│  └── Cancel button                                                           │
+│  ├── Multi-video queue support (multiple files at once)                      │
+│  └── HEVC codec detection with transcode modal                               │
 │                                                                              │
 │  ClipReview.tsx                                                              │
-│  ├── Video player with seek controls                                         │
+│  ├── Video player with FPS-aware frame stepping                              │
 │  ├── Shot-by-shot navigation                                                 │
-│  ├── Landing point marking (direct click)                                    │
+│  ├── Landing point marking (direct click on video)                           │
 │  ├── Tracer toggle and configuration                                         │
-│  ├── Zoom (1x-4x) with pan support                                           │
-│  └── "No golf shot" / "Accept" / "Next" buttons                              │
+│  ├── Client-side export via WebCodecs (two-pass pipeline)                    │
+│  └── "No Golf Shot" / "Approve Shot" buttons                                │
+│                                                                              │
+│  ReviewActions.tsx                                                           │
+│  ├── Header-mounted approve/reject buttons                                   │
+│  ├── Shot progress display (e.g., "2 of 5")                                 │
+│  └── Shares handlers with ClipReview via reviewActionsStore                  │
+│                                                                              │
+│  VideoQueue.tsx                                                              │
+│  ├── Header-mounted video queue display                                      │
+│  └── Shows processing status per queued video                                │
 │                                                                              │
 │  TrajectoryEditor.tsx                                                        │
 │  ├── Canvas overlay on video                                                 │
 │  ├── Progressive line animation (grows with playback)                        │
-│  ├── Control points: green (detected) vs gray (interpolated)                 │
 │  ├── Custom SVG cursors (crosshair, arrow, diamond)                          │
 │  ├── Marker rendering: landing (↓), apex (◆)                                 │
 │  └── Safari fallback for canvas blur filter                                  │
 │                                                                              │
 │  Scrubber.tsx                                                                │
 │  ├── Timeline with clip boundaries                                           │
-│  ├── Strike/landing time markers                                             │
-│  └── Thumbnail preview on hover                                              │
-│                                                                              │
-│  PointStatusTracker.tsx                                                      │
-│  ├── Visual step progress: "Mark Landing" → "Review Tracer"                  │
-│  └── Current step highlighting                                               │
+│  ├── Draggable start/end handles                                             │
+│  └── Strike/landing time markers                                             │
 │                                                                              │
 │  TracerConfigPanel.tsx                                                       │
 │  ├── Starting line selector                                                  │
@@ -548,39 +535,51 @@ graph TB
 │  ├── Shot height buttons                                                     │
 │  └── Flight time slider                                                      │
 │                                                                              │
-│  ExportComplete.tsx                                                          │
-│  ├── Feedback collection UI (Good/Bad per clip)                              │
-│  └── Export status display                                                   │
+│  ExportOptionsPanel.tsx                                                      │
+│  ├── Resolution dropdown (Original / 1080p / 720p)                           │
+│  └── Tracer style options                                                    │
+│                                                                              │
+│  ConfirmDialog.tsx                                                           │
+│  └── Generic confirmation modal                                              │
+│                                                                              │
+│  HevcTranscodeModal.tsx                                                      │
+│  ├── HEVC/H.265 codec detection warning                                     │
+│  └── Transcode progress UI                                                   │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### State Management (Zustand)
 
-```typescript
-// appStore.ts - Central state structure
-interface AppState {
-  // Current job
-  currentJob: Job | null
-  shots: DetectedShot[]
-  trajectories: Record<number, Trajectory>
+Two stores manage frontend state:
 
-  // Video queue for multi-video upload
-  videoQueue: QueuedVideo[]
-  currentQueueIndex: number
+**processingStore.ts** — Central state for video processing and review:
+```typescript
+interface ProcessingState {
+  // Multi-video support
+  videos: Map<VideoId, VideoState>  // Per-video state (segments, status, trajectories)
+  activeVideoId: VideoId | null     // Currently active video
+
+  // Legacy single-video support
+  status: ProcessingStatus
+  segments: Segment[]               // Detected shots with approval state
 
   // Actions
-  setCurrentJob: (job: Job | null) => void
-  setShots: (shots: DetectedShot[]) => void
-  updateShot: (id: number, updates: Partial<DetectedShot>) => void
-  setTrajectory: (shotId: number, trajectory: Trajectory) => void
-  clearTrajectories: () => void
+  addVideo: (id, file, url) => void
+  updateVideoSegment: (videoId, segmentIndex, updates) => void
+  setSegmentTrajectory: (videoId, segmentIndex, trajectory) => void
+  // ... reset, queue management
+}
+```
 
-  // Queue actions
-  setVideoQueue: (videos: QueuedVideo[]) => void
-  addToQueue: (videos: QueuedVideo[]) => void
-  advanceQueue: () => void
-  clearQueue: () => void
+**reviewActionsStore.ts** — Bridges ClipReview and header ReviewActions:
+```typescript
+interface ReviewActionsState {
+  handleApprove: (() => void) | null  // Registered by ClipReview
+  handleReject: (() => void) | null
+  canApprove: boolean                 // Landing marked + tracer reviewed
+  currentIndex: number                // Shot progress (e.g., 2 of 5)
+  totalShots: number
 }
 ```
 
@@ -846,7 +845,7 @@ flowchart LR
 | Database | SQLite + aiosqlite | Local persistence (async) |
 | Line Detection | LSD, Hough (OpenCV) | Shaft detection |
 
-### Frontend
+### Frontend (apps/browser/)
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
@@ -854,10 +853,12 @@ flowchart LR
 | Language | TypeScript | Type safety |
 | Build Tool | Vite | Fast dev server, bundling |
 | State Management | Zustand | Simple, performant state |
+| Audio Extraction | @ffmpeg/ffmpeg (FFmpeg.js) | Client-side audio extraction from video |
+| Audio Analysis | essentia.js | Client-side audio transient detection |
 | Canvas Rendering | HTML5 Canvas | Trajectory animation |
 | Video Playback | HTML5 Video | Native video controls |
 | Video Export | WebCodecs API | Hardware-accelerated encoding |
-| Frame Capture | requestVideoFrameCallback | Real-time frame capture at source fps |
+| Frame Capture | requestVideoFrameCallback | Real-time frame capture + FPS detection |
 | MP4 Muxing | mp4-muxer | Browser-side MP4 container creation |
 
 ### Desktop App
@@ -902,6 +903,11 @@ flowchart LR
 | POST | `/api/shots/{job_id}/update` | Update shot boundaries |
 | POST | `/api/export` | Export clips |
 | GET | `/api/export/{id}/status` | Export job status |
+| GET | `/api/jobs` | List all jobs |
+| DELETE | `/api/jobs/{job_id}` | Delete a job |
+| POST | `/api/cancel/{job_id}` | Cancel processing job |
+| GET | `/api/video` | Stream video (Range request support) |
+| GET | `/api/video-info` | Get video metadata |
 
 ### Trajectory
 
@@ -917,8 +923,19 @@ flowchart LR
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/feedback/{job_id}` | Submit shot feedback |
+| GET | `/api/feedback/{job_id}` | Get feedback for a job |
 | GET | `/api/feedback/export` | Export all feedback |
 | GET | `/api/feedback/stats` | Precision statistics |
 | POST | `/api/tracer-feedback/{job_id}` | Submit tracer feedback |
 | GET | `/api/tracer-feedback/export` | Export tracer feedback |
+| GET | `/api/tracer-feedback/stats` | Tracer feedback statistics |
+| GET | `/api/origin-feedback/stats` | Origin detection accuracy stats |
 | GET | `/api/origin-feedback/export` | Export origin feedback |
+
+### Database Maintenance
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/db/stats` | Database statistics |
+| POST | `/api/db/purge` | Purge old data |
+| GET | `/api/db/export` | Export database |
