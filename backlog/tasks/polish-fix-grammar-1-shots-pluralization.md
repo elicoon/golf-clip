@@ -1,6 +1,6 @@
 ### Fix "1 shots" Grammar Error — Pluralization Throughout UI
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** low
 - **Type:** bug-fix
 - **Scope:** small

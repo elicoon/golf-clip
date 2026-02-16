@@ -1,6 +1,6 @@
 ### Enforce Landing Mark Before Shot Approval
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** high
 - **Type:** bug-fix
 - **Scope:** small

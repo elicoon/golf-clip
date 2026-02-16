@@ -1,6 +1,6 @@
 ### Add Confirmation Dialogs for Destructive Actions (Escape Key + "No Golf Shot" Button)
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** high
 - **Type:** bug-fix
 - **Scope:** medium
@@ -11,11 +11,11 @@
 - **Updated:** 2026-02-14
 
 #### Acceptance Criteria
-- [ ] Pressing Escape during shot review shows a confirmation dialog ("Skip this shot?") before rejecting
-- [ ] Clicking "No Golf Shot" shows a confirmation dialog before marking as false positive
-- [ ] Both dialogs have "Cancel" (default/focused) and "Confirm" buttons
-- [ ] Accidental Escape press does NOT reject the shot (dialog must be confirmed)
-- [ ] Existing test suite passes (`npm run test` in apps/browser)
+- [x] Pressing Escape during shot review shows a confirmation dialog ("Skip this shot?") before rejecting
+- [x] Clicking "No Golf Shot" shows a confirmation dialog before marking as false positive
+- [x] Both dialogs have "Cancel" (default/focused) and "Confirm" buttons
+- [x] Accidental Escape press does NOT reject the shot (dialog must be confirmed)
+- [x] Existing test suite passes (`npm run test` in apps/browser)
 
 #### Next steps
 1. Add a reusable `ConfirmDialog` component (or inline modal) that accepts a message and onConfirm/onCancel callbacks
