@@ -952,7 +952,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       </div>
 
       {/* Video transport controls - below video */}
-      <div className="video-transport-controls">
+      <div className="video-transport-controls" style={{ display: 'flex', justifyContent: 'center', gap: '4px', margin: '8px 0' }}>
         <button
           onClick={skipToStart}
           className="btn-transport"
