@@ -49,6 +49,140 @@ describe('transcodeHevcToH264', () => {
   })
 })
 
+describe('muxAudioIntoClip', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('throws when FFmpeg is not loaded', async () => {
+    const { muxAudioIntoClip } = await import('./ffmpeg-client')
+    const videoBlob = new Blob(['video'], { type: 'video/mp4' })
+    const sourceBlob = new Blob(['source'], { type: 'video/mp4' })
+
+    await expect(muxAudioIntoClip(videoBlob, sourceBlob, 0, 5)).rejects.toThrow(
+      'FFmpeg not loaded. Call loadFFmpeg() first.'
+    )
+  })
+
+  it('exports muxAudioIntoClip function', async () => {
+    const module = await import('./ffmpeg-client')
+    expect(typeof module.muxAudioIntoClip).toBe('function')
+  })
+
+  it('returns video-only blob when audio extraction fails', async () => {
+    // Mock FFmpeg where audio extraction returns non-zero exit code
+    const mockDeleteFile = vi.fn().mockResolvedValue(undefined)
+    vi.doMock('@ffmpeg/ffmpeg', () => ({
+      FFmpeg: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+        this.load = vi.fn().mockResolvedValue(undefined)
+        this.on = vi.fn()
+        this.off = vi.fn()
+        this.writeFile = vi.fn().mockResolvedValue(undefined)
+        this.exec = vi.fn().mockResolvedValue(1) // Non-zero = failure
+        this.readFile = vi.fn().mockResolvedValue(new Uint8Array(0))
+        this.deleteFile = mockDeleteFile
+      }),
+    }))
+
+    vi.doMock('@ffmpeg/util', () => ({
+      toBlobURL: vi.fn().mockResolvedValue('blob:mock'),
+      fetchFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+    }))
+
+    const { loadFFmpeg, muxAudioIntoClip } = await import('./ffmpeg-client')
+    await loadFFmpeg()
+
+    const videoBlob = new Blob(['video-only-content'], { type: 'video/mp4' })
+    const sourceBlob = new Blob(['source-with-audio'], { type: 'video/mp4' })
+
+    const result = await muxAudioIntoClip(videoBlob, sourceBlob, 0, 5)
+
+    // Should return the original video-only blob (graceful fallback)
+    expect(result).toBe(videoBlob)
+  })
+
+  it('returns muxed blob when audio extraction and muxing succeed', async () => {
+    const muxedData = new Uint8Array(200)
+    muxedData.fill(42)
+
+    let execCallCount = 0
+    vi.doMock('@ffmpeg/ffmpeg', () => ({
+      FFmpeg: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+        this.load = vi.fn().mockResolvedValue(undefined)
+        this.on = vi.fn()
+        this.off = vi.fn()
+        this.writeFile = vi.fn().mockResolvedValue(undefined)
+        this.exec = vi.fn().mockImplementation(() => {
+          execCallCount++
+          return Promise.resolve(0) // Success
+        })
+        this.readFile = vi.fn().mockImplementation((name: string) => {
+          if (name === 'mux_audio.aac') {
+            return Promise.resolve(new Uint8Array(150)) // > 100 bytes = valid audio
+          }
+          if (name === 'mux_output.mp4') {
+            return Promise.resolve(muxedData)
+          }
+          return Promise.resolve(new Uint8Array(0))
+        })
+        this.deleteFile = vi.fn().mockResolvedValue(undefined)
+      }),
+    }))
+
+    vi.doMock('@ffmpeg/util', () => ({
+      toBlobURL: vi.fn().mockResolvedValue('blob:mock'),
+      fetchFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+    }))
+
+    const { loadFFmpeg, muxAudioIntoClip } = await import('./ffmpeg-client')
+    await loadFFmpeg()
+
+    const videoBlob = new Blob(['video-only'], { type: 'video/mp4' })
+    const sourceBlob = new Blob(['source-audio'], { type: 'video/mp4' })
+
+    const result = await muxAudioIntoClip(videoBlob, sourceBlob, 2.5, 7.5)
+
+    // Should return a NEW blob (not the original), with video/mp4 type
+    expect(result).not.toBe(videoBlob)
+    expect(result.type).toBe('video/mp4')
+    // Two exec calls: audio extraction + muxing
+    expect(execCallCount).toBe(2)
+  })
+
+  it('returns video-only blob when audio file is too small', async () => {
+    vi.doMock('@ffmpeg/ffmpeg', () => ({
+      FFmpeg: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+        this.load = vi.fn().mockResolvedValue(undefined)
+        this.on = vi.fn()
+        this.off = vi.fn()
+        this.writeFile = vi.fn().mockResolvedValue(undefined)
+        this.exec = vi.fn().mockResolvedValue(0)
+        this.readFile = vi.fn().mockImplementation((name: string) => {
+          if (name === 'mux_audio.aac') {
+            return Promise.resolve(new Uint8Array(10)) // < 100 bytes = too small
+          }
+          return Promise.resolve(new Uint8Array(0))
+        })
+        this.deleteFile = vi.fn().mockResolvedValue(undefined)
+      }),
+    }))
+
+    vi.doMock('@ffmpeg/util', () => ({
+      toBlobURL: vi.fn().mockResolvedValue('blob:mock'),
+      fetchFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+    }))
+
+    const { loadFFmpeg, muxAudioIntoClip } = await import('./ffmpeg-client')
+    await loadFFmpeg()
+
+    const videoBlob = new Blob(['video-only'], { type: 'video/mp4' })
+    const sourceBlob = new Blob(['source'], { type: 'video/mp4' })
+
+    const result = await muxAudioIntoClip(videoBlob, sourceBlob, 0, 5)
+    expect(result).toBe(videoBlob)
+  })
+})
+
 describe('FFmpegClient', () => {
   beforeEach(() => {
     // Reset module state between tests

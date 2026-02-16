@@ -12,7 +12,7 @@ import { VideoFramePipeline, ExportConfig, HevcExportError } from '../lib/video-
 import { VideoFramePipelineV2, ExportConfigV2 } from '../lib/video-frame-pipeline-v2'
 import { VideoFramePipelineV3, ExportConfigV3, ExportResolution } from '../lib/video-frame-pipeline-v3'
 import { VideoFramePipelineV4, ExportConfigV4, isVideoFrameCallbackSupported } from '../lib/video-frame-pipeline-v4'
-import { loadFFmpeg, getFFmpegInstance, transcodeHevcToH264, estimateTranscodeTime } from '../lib/ffmpeg-client'
+import { loadFFmpeg, getFFmpegInstance, transcodeHevcToH264, estimateTranscodeTime, muxAudioIntoClip } from '../lib/ffmpeg-client'
 import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
 
 /** Minimum delay for trajectory generation to show loading state feedback */
@@ -795,7 +795,18 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           },
         }
 
-        const exportedBlob = await pipelineV4.exportWithTracer(configV4)
+        let exportedBlob = await pipelineV4.exportWithTracer(configV4)
+
+        // Mux audio from original segment into the video-only export
+        try {
+          await loadFFmpeg()
+          setExportPhase({ phase: 'muxing', progress: 50 })
+          const clipStart = segment.clipStart - segment.startTime
+          const clipEnd = segment.clipEnd - segment.startTime
+          exportedBlob = await muxAudioIntoClip(exportedBlob, segment.blob, clipStart, clipEnd)
+        } catch (audioErr) {
+          console.warn('[ExportV4] Audio mux failed, exporting without audio:', audioErr)
+        }
 
         // Download
         const url = URL.createObjectURL(exportedBlob)

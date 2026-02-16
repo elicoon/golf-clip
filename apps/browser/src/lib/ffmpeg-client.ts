@@ -283,6 +283,103 @@ export async function transcodeHevcToH264(
 }
 
 /**
+ * Mux audio from the original segment into a video-only MP4 blob.
+ *
+ * The V4 export pipeline produces video-only clips (WebCodecs VideoEncoder has no
+ * audio support). This function extracts the audio track from the source segment
+ * (which was extracted with `-c copy` and retains audio) and remuxes it with the
+ * video-only blob using stream copy (no re-encode).
+ *
+ * @param videoOnlyBlob - The video-only MP4 from the V4 pipeline
+ * @param sourceSegmentBlob - The original segment blob (contains audio)
+ * @param clipStartInSegment - Start of clip relative to segment start (seconds)
+ * @param clipEndInSegment - End of clip relative to segment start (seconds)
+ * @returns Muxed MP4 blob with audio, or the original video-only blob if no audio
+ */
+export async function muxAudioIntoClip(
+  videoOnlyBlob: Blob,
+  sourceSegmentBlob: Blob,
+  clipStartInSegment: number,
+  clipEndInSegment: number,
+): Promise<Blob> {
+  if (!ffmpeg || !loaded) {
+    throw new Error('FFmpeg not loaded. Call loadFFmpeg() first.')
+  }
+
+  const videoFile = 'mux_video.mp4'
+  const sourceFile = 'mux_source.mp4'
+  const audioFile = 'mux_audio.aac'
+  const outputFile = 'mux_output.mp4'
+
+  try {
+    // Write both files to FFmpeg filesystem
+    await ffmpeg.writeFile(videoFile, await fetchFile(videoOnlyBlob))
+    await ffmpeg.writeFile(sourceFile, await fetchFile(sourceSegmentBlob))
+
+    // Step 1: Extract audio from the source segment for the clip time range
+    const duration = clipEndInSegment - clipStartInSegment
+    const extractExitCode = await ffmpeg.exec([
+      '-ss', clipStartInSegment.toString(),
+      '-i', sourceFile,
+      '-t', duration.toString(),
+      '-vn',           // No video
+      '-acodec', 'copy', // Stream copy (no re-encode)
+      audioFile,
+    ])
+
+    if (extractExitCode !== 0) {
+      // No audio track or extraction failed — return video-only
+      console.log('[muxAudio] No audio track found or extraction failed, returning video-only')
+      return videoOnlyBlob
+    }
+
+    // Verify audio file was actually created and has content
+    let audioData: Uint8Array | string
+    try {
+      audioData = await ffmpeg.readFile(audioFile)
+    } catch {
+      console.log('[muxAudio] Audio file not created, returning video-only')
+      return videoOnlyBlob
+    }
+    if (!(audioData instanceof Uint8Array) || audioData.length < 100) {
+      console.log('[muxAudio] Audio file empty or too small, returning video-only')
+      return videoOnlyBlob
+    }
+
+    // Step 2: Mux video + audio together
+    const muxExitCode = await ffmpeg.exec([
+      '-i', videoFile,
+      '-i', audioFile,
+      '-c', 'copy',         // Stream copy both
+      '-movflags', '+faststart',
+      outputFile,
+    ])
+
+    if (muxExitCode !== 0) {
+      console.warn('[muxAudio] Muxing failed, returning video-only')
+      return videoOnlyBlob
+    }
+
+    const data = await ffmpeg.readFile(outputFile)
+    if (!(data instanceof Uint8Array)) {
+      console.warn('[muxAudio] Unexpected output format, returning video-only')
+      return videoOnlyBlob
+    }
+
+    console.log('[muxAudio] Audio muxed successfully',
+      { videoSize: videoOnlyBlob.size, muxedSize: data.length })
+
+    return new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' })
+  } finally {
+    // Cleanup all temp files
+    try { await ffmpeg.deleteFile(videoFile) } catch { /* ignore */ }
+    try { await ffmpeg.deleteFile(sourceFile) } catch { /* ignore */ }
+    try { await ffmpeg.deleteFile(audioFile) } catch { /* ignore */ }
+    try { await ffmpeg.deleteFile(outputFile) } catch { /* ignore */ }
+  }
+}
+
+/**
  * Get the FFmpeg instance. Must call loadFFmpeg() first.
  * @throws Error if FFmpeg is not loaded
  */
