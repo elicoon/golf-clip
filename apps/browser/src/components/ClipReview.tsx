@@ -1049,6 +1049,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <button
           onClick={skipToStart}
           className="btn-transport"
+          aria-label="Skip to clip start"
           title="Skip to clip start"
         >
           ⏮
@@ -1056,13 +1057,15 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <button
           onClick={stepFrameBackward}
           className="btn-transport"
-          title="Step back 1 frame"
+          aria-label="Step back one frame"
+          title="Step back one frame"
         >
           ⏪
         </button>
         <button
           onClick={togglePlayPause}
           className="btn-transport btn-transport-play"
+          aria-label={isPlaying ? 'Pause' : 'Play'}
           title={isPlaying ? 'Pause' : 'Play'}
         >
           {isPlaying ? '⏸' : '▶'}
@@ -1070,13 +1073,15 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <button
           onClick={stepFrameForward}
           className="btn-transport"
-          title="Step forward 1 frame"
+          aria-label="Step forward one frame"
+          title="Step forward one frame"
         >
           ⏩
         </button>
         <button
           onClick={skipToEnd}
           className="btn-transport"
+          aria-label="Skip to clip end"
           title="Skip to clip end"
         >
           ⏭
@@ -1125,6 +1130,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <span
           className="confidence-badge"
           data-level={currentShot.confidence < 0.4 ? 'low' : currentShot.confidence < 0.7 ? 'medium' : 'high'}
+          aria-label={`${(currentShot.confidence * 100).toFixed(0)}% confidence, ${currentShot.confidence < 0.4 ? 'low' : currentShot.confidence < 0.7 ? 'medium' : 'high'}`}
         >
           {(currentShot.confidence * 100).toFixed(0)}% confidence
         </span>
