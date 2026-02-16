@@ -1,6 +1,6 @@
 ### Add Favicon to Prevent 404 Console Error
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** low
 - **Type:** feature
 - **Scope:** small

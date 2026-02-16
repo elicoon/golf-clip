@@ -1,6 +1,6 @@
 ### Add aria-labels and title Attributes to Video Transport Controls
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** bug-fix
 - **Scope:** small

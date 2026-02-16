@@ -1,6 +1,6 @@
 ### Show Descriptive Error When Audio Extraction Fails
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** bug-fix
 - **Scope:** small

@@ -1,6 +1,6 @@
 ### Reject Invalid File Types with User-Facing Error Message
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** bug-fix
 - **Scope:** small
