@@ -114,6 +114,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   // Track when we last seeked to prevent auto-loop from triggering immediately
   const lastSeekTimeRef = useRef<number>(0)
 
+  // Detected video FPS for frame-accurate stepping (default 30, detected on first frame)
+  const videoFpsRef = useRef<number>(30)
+
   // Feedback tracking - store initial values for comparison
   const initialTracerParamsRef = useRef<{
     originX?: number
@@ -143,6 +146,24 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     // Only autoplay once per shot (avoid retriggering on every canplay event)
     if (autoplayedShotIdRef.current === currentShot.id) return
     autoplayedShotIdRef.current = currentShot.id
+
+    // Detect video FPS from first two frames during autoplay
+    if ('requestVideoFrameCallback' in video) {
+      let firstMediaTime: number | null = null
+      const detectFps = (_now: DOMHighResTimeStamp, metadata: { mediaTime: number }) => {
+        if (firstMediaTime === null) {
+          firstMediaTime = metadata.mediaTime
+          ;(video as any).requestVideoFrameCallback(detectFps)
+        } else if (metadata.mediaTime > firstMediaTime) {
+          const frameDuration = metadata.mediaTime - firstMediaTime
+          const fps = Math.round(1 / frameDuration)
+          if (fps >= 10 && fps <= 240) {
+            videoFpsRef.current = fps
+          }
+        }
+      }
+      ;(video as any).requestVideoFrameCallback(detectFps)
+    }
 
     // Seek to clip start (offset by segment start time since blob starts at 0)
     const targetTime = currentShot.clipStart - currentShot.startTime
@@ -616,7 +637,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     videoRef.current.pause()
     setIsPlaying(false)
     if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
-    videoRef.current.currentTime += 1/60
+    const fps = videoFpsRef.current
+    const frameDuration = 1 / fps
+    const nextFrame = Math.floor(videoRef.current.currentTime / frameDuration + 0.01) + 1
+    const newTime = nextFrame * frameDuration
+    videoRef.current.currentTime = newTime
+    setCurrentTime(newTime)
   }, [])
 
   const stepFrameBackward = useCallback(() => {
@@ -624,7 +650,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     videoRef.current.pause()
     setIsPlaying(false)
     if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
-    videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 1/60)
+    const fps = videoFpsRef.current
+    const frameDuration = 1 / fps
+    const prevFrame = Math.ceil(videoRef.current.currentTime / frameDuration - 0.01) - 1
+    const newTime = Math.max(0, prevFrame * frameDuration)
+    videoRef.current.currentTime = newTime
+    setCurrentTime(newTime)
   }, [])
 
   const skipToStart = useCallback(() => {
@@ -634,6 +665,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
     const clipStartInVideo = currentShot.clipStart - currentShot.startTime
     videoRef.current.currentTime = clipStartInVideo
+    setCurrentTime(clipStartInVideo)
   }, [currentShot])
 
   const skipToEnd = useCallback(() => {
@@ -643,6 +675,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
     const clipEndInVideo = currentShot.clipEnd - currentShot.startTime
     videoRef.current.currentTime = clipEndInVideo
+    setCurrentTime(clipEndInVideo)
   }, [currentShot])
 
   const handleTrimUpdate = useCallback((newStart: number, newEnd: number) => {
@@ -680,10 +713,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           if (videoRef.current) {
             if (e.shiftKey) {
               // Jump 1 second back
-              videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 1)
+              const newT = Math.max(0, videoRef.current.currentTime - 1)
+              videoRef.current.currentTime = newT
+              setCurrentTime(newT)
             } else {
-              // Step one frame back (1/60 sec)
-              videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 1/60)
+              stepFrameBackward()
             }
           }
           break
@@ -692,10 +726,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           if (videoRef.current) {
             if (e.shiftKey) {
               // Jump 1 second forward
-              videoRef.current.currentTime += 1
+              const newT = videoRef.current.currentTime + 1
+              videoRef.current.currentTime = newT
+              setCurrentTime(newT)
             } else {
-              // Step one frame forward (1/60 sec)
-              videoRef.current.currentTime += 1/60
+              stepFrameForward()
             }
           }
           break
