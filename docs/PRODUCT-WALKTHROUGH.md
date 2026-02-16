@@ -18,7 +18,7 @@ This guide walks you through the complete flow of using GolfClip, from uploading
 
 ## Step 1: Select Video
 
-When you first open GolfClip, you'll see the video selection screen.
+When you first open GolfClip, you'll see the about box explaining the project, followed by the video selection area.
 
 ### What You See
 
@@ -27,6 +27,12 @@ When you first open GolfClip, you'll see the video selection screen.
 |  GolfClip                                      [New Video]  |
 +-------------------------------------------------------------+
 |                                                             |
+|  +-----------------------------------------------------+   |
+|  |  GolfClip is a vibe-coded golf video editing        |   |
+|  |  platform to address two pain points:               |   |
+|  |  1. Editing long videos into short clips            |   |
+|  |  2. Adding animated tracers to golf clips           |   |
+|  +-----------------------------------------------------+   |
 |                                                             |
 |                    +-------------------+                    |
 |                    |                   |                    |
@@ -39,11 +45,10 @@ When you first open GolfClip, you'll see the video selection screen.
 |                  |  Select File       |  <-- CLICK THIS     |
 |                  +--------------------+      BUTTON         |
 |                                                             |
-|         Enter path manually (dev mode)  <-- For local      |
-|                                             testing         |
-|                                                             |
 +-------------------------------------------------------------+
 ```
+
+You can upload multiple videos at once — they'll be queued and processed sequentially.
 
 ### Actions
 
@@ -112,7 +117,7 @@ For each detected shot, you'll mark where the ball landed and review the generat
 |  Review Shot #1                              1 of 3         |
 |                                                             |
 |  +----------------+                    +------------------+ |
-|  | No golf shot   | <-- SKIP          |    Next          | |
+|  | No Golf Shot   | <-- SKIP          | Approve Shot     | |
 |  +----------------+   (false positive) +------------------+ |
 |                                                             |
 |  +-----------------------------------------------------+   |
@@ -134,7 +139,7 @@ For each detected shot, you'll mark where the ball landed and review the generat
 |                                                             |
 |   [<<] [<] [> Play] [>] [>>]  <-- PLAYBACK CONTROLS        |
 |                                                             |
-|   [x] Show Tracer    [x] Render Shot Tracers               |
+|   [x] Show Tracer    [Mute]    [x] Auto-loop               |
 |                                                             |
 |         92%  High confidence detection                     |
 |                                                             |
@@ -145,13 +150,13 @@ For each detected shot, you'll mark where the ball landed and review the generat
 
 | Element | Location | Purpose |
 |---------|----------|---------|
-| **No golf shot** | Top left | Mark as false positive, don't export |
-| **Next** | Top right | Accept shot (enabled after tracer review) |
+| **No Golf Shot** | Top left | Mark as false positive, don't export |
+| **Approve Shot** | Top right | Accept shot (enabled after tracer review) |
 | **Step Indicator** | Below buttons | Shows current step (Mark Landing / Review Tracer) |
 | **Video Player** | Center | Click to mark landing point |
-| **Zoom Controls** | Above video | Zoom in/out for precise marking |
 | **Timeline Scrubber** | Below video | Drag handles to adjust clip boundaries |
-| **Playback Controls** | Below timeline | Play, pause, step frame |
+| **Playback Controls** | Below timeline | Play, pause, step frame (FPS-aware) |
+| **Mute / Auto-Loop** | Below controls | Toggle audio mute and clip looping |
 | **Confidence Badge** | Bottom | Detection confidence (green/yellow/red) |
 
 ### Keyboard Shortcuts
@@ -159,12 +164,13 @@ For each detected shot, you'll mark where the ball landed and review the generat
 | Key | Action |
 |-----|--------|
 | `Space` | Play/Pause |
-| `<-` / `->` | Step one frame |
+| `<-` / `->` | Step one frame (FPS-aware) |
+| `Shift+<-` / `Shift+->` | Jump 1 second |
+| `Up` / `Down` | Previous / next shot |
 | `[` / `]` | Set clip start/end |
-| `+` / `-` | Zoom in/out |
-| `0` | Reset zoom |
-| `Enter` | Next (accept) |
-| `Esc` | Skip (no golf shot) |
+| `I` | Set impact time to current position |
+| `Enter` | Approve shot |
+| `Esc` | No golf shot (skip) |
 
 ---
 
@@ -343,7 +349,7 @@ After reviewing all shots, your clips are ready to export.
 |  Review Shot #1                              1 of 3         |
 |                                                             |
 |  +----------------+                    +------------------+ |
-|  | No golf shot   |                    |    Next          | |
+|  | No Golf Shot   |                    | Approve Shot     | |
 |  +----------------+                    +------------------+ |
 |                                              ^              |
 |                                         CLICK THIS          |
@@ -352,11 +358,31 @@ After reviewing all shots, your clips are ready to export.
 +-------------------------------------------------------------+
 ```
 
-Click **Next** to accept the shot. Repeat for all shots.
+Click **Approve Shot** to accept the shot. Repeat for all shots.
+
+### Export Screen
+
+After the last shot, you'll see a summary with an export button:
+
+```
++-------------------------------------------------------------+
+|                                                             |
+|     All shots have been reviewed!                          |
+|                                                             |
+|     Resolution: [Original v]  <-- SELECT RESOLUTION        |
+|                                                             |
+|     +----------------------------+                         |
+|     | Export 3 Clips             |  <-- CLICK TO EXPORT    |
+|     +----------------------------+                         |
+|                                                             |
++-------------------------------------------------------------+
+```
+
+Resolution options: Original, 1080p (faster), 720p (fastest).
 
 ### Export Modal
 
-After the last shot, export begins automatically:
+After clicking Export:
 
 ```
 +-------------------------------------------------------------+
@@ -400,13 +426,13 @@ After the last shot, export begins automatically:
 +-------------------------------------------------------------+
 ```
 
-Your clips are saved in a folder named `[video_name]_clips/` containing:
+Clips are downloaded to your browser's Downloads folder:
 - `shot_1.mp4`
 - `shot_2.mp4`
 - `shot_3.mp4`
 - etc.
 
-If **"Render Shot Tracers"** was checked, the tracer is burned into the video!
+Shot tracers are automatically burned into the exported videos.
 
 ---
 
@@ -458,7 +484,7 @@ Replace ASCII art with images:
 
 ```
 1. SELECT VIDEO
-   +-> Click "Select File" -> Choose video
+   +-> Click "Select File" -> Choose video (supports multi-video upload)
 
 2. WAIT FOR PROCESSING
    +-> Automatic (30-60 seconds)
@@ -469,10 +495,12 @@ Replace ASCII art with images:
    +-> Step 2: Review tracer
    |   +-> Accept (looks good) OR
    |   +-> Configure (adjust settings)
-   +-> Click "Next" to accept
+   +-> Click "Approve Shot" to accept
 
 4. EXPORT
-   +-> Automatic after last shot
+   +-> Select resolution (Original / 1080p / 720p)
+   +-> Click "Export N Clips" button
+   +-> Clips download to browser Downloads folder
 ```
 
 ### Review Flow Summary
@@ -488,13 +516,13 @@ Replace ASCII art with images:
 | Key | Action |
 |-----|--------|
 | `Space` | Play/Pause |
-| `<-` | Previous frame |
-| `->` | Next frame |
+| `<-` | Previous frame (FPS-aware) |
+| `->` | Next frame (FPS-aware) |
 | `Shift+<-` | Back 1 second |
 | `Shift+->` | Forward 1 second |
+| `Up` / `Down` | Previous / next shot |
 | `[` | Set clip start |
 | `]` | Set clip end |
-| `+` / `-` | Zoom in/out |
-| `0` | Reset zoom |
-| `Enter` | Accept shot |
+| `I` | Set impact time |
+| `Enter` | Approve shot |
 | `Esc` | No golf shot (skip) |
