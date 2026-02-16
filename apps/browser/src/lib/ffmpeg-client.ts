@@ -89,84 +89,9 @@ export function isFFmpegLoaded(): boolean {
   return loaded
 }
 
-/**
- * Check if a video file uses HEVC/H.265 codec (common in iPhone MOV files).
- * Chrome on Windows doesn't support HEVC natively.
- *
- * WARNING: This function writes the ENTIRE blob to FFmpeg WASM memory, which can
- * hang for large files. Prefer using detectVideoCodec() instead, which uses the
- * browser's native video element and is much faster.
- *
- * This function is kept for backwards compatibility but includes a timeout
- * to prevent hangs.
- *
- * @param videoBlob - The video blob to check
- * @returns true if the video uses HEVC codec
- * @deprecated Use detectVideoCodec() instead - it's faster and doesn't hang on large files
- */
-export async function isHevcCodec(videoBlob: Blob): Promise<boolean> {
-  const TIMEOUT_MS = 10000 // 10 second timeout to prevent hangs
-
-  console.log('[isHevcCodec] Starting codec check, blob size:', videoBlob.size)
-
-  // Warn if blob is large - this operation will be slow
-  if (videoBlob.size > 100 * 1024 * 1024) { // > 100MB
-    console.warn('[isHevcCodec] Large blob detected. Consider using detectVideoCodec() instead.')
-  }
-
-  if (!ffmpeg || !loaded) {
-    throw new Error('FFmpeg not loaded. Call loadFFmpeg() first.')
-  }
-
-  // Capture reference for TypeScript - we've already verified it's non-null above
-  const ffmpegInstance = ffmpeg
-
-  const inputName = 'probe_input.mp4'
-  let logs = ''
-
-  // Capture FFmpeg log output
-  const logHandler = ({ message }: { message: string }) => {
-    logs += message + '\n'
-  }
-  ffmpegInstance.on('log', logHandler)
-
-  // Create a promise that rejects after timeout
-  const timeoutPromise = new Promise<boolean>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error('HEVC codec check timed out after ' + TIMEOUT_MS + 'ms'))
-    }, TIMEOUT_MS)
-  })
-
-  const checkPromise = async (): Promise<boolean> => {
-    try {
-      console.log('[isHevcCodec] Writing blob to FFmpeg filesystem...')
-      await ffmpegInstance.writeFile(inputName, await fetchFile(videoBlob))
-      console.log('[isHevcCodec] Blob written, running ffmpeg probe...')
-
-      // Run ffmpeg with no output - it will log codec info
-      await ffmpegInstance.exec(['-i', inputName, '-f', 'null', '-'])
-      console.log('[isHevcCodec] Probe complete')
-
-      // Check logs for HEVC indicators
-      const logsLower = logs.toLowerCase()
-      const isHevc = logsLower.includes('hevc') || logsLower.includes('h265') || logsLower.includes('hvc1')
-      console.log('[isHevcCodec] Result:', isHevc)
-      return isHevc
-    } finally {
-      ffmpegInstance.off('log', logHandler)
-      try { await ffmpegInstance.deleteFile(inputName) } catch { /* ignore */ }
-    }
-  }
-
-  try {
-    return await Promise.race([checkPromise(), timeoutPromise])
-  } catch (error) {
-    console.warn('[isHevcCodec] Check failed or timed out, assuming non-HEVC:', error)
-    ffmpegInstance.off('log', logHandler)
-    try { await ffmpegInstance.deleteFile(inputName) } catch { /* ignore */ }
-    return false // Assume non-HEVC on timeout - let frame extraction fail if it is HEVC
-  }
-}
+// HEVC transcoding in-browser is inherently slow (~4x realtime for 4K) due to
+// single-threaded WASM FFmpeg. This is a known, accepted limitation.
+// For large files, recommend desktop pre-transcoding.
 
 /**
  * Fast video playability check using browser's native video element.
