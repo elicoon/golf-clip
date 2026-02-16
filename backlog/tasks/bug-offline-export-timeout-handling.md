@@ -1,7 +1,7 @@
 # Bug: Offline Export Timeout Handling
 
 **Date:** 2026-02-05
-**Status:** Open
+**Status:** not started
 **Severity:** Medium
 **Component:** Browser Export Pipeline (FFmpeg fallback)
 

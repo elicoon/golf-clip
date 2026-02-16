@@ -1,7 +1,7 @@
 # Bug: Transport Buttons Not Clickable (Only Play Works)
 
 **Date:** 2026-02-15
-**Status:** FIXED
+**Status:** done
 **Severity:** High
 **Component:** Browser ClipReview UI
 
