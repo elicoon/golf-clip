@@ -41,9 +41,11 @@ export function Scrubber({
     : 0  // Segment always starts at 0 (times are relative to segment)
 
   // Guard against inverted window - ensure windowEnd > windowStart
+  // Defensive: if endTime exceeds duration (e.g., global times were passed), expand window to fit
+  const baseDuration = totalDuration || Math.max(endTime + 5, 30)
   const rawWindowEnd = lockedWindow
     ? lockedWindow.end
-    : totalDuration || Math.max(endTime + 5, 30)  // Show full segment, fallback if duration unknown
+    : (endTime > baseDuration ? endTime + 5 : baseDuration)
   const windowEnd = Math.max(rawWindowEnd, windowStart + 1) // Ensure at least 1s window
 
   // Prevent division by zero/negative
