@@ -16,7 +16,7 @@ AI-powered golf shot detection and clip export tool. Analyzes video to detect go
 
 When working on features or bugs, look in `apps/browser/` first. The paused directories contain stale code that may not reflect current functionality.
 
-When working on bugs, look in `docs/bugs/` first.
+When working on bugs, check `docs/archive/bugs/` for historical context on resolved bugs.
 
 ---
 
@@ -27,7 +27,7 @@ When working on bugs, look in `docs/bugs/` first.
 | App | URL | Notes |
 |-----|-----|-------|
 | Browser App (PROD) | https://browser-seven-sigma.vercel.app | Main production deployment |
-| API (PROD) | https://golfclip-api.fly.dev | Backend API on Fly.io |
+| API (PAUSED) | https://golfclip-api.fly.dev | Backend API on Fly.io (paused — browser app does client-side processing) |
 
 ## Commands
 
