@@ -38,7 +38,9 @@ interface TracerParams {
 }
 
 // Generate session ID once per browser session
-const SESSION_ID = crypto.randomUUID()
+const SESSION_ID = (typeof crypto !== 'undefined' && crypto.randomUUID)
+  ? crypto.randomUUID()
+  : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
 
 export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId'>): Promise<void> {
   const client = getSupabaseClient()

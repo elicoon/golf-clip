@@ -850,56 +850,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <span className="review-progress">{currentIndex + 1} of {totalShots}</span>
       </div>
 
-      {/* Video transport controls */}
-      <div className="video-transport-controls">
-        <button
-          onClick={skipToStart}
-          className="btn-transport"
-          title="Skip to clip start"
-        >
-          ⏮
-        </button>
-        <button
-          onClick={stepFrameBackward}
-          className="btn-transport"
-          title="Step back 1 frame"
-        >
-          ⏪
-        </button>
-        <button
-          onClick={togglePlayPause}
-          className="btn-transport btn-transport-play"
-          title={isPlaying ? 'Pause' : 'Play'}
-        >
-          {isPlaying ? '⏸' : '▶'}
-        </button>
-        <button
-          onClick={stepFrameForward}
-          className="btn-transport"
-          title="Step forward 1 frame"
-        >
-          ⏩
-        </button>
-        <button
-          onClick={skipToEnd}
-          className="btn-transport"
-          title="Skip to clip end"
-        >
-          ⏭
-        </button>
-      </div>
-
-      <Scrubber
-        videoRef={videoRef}
-        startTime={currentShot.clipStart - currentShot.startTime}
-        endTime={currentShot.clipEnd - currentShot.startTime}
-        videoDuration={currentShot.endTime - currentShot.startTime}
-        onTimeUpdate={(newStart, newEnd) => {
-          // Convert blob-relative times back to global for storage
-          handleTrimUpdate(newStart + currentShot.startTime, newEnd + currentShot.startTime)
-        }}
-      />
-
       {/* Review action buttons - positioned above video */}
       <div className="review-actions">
         <button onClick={() => setShowRejectConfirm(true)} className="btn-no-shot">
@@ -1000,6 +950,56 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           isMarkingLanding={isMarkingLanding}
         />
       </div>
+
+      {/* Video transport controls - below video */}
+      <div className="video-transport-controls">
+        <button
+          onClick={skipToStart}
+          className="btn-transport"
+          title="Skip to clip start"
+        >
+          ⏮
+        </button>
+        <button
+          onClick={stepFrameBackward}
+          className="btn-transport"
+          title="Step back 1 frame"
+        >
+          ⏪
+        </button>
+        <button
+          onClick={togglePlayPause}
+          className="btn-transport btn-transport-play"
+          title={isPlaying ? 'Pause' : 'Play'}
+        >
+          {isPlaying ? '⏸' : '▶'}
+        </button>
+        <button
+          onClick={stepFrameForward}
+          className="btn-transport"
+          title="Step forward 1 frame"
+        >
+          ⏩
+        </button>
+        <button
+          onClick={skipToEnd}
+          className="btn-transport"
+          title="Skip to clip end"
+        >
+          ⏭
+        </button>
+      </div>
+
+      <Scrubber
+        videoRef={videoRef}
+        startTime={currentShot.clipStart - currentShot.startTime}
+        endTime={currentShot.clipEnd - currentShot.startTime}
+        videoDuration={currentShot.endTime - currentShot.startTime}
+        onTimeUpdate={(newStart, newEnd) => {
+          // Convert blob-relative times back to global for storage
+          handleTrimUpdate(newStart + currentShot.startTime, newEnd + currentShot.startTime)
+        }}
+      />
 
       {/* Playback and tracer controls */}
       <div className="tracer-controls">
