@@ -99,6 +99,9 @@ vi.mock('../lib/feedback-service', () => ({
 vi.mock('../lib/video-frame-pipeline-v4', () => ({
   VideoFramePipelineV4: vi.fn(),
   isVideoFrameCallbackSupported: vi.fn(() => true),
+  ExportTimeoutError: class ExportTimeoutError extends Error {
+    constructor(message: string) { super(message); this.name = 'ExportTimeoutError' }
+  },
 }))
 
 vi.mock('../lib/ffmpeg-client', () => ({

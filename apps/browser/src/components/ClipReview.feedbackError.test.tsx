@@ -86,6 +86,9 @@ vi.mock('../lib/video-frame-pipeline-v4', () => ({
     exportWithTracer: vi.fn().mockResolvedValue(new Blob(['mock'], { type: 'video/mp4' })),
   })),
   isVideoFrameCallbackSupported: vi.fn().mockReturnValue(true),
+  ExportTimeoutError: class ExportTimeoutError extends Error {
+    constructor(message: string) { super(message); this.name = 'ExportTimeoutError' }
+  },
 }))
 
 // Mock trajectory generator

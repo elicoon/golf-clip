@@ -1520,6 +1520,20 @@ kbd {
   text-align: center;
 }
 
+.export-error-hint {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  text-align: center;
+  margin-top: var(--spacing-xs);
+}
+
+.export-time-estimate {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  text-align: center;
+  margin-top: var(--spacing-xs);
+}
+
 /* ============================================
    Complete View
    ============================================ */
