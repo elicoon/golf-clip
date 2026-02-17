@@ -1956,6 +1956,53 @@ kbd {
   }
 }
 
+@media (max-width: 600px) {
+  /* Header: wrap to two rows on narrow screens */
+  .app-header {
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .app-header h1 {
+    font-size: 1.2rem;
+  }
+
+  /* Push header-actions to the right on the first row */
+  .app-header .header-actions {
+    margin-left: auto;
+  }
+
+  /* VideoQueue: don't let it dominate the header */
+  .app-header .video-queue {
+    flex: 1 1 100%;
+    order: 10;
+  }
+
+  /* Review info + actions: take full width on second row */
+  .app-header .review-header-info {
+    flex: 1 1 100%;
+    order: 11;
+  }
+
+  .app-header .review-actions {
+    flex: 1 1 100%;
+    order: 12;
+    flex-direction: row;
+  }
+
+  .app-header .review-actions button {
+    flex: 1;
+    width: auto;
+  }
+
+  .app-header .review-actions .btn-no-shot,
+  .app-header .review-actions .btn-primary {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: 0.8rem;
+  }
+}
+
 @media (max-width: 480px) {
   .dropzone {
     min-height: 250px;
