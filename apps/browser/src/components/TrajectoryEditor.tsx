@@ -547,27 +547,40 @@ export function TrajectoryEditor({
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (disabled || !canvasRef.current || !onCanvasClick) return
 
-    // Dragging disabled - all clicks pass through for marker placement
-
     const canvas = canvasRef.current
     const rect = canvas.getBoundingClientRect()
 
-    // Get click position relative to canvas
+    // Get click position relative to canvas (in screen/scaled coordinates)
     const clickX = e.clientX - rect.left
     const clickY = e.clientY - rect.top
 
-    // Convert to normalized coordinates relative to video content area (not full canvas)
-    // This accounts for object-fit: contain letterboxing
-    const bounds = videoContentBounds || { offsetX: 0, offsetY: 0, width: rect.width, height: rect.height }
+    // Compute video content bounds fresh from the current (possibly CSS-scaled) rect.
+    // This avoids using stale cached bounds when zoom transforms are active.
+    const video = videoRef.current
+    let bounds: { offsetX: number; offsetY: number; width: number; height: number }
+    if (video && video.videoWidth && video.videoHeight) {
+      const videoRatio = video.videoWidth / video.videoHeight
+      const containerRatio = rect.width / rect.height
+      if (videoRatio > containerRatio) {
+        const contentHeight = rect.width / videoRatio
+        bounds = { offsetX: 0, offsetY: (rect.height - contentHeight) / 2, width: rect.width, height: contentHeight }
+      } else {
+        const contentWidth = rect.height * videoRatio
+        bounds = { offsetX: (rect.width - contentWidth) / 2, offsetY: 0, width: contentWidth, height: rect.height }
+      }
+    } else {
+      // Fallback: use cached bounds or full rect when video dimensions unknown
+      bounds = videoContentBounds || { offsetX: 0, offsetY: 0, width: rect.width, height: rect.height }
+    }
+
     const x = (clickX - bounds.offsetX) / bounds.width
     const y = (clickY - bounds.offsetY) / bounds.height
 
-    // All clicks trigger marker placement (tracer is not selectable for now)
     onCanvasClick(
       Math.max(0, Math.min(1, x)),
       Math.max(0, Math.min(1, y))
     )
-  }, [disabled, onCanvasClick, videoContentBounds])
+  }, [disabled, onCanvasClick, videoRef, videoContentBounds])
 
   if (!showTracer) return null
 
