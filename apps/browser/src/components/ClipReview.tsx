@@ -69,6 +69,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
   const panStartRef = useRef({ x: 0, y: 0 })
+  const videoContainerRef = useRef<HTMLDivElement>(null)
 
   // Trajectory state
   const [showTracer, setShowTracer] = useState(true)
@@ -292,6 +293,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     // Reset zoom/pan when navigating to new shot
     setZoomLevel(1)
     setPanOffset({ x: 0, y: 0 })
+    setIsPanning(false)
     // Reset feedback tracking for new shot
     initialTracerParamsRef.current = null
     tracerModifiedRef.current = false
@@ -303,6 +305,19 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       }
     }
   }, [currentShot?.id])
+
+  // Reclamp pan offset when zoom level decreases to prevent showing empty space
+  useEffect(() => {
+    if (zoomLevel <= 1) return
+    const container = videoContainerRef.current
+    if (!container) return
+    const maxPanX = (container.clientWidth * (zoomLevel - 1)) / (2 * zoomLevel)
+    const maxPanY = (container.clientHeight * (zoomLevel - 1)) / (2 * zoomLevel)
+    setPanOffset(prev => ({
+      x: Math.max(-maxPanX, Math.min(maxPanX, prev.x)),
+      y: Math.max(-maxPanY, Math.min(maxPanY, prev.y)),
+    }))
+  }, [zoomLevel])
 
   // Show a non-blocking feedback error that auto-dismisses after 6 seconds
   const showFeedbackError = useCallback((message: string) => {
@@ -1096,6 +1111,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       )}
 
       <div
+        ref={videoContainerRef}
         className={`video-container${zoomLevel > 1 ? ' zoomed' : ''}${isPanning ? ' panning' : ''}`}
         onPointerDown={handlePanStart}
         onPointerMove={handlePanMove}
