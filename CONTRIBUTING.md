@@ -51,7 +51,7 @@ pip install -e ".[dev]"
 ### Frontend Setup
 
 ```bash
-cd src/frontend
+cd apps/browser
 npm install
 ```
 
@@ -63,13 +63,13 @@ You need two terminal windows:
 ```bash
 cd golf-clip
 source .venv/bin/activate
-cd src
+cd apps/desktop
 uvicorn backend.main:app --host 127.0.0.1 --port 8420 --reload
 ```
 
 **Terminal 2 - Frontend:**
 ```bash
-cd golf-clip/src/frontend
+cd golf-clip/apps/browser
 npm run dev
 ```
 
@@ -81,37 +81,20 @@ The app will be available at http://localhost:5173
 
 ```
 golf-clip/
-├── src/
-│   ├── backend/                 # Python FastAPI backend
-│   │   ├── api/                 # REST API endpoints
-│   │   │   ├── routes.py        # All API routes
-│   │   │   └── schemas.py       # Pydantic models
-│   │   ├── core/                # Core utilities
-│   │   │   ├── database.py      # SQLite setup
-│   │   │   └── config.py        # App settings
-│   │   ├── detection/           # Shot detection algorithms
-│   │   │   ├── audio.py         # Audio transient detection
-│   │   │   ├── origin.py        # Ball origin (clubhead) detection
-│   │   │   ├── tracker.py       # Physics trajectory generation
-│   │   │   └── pipeline.py      # Detection orchestration
-│   │   ├── models/              # Database operations
-│   │   │   ├── job.py           # Job/Shot CRUD
-│   │   │   └── trajectory.py    # Trajectory CRUD
-│   │   ├── processing/          # Video processing
-│   │   │   └── tracer.py        # Shot tracer rendering
-│   │   └── tests/               # Backend tests
-│   └── frontend/                # React + TypeScript frontend
-│       └── src/
-│           ├── components/      # React components
-│           │   ├── ClipReview.tsx
-│           │   ├── TrajectoryEditor.tsx
-│           │   └── ...
-│           └── stores/          # Zustand state management
-│               └── appStore.ts
-├── docs/                        # Documentation
-├── CLAUDE.md                    # AI assistant context
-├── PRD.md                       # Product requirements
-└── README.md                    # User documentation
+├── apps/
+│   ├── browser/          # Production web app (React + TypeScript + Vite)
+│   │   └── src/
+│   │       ├── components/   # ClipReview, TrajectoryEditor, Scrubber
+│   │       ├── lib/          # audio-detector, trajectory-generator, video-frame-pipeline
+│   │       └── stores/       # Zustand state management
+│   └── desktop/          # Desktop backend (Python + FastAPI)
+│       └── backend/
+│           ├── api/          # REST + SSE endpoints
+│           ├── detection/    # Shot detection algorithms
+│           ├── processing/   # Video processing + tracer rendering
+│           └── models/       # Database CRUD operations
+├── docs/                 # Documentation
+└── scripts/              # Development and testing scripts
 ```
 
 ---
@@ -187,7 +170,7 @@ interface TrajectoryConfig {
 ### Running Backend Tests
 
 ```bash
-cd golf-clip/src/backend
+cd golf-clip/apps/desktop
 
 # Run all tests
 pytest tests/ -v
@@ -204,15 +187,12 @@ pytest tests/ -v --cov=backend --cov-report=html
 
 ### Test Video
 
-A test video is available at:
+Use any short golf video for testing:
 ```
-/Users/ecoon/Desktop/golf-clip test videos/IMG_0991.mov
+path/to/your/video.mp4
 ```
 
-This 4K 60fps video contains 3 detectable golf shots at:
-- 18.25s
-- 60.28s
-- 111.46s
+The video should contain visible golf shots for detection to produce results.
 
 ---
 

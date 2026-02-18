@@ -214,7 +214,7 @@ class PerformanceTest:
 
 def main():
     # Test videos
-    test_videos_dir = Path("/Users/ecoon/Desktop/golf-clip test videos")
+    test_videos_dir = Path("test-videos")
     output_dir = test_videos_dir / "performance_test_output"
     output_dir.mkdir(exist_ok=True)
 

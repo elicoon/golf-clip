@@ -487,7 +487,7 @@ def print_comparison(desktop_results: list, webapp_results: list):
 
 def main():
     # Configuration
-    test_videos_dir = Path("/Users/ecoon/Desktop/golf-clip test videos")
+    test_videos_dir = Path("test-videos")
     output_dir = test_videos_dir / "performance_test_output"
     output_dir.mkdir(exist_ok=True)
 
