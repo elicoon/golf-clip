@@ -5,15 +5,13 @@ echo "Setting up GolfClip development environment..."
 
 cd "$(dirname "$0")/.."
 
-# Install Python packages in editable mode
-echo "Installing Python packages..."
-pip install -e packages/detection
-pip install -e packages/api-schemas
+# Install desktop backend in editable mode
+echo "Installing desktop backend..."
 pip install -e apps/desktop
 
-# Install frontend dependencies
-echo "Installing frontend dependencies..."
-cd packages/frontend && npm install && cd ../..
+# Install browser extension dependencies
+echo "Installing browser extension dependencies..."
+cd apps/browser && npm install && cd ../..
 
 echo ""
 echo "Development environment ready!"
@@ -21,5 +19,5 @@ echo ""
 echo "To run the desktop backend:"
 echo "  cd apps/desktop && uvicorn backend.main:app --reload --port 8420"
 echo ""
-echo "To run the frontend:"
-echo "  cd packages/frontend && npm run dev"
+echo "To run the browser extension:"
+echo "  cd apps/browser && npm run dev"
