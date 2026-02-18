@@ -215,7 +215,7 @@ class DesktopTest(PerformanceTest):
 class WebappTest(PerformanceTest):
     """Webapp performance test."""
 
-    def __init__(self, base_url: str = "https://golfclip-api.fly.dev"):
+    def __init__(self, base_url: str = "http://localhost:8421"):
         super().__init__(base_url, "Webapp")
 
     def upload_video(self, video_path: str) -> str:
@@ -492,7 +492,7 @@ def main():
     output_dir.mkdir(exist_ok=True)
 
     desktop_url = "http://localhost:8420"
-    webapp_url = "https://golfclip-api.fly.dev"
+    webapp_url = "http://localhost:8421"  # update to your webapp URL
 
     # Find test videos
     videos = sorted(test_videos_dir.glob("*.mov"))
