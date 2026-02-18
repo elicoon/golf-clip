@@ -2,6 +2,8 @@
 
 AI-powered golf shot detection and clip export. Drop in a round video, get back trimmed clips with professional shot tracer overlays — all processed client-side in the browser.
 
+**Live demo:** https://browser-seven-sigma.vercel.app
+
 GolfClip analyzes video audio to detect ball strikes via transient analysis, identifies the ball origin using computer vision (YOLO + shaft/clubhead detection), generates physics-based flight trajectories, and exports polished clips with animated tracer overlays using the WebCodecs API.
 
 ## Features
@@ -15,16 +17,23 @@ GolfClip analyzes video audio to detect ball strikes via transient analysis, ide
 
 ## Tech Stack
 
+**Browser app** (client-side, no backend required):
+
 | Layer | Technology |
 |-------|-----------|
 | Frontend | TypeScript, React 18, Vite, Zustand |
 | Audio Processing | FFmpeg WASM (`@ffmpeg/ffmpeg`), Essentia.js |
 | Video Export | WebCodecs API, `requestVideoFrameCallback`, `mp4-muxer` |
 | Trajectory | Physics model + quadratic Bezier smoothing |
-| Backend API | Python, FastAPI |
+| Hosting | Vercel |
+
+**Desktop backend** (`apps/desktop/` — paused reference implementation):
+
+| Layer | Technology |
+|-------|-----------|
+| API | Python, FastAPI |
 | Detection | librosa, OpenCV, YOLO (ultralytics) |
 | Database | SQLite (async via aiosqlite) |
-| Hosting | Vercel (frontend), Fly.io (API) |
 
 ## How It Works
 
@@ -40,12 +49,12 @@ Video → FFmpeg audio extraction → Bandpass filter (1-8kHz) → Transient det
 
 ```
 apps/
-├── browser/          # Production web app (React + TypeScript + Vite)
+├── browser/          # Active: production web app (React + TypeScript + Vite)
 │   └── src/
 │       ├── components/   # ClipReview, TrajectoryEditor, Scrubber, VideoDropzone
 │       ├── lib/          # audio-detector, ffmpeg-client, video-frame-pipeline, trajectory-generator
 │       └── stores/       # Zustand state management
-└── desktop/          # Desktop backend (Python + FastAPI)
+└── desktop/          # Paused: desktop backend (Python + FastAPI)
     ├── api/              # REST + SSE endpoints
     ├── detection/        # Audio transient + ball origin detection
     ├── processing/       # Video processing + tracer rendering
@@ -55,23 +64,21 @@ apps/
 ## Development
 
 ```bash
-# Frontend (browser app)
+# Browser app (standalone — no backend needed)
 cd apps/browser
 npm install
 npm run dev          # → http://localhost:5173
+npm run test         # Run test suite
 
-# Backend API
+# Desktop backend (optional, paused)
 cd apps/desktop
 pip install -e ".[dev]"
 uvicorn backend.main:app --host 127.0.0.1 --port 8420 --reload
-
-# Tests (373 passing)
-cd apps/browser && npm run test
 ```
 
 ## Status
 
-Active development. 373 tests passing across 22 test suites.
+Active development on browser app. Desktop backend paused.
 
 ## License
 

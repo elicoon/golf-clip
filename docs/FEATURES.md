@@ -2,6 +2,10 @@
 
 This document provides detailed explanations of how each feature in GolfClip works.
 
+> **App coverage:** Sections are labeled **[Browser App]** or **[Desktop Backend]** to indicate which implementation they describe.
+> - **Browser App** (`apps/browser/`): The active production app — fully client-side, runs in any modern browser, deployed on Vercel.
+> - **Desktop Backend** (`apps/desktop/`): A paused Python FastAPI server with YOLO-based detection. Included as a reference for the server-side approach.
+
 ---
 
 ## Table of Contents
@@ -17,7 +21,7 @@ This document provides detailed explanations of how each feature in GolfClip wor
 
 ---
 
-## Audio Shot Detection
+## Audio Shot Detection [Browser App + Desktop Backend]
 
 ### Overview
 
@@ -86,7 +90,7 @@ export GOLFCLIP_MIN_STRIKE_INTERVAL=25
 
 ---
 
-## Ball Origin Detection
+## Ball Origin Detection [Desktop Backend]
 
 ### Overview
 
@@ -149,7 +153,7 @@ Tested results show shaft detection scores of 0.92-0.96, with ball position accu
 
 ---
 
-## Shot Tracer System
+## Shot Tracer System [Browser App]
 
 ### Overview
 
@@ -303,7 +307,7 @@ Motion tracking in first 200ms post-impact:
 
 ---
 
-## Trajectory Animation
+## Trajectory Animation [Browser App]
 
 ### Overview
 
@@ -360,7 +364,7 @@ For exported videos, the tracer is composited during the encoding pass:
 
 ---
 
-## Clip Review Interface
+## Clip Review Interface [Browser App]
 
 ### Overview
 
@@ -423,7 +427,7 @@ Frame step buttons (⏩/⏪) and arrow keys use FPS-aware stepping:
 
 ---
 
-## Export System
+## Export System [Browser App]
 
 ### Overview
 
@@ -522,7 +526,7 @@ Export requires `requestVideoFrameCallback` support:
 
 ---
 
-## Feedback Systems
+## Feedback Systems [Desktop Backend]
 
 GolfClip includes three feedback collection systems for ML improvement.
 
@@ -616,7 +620,7 @@ origin_feedback (
 
 ---
 
-## ML Improvement Pipeline
+## ML Improvement Pipeline [Desktop Backend]
 
 The feedback collected during review trains ML models to reduce false positives.
 

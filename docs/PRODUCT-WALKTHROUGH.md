@@ -2,8 +2,6 @@
 
 This guide walks you through the complete flow of using GolfClip, from uploading a video to exporting clips with shot tracers.
 
-> **Note:** To add screenshots to this guide, take screenshots at each step and save them in `docs/images/`. See [Adding Screenshots](#adding-screenshots) at the end.
-
 ---
 
 ## Table of Contents
@@ -12,7 +10,6 @@ This guide walks you through the complete flow of using GolfClip, from uploading
 2. [Step 2: Processing](#step-2-processing)
 3. [Step 3: Review Shots](#step-3-review-shots)
 4. [Step 4: Export Clips](#step-4-export-clips)
-5. [Adding Screenshots](#adding-screenshots)
 
 ---
 
@@ -433,48 +430,6 @@ Clips are downloaded to your browser's Downloads folder:
 - etc.
 
 Shot tracers are automatically burned into the exported videos.
-
----
-
-## Adding Screenshots
-
-To add real screenshots to this guide:
-
-### Step 1: Take Screenshots
-
-1. Run the app (`npm run dev` for frontend, `uvicorn` for backend)
-2. Load a test video
-3. At each step, take a screenshot:
-   - macOS: `Cmd + Shift + 4` then select area
-   - Windows: `Win + Shift + S`
-
-### Step 2: Save Screenshots
-
-Save screenshots in `docs/images/` with these names:
-- `01-select-video.png`
-- `02-processing.png`
-- `03-review-shot.png`
-- `03a-mark-landing.png`
-- `03b-review-tracer.png`
-- `03c-configure.png`
-- `03d-tracer-preview.png`
-- `04-export.png`
-
-### Step 3: Add Annotations
-
-Use any image editor to add red arrows:
-- **Preview (macOS)**: Markup tools -> Arrow
-- **Paint 3D (Windows)**: Draw red lines with brush
-- **Online**: [Photopea](https://www.photopea.com/) (free)
-
-### Step 4: Update This Document
-
-Replace ASCII art with images:
-
-```markdown
-![Select Video](images/01-select-video.png)
-*Click the "Select File" button to upload your golf video.*
-```
 
 ---
 
