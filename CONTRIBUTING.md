@@ -29,7 +29,7 @@ Thanks for your interest in contributing to GolfClip! This document provides gui
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/golf-clip.git
+git clone https://github.com/elicoon/golf-clip.git
 cd golf-clip
 ```
 
@@ -306,7 +306,7 @@ The shot tracer uses a physics-based approach:
 
 ## Questions?
 
-- Check [CLAUDE.md](./CLAUDE.md) for technical details
+- Check [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for technical details
 - Check [docs/FEATURES.md](./docs/FEATURES.md) for feature documentation
 - Check [docs/PRODUCT-WALKTHROUGH.md](./docs/PRODUCT-WALKTHROUGH.md) for user flow
 
@@ -314,4 +314,4 @@ The shot tracer uses a physics-based approach:
 
 ## License
 
-This project is private. All rights reserved.
+This project is licensed under the MIT License. See [LICENSE](./LICENSE) for details.

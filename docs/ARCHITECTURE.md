@@ -68,7 +68,7 @@ golf-clip/
 │   │       ├── components/    # UI components
 │   │       ├── stores/        # Zustand state management
 │   │       └── lib/           # Processing pipeline, trajectory gen
-│   └── desktop/               # Desktop app (Tauri + SQLite)
+│   └── desktop/               # Desktop app (Python FastAPI + SQLite)
 │       └── backend/
 │           ├── api/           # FastAPI routes
 │           ├── core/          # Database, config
@@ -860,17 +860,9 @@ flowchart LR
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| Shell | Tauri | Native window, file access |
+| API Server | Python FastAPI | REST API, business logic |
 | Database | SQLite | Local storage |
-| File System | Native (Rust) | Direct file access |
-
-### Webapp (Cloud)
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Database | PostgreSQL | Scalable persistence |
-| Object Storage | Cloudflare R2 | Video file storage |
-| Deployment | Docker | Containerization |
+| File System | Native (Python) | Direct file access |
 
 ### Development
 

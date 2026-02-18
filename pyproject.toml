@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "GolfClip - AI Golf Shot Detection (Monorepo Root)"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "Private"}
+license = {text = "MIT"}
 authors = [
     {name = "Eli Coon"}
 ]
@@ -23,13 +23,6 @@ dev = [
     "black>=24.1.0",
     "ruff>=0.1.0",
     "mypy>=1.8.0",
-]
-
-# Install all packages in editable mode for development
-all = [
-    "golfclip-detection",
-    "golfclip-schemas",
-    "golfclip-desktop",
 ]
 
 [tool.black]
@@ -49,4 +42,4 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["packages/*/tests", "apps/*/tests"]
+testpaths = ["apps/desktop/backend/tests"]

@@ -8,8 +8,6 @@ version = "0.1.0"
 description = "GolfClip Desktop App Backend"
 requires-python = ">=3.11"
 dependencies = [
-    "golfclip-detection",
-    "golfclip-schemas",
     "fastapi>=0.109.0",
     "uvicorn>=0.27.0",
     "aiosqlite>=0.19.0",
