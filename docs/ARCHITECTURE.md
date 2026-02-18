@@ -2,6 +2,10 @@
 
 Technical architecture reference for the GolfClip project - an AI-powered golf shot detection and clip export tool.
 
+> **Implementation Status:**
+> - **Active — Browser App** (`apps/browser/`): Production web app deployed on Vercel. Fully client-side — no backend required. All audio/video processing runs in the browser via FFmpeg.js, Essentia.js, and WebCodecs API.
+> - **Paused — Desktop Backend** (`apps/desktop/`): Python FastAPI server with YOLO, OpenCV, and librosa for server-side shot detection. Included as a reference implementation of the detection algorithms. Sections covering this backend are labeled **[Desktop Backend]**.
+
 ## Table of Contents
 
 1. [System Overview](#1-system-overview)
@@ -68,24 +72,23 @@ golf-clip/
 │   │       ├── components/    # UI components
 │   │       ├── stores/        # Zustand state management
 │   │       └── lib/           # Processing pipeline, trajectory gen
-│   └── desktop/               # Desktop app (Python FastAPI + SQLite)
+│   └── desktop/               # PAUSED: Desktop backend (Python FastAPI)
 │       └── backend/
 │           ├── api/           # FastAPI routes
 │           ├── core/          # Database, config
-│           ├── detection/     # Shot detection algorithms
-│           ├── models/        # CRUD operations
+│           ├── detection/     # Shot detection algorithms (YOLO, OpenCV, librosa)
+│           ├── models/        # SQLite CRUD operations
 │           └── processing/    # Video/tracer rendering
-├── scripts/                   # Development and testing scripts
-├── src/                       # ML feedback analysis utilities
-├── docs/                      # Documentation
-└── ...
+├── scripts/                   # Development and ML analysis scripts
+├── src/                       # Legacy ML experiments and performance benchmarks
+└── docs/                      # Documentation
 ```
 
-**Note:** The browser app does client-side processing and does not require the desktop backend to run.
+**Note:** Only `apps/browser/` is actively deployed. `apps/desktop/` is a paused reference implementation of the server-side detection pipeline. The browser app does all processing client-side (FFmpeg.js + Essentia.js + WebCodecs) and does not require the desktop backend.
 
 ---
 
-## 2. Detection Pipeline
+## 2. Detection Pipeline [Desktop Backend]
 
 ### Full Pipeline Flow
 
@@ -168,7 +171,7 @@ flowchart LR
 
 ---
 
-## 3. Ball Origin Detection Architecture
+## 3. Ball Origin Detection Architecture [Desktop Backend]
 
 ### Two-Step Detection Process
 
@@ -261,7 +264,7 @@ BallOriginDetector.detect_origin()
 
 ---
 
-## 4. Trajectory Generation Pipeline
+## 4. Trajectory Generation Pipeline [Desktop Backend]
 
 ### SSE-Based Generation Flow
 
@@ -357,7 +360,7 @@ sequenceDiagram
 
 ---
 
-## 4b. Browser Export Pipeline
+## 4b. Browser Export Pipeline [Browser App]
 
 The browser app exports clips client-side using WebCodecs API with a two-pass real-time capture approach.
 
@@ -431,7 +434,7 @@ The browser app exports clips client-side using WebCodecs API with a two-pass re
 
 ---
 
-## 5. Frontend Component Architecture
+## 5. Frontend Component Architecture [Browser App]
 
 ### Component Hierarchy
 
@@ -580,7 +583,7 @@ interface ReviewActionsState {
 
 ---
 
-## 6. Database Schema
+## 6. Database Schema [Desktop Backend]
 
 ### Entity Relationship Diagram
 
@@ -715,7 +718,7 @@ erDiagram
 
 ---
 
-## 7. Data Flow Diagrams
+## 7. Data Flow Diagrams [Desktop Backend]
 
 ### Video Upload to Export Flow
 
@@ -827,20 +830,7 @@ flowchart LR
 
 ## 8. Technology Stack
 
-### Backend
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| API Framework | FastAPI | REST API with async support |
-| Runtime | Python 3.11+ | Core language |
-| Video Processing | OpenCV | Frame extraction, tracer rendering |
-| Audio Processing | librosa | Transient detection, spectral analysis |
-| Video Codec | ffmpeg-python | Audio extraction, clip export |
-| ML Detection | YOLO (ultralytics) | Person/ball detection |
-| Database | SQLite + aiosqlite | Local persistence (async) |
-| Line Detection | LSD, Hough (OpenCV) | Shaft detection |
-
-### Frontend (apps/browser/)
+### Browser App (Active — apps/browser/)
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
@@ -855,14 +845,20 @@ flowchart LR
 | Video Export | WebCodecs API | Hardware-accelerated encoding |
 | Frame Capture | requestVideoFrameCallback | Real-time frame capture + FPS detection |
 | MP4 Muxing | mp4-muxer | Browser-side MP4 container creation |
+| Hosting | Vercel | Production deployment |
 
-### Desktop App
+### Desktop Backend (Paused — apps/desktop/)
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| API Server | Python FastAPI | REST API, business logic |
-| Database | SQLite | Local storage |
-| File System | Native (Python) | Direct file access |
+| API Framework | FastAPI | REST API with async support |
+| Runtime | Python 3.11+ | Core language |
+| Video Processing | OpenCV | Frame extraction, tracer rendering |
+| Audio Processing | librosa | Transient detection, spectral analysis |
+| Video Codec | ffmpeg-python | Audio extraction, clip export |
+| ML Detection | YOLO (ultralytics) | Person/ball detection |
+| Database | SQLite + aiosqlite | Local persistence (async) |
+| Line Detection | LSD, Hough (OpenCV) | Shaft detection |
 
 ### Development
 

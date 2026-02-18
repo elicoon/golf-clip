@@ -1,6 +1,6 @@
 # GolfClip API Reference
 
-This document describes all API endpoints available in the GolfClip backend.
+> **Scope:** This document covers the **Desktop Backend** (`apps/desktop/`) — a Python FastAPI server that runs locally alongside a desktop client. The **browser app** (`apps/browser/`) performs all processing client-side (FFmpeg.js, Essentia.js, WebCodecs) and does not require this backend. These endpoints are preserved as a reference for the server-side detection and ML feedback pipeline.
 
 **Base URL:** `http://localhost:8420/api`
 

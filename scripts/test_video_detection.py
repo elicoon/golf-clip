@@ -13,8 +13,12 @@ from backend.detection.visual import BallDetector
 
 
 def main():
-    # Path to test video
-    video_path = Path.home() / "Downloads" / "IMG_2198.MP4"
+    # Path to test video — pass as command-line argument, e.g.:
+    #   python scripts/test_video_detection.py /path/to/your/golf_video.mp4
+    if len(sys.argv) < 2:
+        print("Usage: python scripts/test_video_detection.py <video_path>")
+        return
+    video_path = Path(sys.argv[1])
 
     if not video_path.exists():
         print(f"Video not found: {video_path}")

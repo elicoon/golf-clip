@@ -1,5 +1,7 @@
 # GolfClip - Product Requirements Document
 
+> **Note:** This is the original product vision document, written before implementation began. It describes a Mac desktop app using Tauri. The current implementation is a **browser-based web app** — see [README.md](./README.md) and [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for how it was actually built. The PRD is preserved here as the original spec.
+
 ## Overview
 
 GolfClip is a Mac desktop application that automatically transforms raw iPhone golf recordings into polished, YouTube-ready video clips. The app processes 15-20 minute videos of golf holes, identifies individual shots, and outputs professionally edited clips with shot tracers and hole information overlays—mimicking the style of popular YouTube golf channels like Good Good, Bryan Bros, Grant Horvat, and Bryson DeChambeau.
