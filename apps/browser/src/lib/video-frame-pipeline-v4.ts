@@ -19,6 +19,7 @@
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
 import { TrajectoryPoint } from './canvas-compositor'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
+import { drawTracerLine } from './tracer-renderer'
 
 export interface ExportProgressV4 {
   phase: 'preparing' | 'extracting' | 'encoding' | 'muxing' | 'complete'
@@ -43,82 +44,6 @@ export interface ExportConfigV4 {
 }
 
 /**
- * Draw tracer on canvas up to the given timestamp
- * (Copied from V3 for consistency)
- */
-function drawTracer(
-  ctx: CanvasRenderingContext2D,
-  trajectory: TrajectoryPoint[],
-  currentTime: number,
-  width: number,
-  height: number,
-  style: TracerStyle
-): void {
-  if (trajectory.length < 2) return
-
-  // Sort by timestamp
-  const sorted = [...trajectory].sort((a, b) => a.timestamp - b.timestamp)
-
-  // Build visible points with interpolated leading edge for smooth animation
-  const visiblePoints: { x: number; y: number }[] = []
-
-  for (let i = 0; i < sorted.length; i++) {
-    const point = sorted[i]
-    if (point.timestamp <= currentTime) {
-      visiblePoints.push({ x: point.x * width, y: point.y * height })
-    } else {
-      // Interpolate leading edge between previous point and this one
-      if (i > 0) {
-        const prev = sorted[i - 1]
-        const dt = point.timestamp - prev.timestamp
-        if (dt > 0) {
-          const t = (currentTime - prev.timestamp) / dt
-          if (t > 0) {
-            visiblePoints.push({
-              x: (prev.x + t * (point.x - prev.x)) * width,
-              y: (prev.y + t * (point.y - prev.y)) * height,
-            })
-          }
-        }
-      }
-      break
-    }
-  }
-
-  if (visiblePoints.length < 2) return
-
-  ctx.save()
-
-  // Draw glow layer
-  ctx.strokeStyle = style.glowColor || style.color
-  ctx.lineWidth = (style.lineWidth || 4) + (style.glowRadius || 8)
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  ctx.globalAlpha = 0.4
-
-  ctx.beginPath()
-  ctx.moveTo(visiblePoints[0].x, visiblePoints[0].y)
-  for (let i = 1; i < visiblePoints.length; i++) {
-    ctx.lineTo(visiblePoints[i].x, visiblePoints[i].y)
-  }
-  ctx.stroke()
-
-  // Draw main line
-  ctx.strokeStyle = style.color || '#ff0000'
-  ctx.lineWidth = style.lineWidth || 4
-  ctx.globalAlpha = 1.0
-
-  ctx.beginPath()
-  ctx.moveTo(visiblePoints[0].x, visiblePoints[0].y)
-  for (let i = 1; i < visiblePoints.length; i++) {
-    ctx.lineTo(visiblePoints[i].x, visiblePoints[i].y)
-  }
-  ctx.stroke()
-
-  ctx.restore()
-}
-
-/**
  * Check if requestVideoFrameCallback is supported
  */
 export function isVideoFrameCallbackSupported(): boolean {
@@ -130,7 +55,7 @@ export function isVideoFrameCallbackSupported(): boolean {
  * V4 Export Pipeline using requestVideoFrameCallback for real-time capture
  */
 export class VideoFramePipelineV4 {
-  async exportWithTracer(config: ExportConfigV4): Promise<Blob> {
+  async exportWithTracer(config: ExportConfigV4): Promise<{ blob: Blob; actualStartTime: number }> {
     const {
       videoBlob,
       trajectory,
@@ -293,6 +218,7 @@ export class VideoFramePipelineV4 {
     const captureCtx = captureCanvas.getContext('2d')!
 
     const capturedBitmaps: { bitmap: ImageBitmap; timeUs: number }[] = []
+    let actualCaptureStartTime = startTime // Track actual first frame time for audio sync
 
     onProgress?.({ phase: 'extracting', progress: 0 })
 
@@ -377,9 +303,13 @@ export class VideoFramePipelineV4 {
           const bitmap = await createImageBitmap(captureCanvas)
           const relativeTimeUs = Math.round((currentVideoTime - startTime) * 1_000_000)
 
-          // Debug: log first bitmap dimensions
+          // Track actual first frame time for audio sync
+          // HTML5 seek snaps to keyframes, so actual start may be before startTime
           if (capturedBitmaps.length === 0) {
-            console.log('[PipelineV4] First bitmap captured:', bitmap.width, 'x', bitmap.height)
+            actualCaptureStartTime = currentVideoTime
+            console.log('[PipelineV4] First bitmap captured:', bitmap.width, 'x', bitmap.height,
+              'at', currentVideoTime.toFixed(3) + 's',
+              '(requested', startTime.toFixed(3) + 's, drift:', (startTime - currentVideoTime).toFixed(3) + 's)')
           }
 
           capturedBitmaps.push({ bitmap, timeUs: relativeTimeUs })
@@ -442,11 +372,19 @@ export class VideoFramePipelineV4 {
       bitmap.close()
 
       // Draw tracer overlay
+      // relativeTime = time since clip start (timeUs is already offset by startTime during capture)
+      // Add startTime (clipStart - segmentStart) to get blob-relative time matching trajectory timestamps
+      // BUG FIX: was using trajectory[0].timestamp (strikeOffset) which made tracer appear ~2s early
       const relativeTime = timeUs / 1_000_000
-      const trajectoryTime = trajectory.length > 0
-        ? relativeTime + trajectory[0].timestamp
-        : relativeTime
-      drawTracer(ctx, trajectory, trajectoryTime, width, height, tracerStyle)
+      const trajectoryTime = relativeTime + startTime
+      drawTracerLine({
+        ctx,
+        points: trajectory,
+        currentTime: trajectoryTime,
+        width,
+        height,
+        style: tracerStyle,
+      })
 
       // Create VideoFrame and encode
       const frame = new VideoFrame(canvas, {
@@ -486,7 +424,9 @@ export class VideoFramePipelineV4 {
     console.log('[PipelineV4] Export complete in', (elapsedMs / 1000).toFixed(1), 'seconds')
     console.log('[PipelineV4] Captured', capturedBitmaps.length, 'frames at', actualFps.toFixed(1), 'fps effective')
     console.log('[PipelineV4] Export speed:', (duration / (elapsedMs / 1000)).toFixed(2) + 'x realtime')
+    console.log('[PipelineV4] Actual capture start:', actualCaptureStartTime.toFixed(3) + 's',
+      '(requested:', startTime.toFixed(3) + 's)')
 
-    return resultBlob
+    return { blob: resultBlob, actualStartTime: actualCaptureStartTime }
   }
 }
