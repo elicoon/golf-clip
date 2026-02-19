@@ -298,6 +298,98 @@ button:disabled {
   margin-bottom: 0;
 }
 
+/* Upload screen layout */
+.upload-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: var(--spacing-xl);
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 var(--spacing-lg);
+  align-items: start;
+}
+
+.upload-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+/* Walkthrough steps */
+.walkthrough-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+}
+
+.walkthrough-step {
+  text-align: center;
+}
+
+.walkthrough-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--color-primary);
+  color: var(--color-bg);
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+.walkthrough-illustration {
+  width: 100%;
+  max-width: 180px;
+  margin: 0 auto var(--spacing-sm);
+  color: var(--color-text-secondary);
+}
+
+.walkthrough-illustration svg {
+  width: 100%;
+  height: auto;
+}
+
+.walkthrough-step h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.walkthrough-step p {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+@media (max-width: 700px) {
+  .upload-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .walkthrough-steps {
+    flex-direction: row;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding-bottom: var(--spacing-md);
+    border-bottom: 1px solid var(--color-bg-tertiary);
+    margin-bottom: var(--spacing-md);
+  }
+
+  .walkthrough-step {
+    flex: 1;
+    max-width: 160px;
+  }
+
+  .walkthrough-illustration {
+    max-width: 100px;
+  }
+}
+
 /* ============================================
    Dropzone
    ============================================ */
