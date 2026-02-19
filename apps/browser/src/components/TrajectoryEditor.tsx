@@ -1,4 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
+import { drawTracerLine } from '../lib/tracer-renderer'
+import { DEFAULT_TRACER_STYLE } from '../types/tracer'
 
 interface TrajectoryPoint {
   timestamp: number
@@ -189,107 +191,15 @@ export function TrajectoryEditor({
     let completionTimestamp: number | null = null  // Track REAL time (performance.now) when trajectory completed
     const HOLD_DURATION_MS = 1500  // Milliseconds to hold the complete trajectory visible
 
-    // Pre-calculate path lengths once (doesn't change during animation)
-    const pathLengths: number[] = [0]
-    for (let i = 1; i < localPoints.length; i++) {
-      const dx = localPoints[i].x - localPoints[i - 1].x
-      const dy = localPoints[i].y - localPoints[i - 1].y
-      const segmentLength = Math.sqrt(dx * dx + dy * dy)
-      pathLengths.push(pathLengths[i - 1] + segmentLength)
-    }
-    const totalPathLength = pathLengths[pathLengths.length - 1]
-
-    // Convert time ratio to display progress using golf ball physics
-    // Based on research: ball covers most distance early (high velocity), slows before apex,
-    // then descends at near-constant speed (drag limits acceleration, terminal velocity ~72mph)
-    //
-    // Physics-based timing:
-    // - Ball launches at ~160mph, lands at ~70mph
-    // - Covers ~45% of path in first 25% of time (peak velocity phase)
-    // - Apex around 50-55% of time, ~55% of path distance
-    // - Descent is nearly linear (terminal velocity limited, no real acceleration)
-    //
-    // Uses a single continuous curve (modified Bezier) to avoid abrupt transitions
-    const timeToProgress = (t: number): number => {
-      if (t <= 0) return 0
-      if (t >= 1) return 1
-
-      // Single continuous easing function using a custom curve
-      // This avoids the jarring transition between discrete stages
-      //
-      // The curve is designed to:
-      // - Start fast (explosive launch)
-      // - Smoothly decelerate approaching apex (~50% time)
-      // - Nearly linear descent after apex
-      //
-      // We use a combination of easing functions blended by a smoothstep
-      // to create one continuous curve
-
-      // Use a monotonic easing function that:
-      // - Has fast early progress (ease-out character)
-      // - Gradually decelerates without abrupt transitions
-      // - Never goes backwards (guaranteed monotonic)
-      //
-      // We blend easeOutCubic with linear using a smooth transition
-      // Both curves are monotonic, and linear >= cubic at all points,
-      // so any blend is also monotonic.
-
-      // easeOutCubic: fast start, slowing down
-      const easeOut = 1 - Math.pow(1 - t, 3)
-
-      // Linear component
-      const linear = t
-
-      // Blend from easeOut (early) toward more linear (late)
-      // Use smooth blend that transitions from 70% easeOut to 30% easeOut
-      const easeWeight = 0.7 - 0.4 * t  // Goes from 0.7 at t=0 to 0.3 at t=1
-
-      // Combined progress (weighted average)
-      const progress = easeOut * easeWeight + linear * (1 - easeWeight)
-
-      return Math.min(1, Math.max(0, progress))
-    }
-
     // Helper to convert normalized coords (0-1) to canvas coords
     // Uses video content bounds to account for object-fit: contain letterboxing
     const bounds = videoContentBounds || { offsetX: 0, offsetY: 0, width: canvasSize.width, height: canvasSize.height }
-    const toCanvas = (x: number, y: number) => ({
-      x: bounds.offsetX + x * bounds.width,
-      y: bounds.offsetY + y * bounds.height,
+
+    // Clamped version that ensures coordinates stay within video bounds (used by markers)
+    const clampedToCanvas = (x: number, y: number) => ({
+      x: bounds.offsetX + Math.max(0, Math.min(1, x)) * bounds.width,
+      y: bounds.offsetY + Math.max(0, Math.min(1, y)) * bounds.height,
     })
-
-    // Clamped version that ensures coordinates stay within video bounds
-    const clampedToCanvas = (x: number, y: number) => {
-      const clampedX = Math.max(0, Math.min(1, x))
-      const clampedY = Math.max(0, Math.min(1, y))
-      return toCanvas(clampedX, clampedY)
-    }
-
-    // Helper to draw smooth curve using quadratic Bezier spline
-    const drawSmoothCurve = (points: TrajectoryPoint[]) => {
-      if (points.length < 2) return
-
-      const first = clampedToCanvas(points[0].x, points[0].y)
-      ctx.moveTo(first.x, first.y)
-
-      if (points.length === 2) {
-        const second = clampedToCanvas(points[1].x, points[1].y)
-        ctx.lineTo(second.x, second.y)
-        return
-      }
-
-      for (let i = 1; i < points.length - 1; i++) {
-        const current = clampedToCanvas(points[i].x, points[i].y)
-        const next = clampedToCanvas(points[i + 1].x, points[i + 1].y)
-        const midX = (current.x + next.x) / 2
-        const midY = (current.y + next.y) / 2
-        ctx.quadraticCurveTo(current.x, current.y, midX, midY)
-      }
-
-      const last = clampedToCanvas(points[points.length - 1].x, points[points.length - 1].y)
-      const secondLast = clampedToCanvas(points[points.length - 2].x, points[points.length - 2].y)
-      ctx.quadraticCurveTo(secondLast.x, secondLast.y, last.x, last.y)
-    }
 
     // Main render function - called 60 times per second
     const render = () => {
@@ -399,100 +309,35 @@ export function TrajectoryEditor({
         ? Math.max(0, Math.min(1, (videoTime - firstPointTime) / timeRange))
         : 0
 
-      let displayProgress = timeToProgress(timeRatio)
-
       // Handle trajectory completion hold - keep full line visible for HOLD_DURATION after completion
       // Use real time (performance.now) so hold works even if video loops
       const now = performance.now()
 
+      let effectiveTime = videoTime
       if (timeRatio >= 1.0) {
-        // We're at or past the trajectory end time
         if (completionTimestamp === null) {
           completionTimestamp = now
         }
-        displayProgress = 1.0
+        effectiveTime = lastPointTime // force full trajectory
       } else if (completionTimestamp !== null) {
-        // Trajectory was complete - check if we're still in the hold period
         const msSinceCompletion = now - completionTimestamp
         if (msSinceCompletion <= HOLD_DURATION_MS) {
-          // Still in hold period - keep full trajectory visible even though video may have looped
-          displayProgress = 1.0
+          effectiveTime = lastPointTime // still in hold period
         } else {
-          // Hold period expired - reset and allow normal animation
           completionTimestamp = null
         }
       }
 
-      // Calculate target distance in pixels for sub-pixel precision check
-      const targetDistance = displayProgress * totalPathLength
-      // Note: targetPixelDistance kept for potential future sub-pixel precision optimization
-      void (targetDistance * canvasSize.width) // suppress unused warning
-
-      // Find which segment contains the target distance and interpolate
-      let endPointIndex = localPoints.length - 1
-      let interpolatedEndPoint: { x: number; y: number } | null = null
-
-      for (let i = 1; i < localPoints.length; i++) {
-        if (pathLengths[i] >= targetDistance) {
-          endPointIndex = i
-          const segmentStart = pathLengths[i - 1]
-          const segmentEnd = pathLengths[i]
-          const segmentLength = segmentEnd - segmentStart
-          const t = segmentLength > 0 ? (targetDistance - segmentStart) / segmentLength : 0
-
-          interpolatedEndPoint = {
-            x: localPoints[i - 1].x + t * (localPoints[i].x - localPoints[i - 1].x),
-            y: localPoints[i - 1].y + t * (localPoints[i].y - localPoints[i - 1].y),
-          }
-          break
-        }
-      }
-
-      // Build visible points array with interpolated end point
-      const visiblePoints: TrajectoryPoint[] = localPoints.slice(0, endPointIndex)
-      if (interpolatedEndPoint) {
-        visiblePoints.push({
-          ...localPoints[Math.min(endPointIndex, localPoints.length - 1)],
-          x: interpolatedEndPoint.x,
-          y: interpolatedEndPoint.y,
-        })
-      }
-
-      if (visiblePoints.length >= 2) {
-        // Draw RED trajectory line with glow effect
-        ctx.save()
-
-        // Outer glow layer
-        ctx.strokeStyle = '#ff0000'
-        ctx.lineWidth = 8
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
-        ctx.shadowColor = '#ff0000'
-        ctx.shadowBlur = 16
-        ctx.globalAlpha = 0.4
-
-        ctx.beginPath()
-        drawSmoothCurve(visiblePoints)
-        ctx.stroke()
-
-        // Inner glow layer
-        ctx.shadowBlur = 8
-        ctx.lineWidth = 5
-        ctx.globalAlpha = 0.6
-        ctx.beginPath()
-        drawSmoothCurve(visiblePoints)
-        ctx.stroke()
-
-        // Core RED line
-        ctx.shadowBlur = 4
-        ctx.lineWidth = 3
-        ctx.globalAlpha = 1.0
-        ctx.beginPath()
-        drawSmoothCurve(visiblePoints)
-        ctx.stroke()
-
-        ctx.restore()
-      }
+      // Draw trajectory using shared renderer (same code as export pipeline)
+      drawTracerLine({
+        ctx,
+        points: localPoints,
+        currentTime: effectiveTime,
+        width: canvasSize.width,
+        height: canvasSize.height,
+        style: DEFAULT_TRACER_STYLE,
+        contentBounds: videoContentBounds || undefined,
+      })
 
       // Draw apex marker if visible
       if (trajectory?.apex_point && videoTime >= trajectory.apex_point.timestamp) {
