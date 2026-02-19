@@ -160,7 +160,7 @@ describe('ClipReview Feedback Error Display', () => {
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
 
     // Confirm the dialog
-    fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
+
 
     // Flush promises so the .then() callback executes
     await flushPromises()
@@ -206,7 +206,7 @@ describe('ClipReview Feedback Error Display', () => {
 
     // Click "No Golf Shot" to reject
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
-    fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
+
 
     await flushPromises()
 
@@ -224,7 +224,7 @@ describe('ClipReview Feedback Error Display', () => {
 
     // Reject to trigger error
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
-    fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
+
 
     await flushPromises()
 
@@ -293,7 +293,7 @@ describe('ClipReview Feedback Error Display', () => {
 
     // Reject first shot
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
-    fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
+
 
     await flushPromises()
 
