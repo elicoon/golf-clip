@@ -492,15 +492,19 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           },
         }
 
-        let exportedBlob = await pipelineV4.exportWithTracer(configV4)
+        const exportResult = await pipelineV4.exportWithTracer(configV4)
+        let exportedBlob = exportResult.blob
 
         // Mux audio from original segment into the video-only export
+        // Use actualStartTime from pipeline (not clipStart) to account for keyframe seek drift
+        // HTML5 video.seek() snaps to the nearest keyframe, so the video may start
+        // slightly before clipStart. Audio must match the actual video start time.
         try {
           await loadFFmpeg()
           setExportPhase({ phase: 'muxing', progress: 50 })
-          const clipStart = segment.clipStart - segment.startTime
+          const audioStart = exportResult.actualStartTime
           const clipEnd = segment.clipEnd - segment.startTime
-          exportedBlob = await muxAudioIntoClip(exportedBlob, segment.blob, clipStart, clipEnd)
+          exportedBlob = await muxAudioIntoClip(exportedBlob, segment.blob, audioStart, clipEnd)
         } catch (audioErr) {
           console.warn('[ExportV4] Audio mux failed, exporting without audio:', audioErr)
         }

@@ -55,7 +55,7 @@ export function isVideoFrameCallbackSupported(): boolean {
  * V4 Export Pipeline using requestVideoFrameCallback for real-time capture
  */
 export class VideoFramePipelineV4 {
-  async exportWithTracer(config: ExportConfigV4): Promise<Blob> {
+  async exportWithTracer(config: ExportConfigV4): Promise<{ blob: Blob; actualStartTime: number }> {
     const {
       videoBlob,
       trajectory,
@@ -218,6 +218,7 @@ export class VideoFramePipelineV4 {
     const captureCtx = captureCanvas.getContext('2d')!
 
     const capturedBitmaps: { bitmap: ImageBitmap; timeUs: number }[] = []
+    let actualCaptureStartTime = startTime // Track actual first frame time for audio sync
 
     onProgress?.({ phase: 'extracting', progress: 0 })
 
@@ -302,9 +303,13 @@ export class VideoFramePipelineV4 {
           const bitmap = await createImageBitmap(captureCanvas)
           const relativeTimeUs = Math.round((currentVideoTime - startTime) * 1_000_000)
 
-          // Debug: log first bitmap dimensions
+          // Track actual first frame time for audio sync
+          // HTML5 seek snaps to keyframes, so actual start may be before startTime
           if (capturedBitmaps.length === 0) {
-            console.log('[PipelineV4] First bitmap captured:', bitmap.width, 'x', bitmap.height)
+            actualCaptureStartTime = currentVideoTime
+            console.log('[PipelineV4] First bitmap captured:', bitmap.width, 'x', bitmap.height,
+              'at', currentVideoTime.toFixed(3) + 's',
+              '(requested', startTime.toFixed(3) + 's, drift:', (startTime - currentVideoTime).toFixed(3) + 's)')
           }
 
           capturedBitmaps.push({ bitmap, timeUs: relativeTimeUs })
@@ -419,7 +424,9 @@ export class VideoFramePipelineV4 {
     console.log('[PipelineV4] Export complete in', (elapsedMs / 1000).toFixed(1), 'seconds')
     console.log('[PipelineV4] Captured', capturedBitmaps.length, 'frames at', actualFps.toFixed(1), 'fps effective')
     console.log('[PipelineV4] Export speed:', (duration / (elapsedMs / 1000)).toFixed(2) + 'x realtime')
+    console.log('[PipelineV4] Actual capture start:', actualCaptureStartTime.toFixed(3) + 's',
+      '(requested:', startTime.toFixed(3) + 's)')
 
-    return resultBlob
+    return { blob: resultBlob, actualStartTime: actualCaptureStartTime }
   }
 }

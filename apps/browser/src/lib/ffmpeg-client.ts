@@ -344,10 +344,19 @@ export async function muxAudioIntoClip(
     await ffmpeg.writeFile(sourceFile, await fetchFile(sourceSegmentBlob))
 
     // Step 1: Extract audio from the source segment for the clip time range
+    // IMPORTANT: -ss AFTER -i for precise seeking (not keyframe-based)
+    // With -ss before -i, FFmpeg seeks to the nearest keyframe which can be
+    // significantly earlier, producing audio that's longer than the video.
+    // Segment blobs are short (<1min) so the speed difference is negligible.
     const duration = clipEndInSegment - clipStartInSegment
+    console.log('[muxAudio] Extracting audio:', {
+      start: clipStartInSegment.toFixed(3),
+      duration: duration.toFixed(3),
+      segmentSize: (sourceSegmentBlob.size / 1024 / 1024).toFixed(1) + 'MB',
+    })
     const extractExitCode = await ffmpeg.exec([
-      '-ss', clipStartInSegment.toString(),
       '-i', sourceFile,
+      '-ss', clipStartInSegment.toString(),
       '-t', duration.toString(),
       '-vn',           // No video
       '-acodec', 'copy', // Stream copy (no re-encode)
