@@ -1015,20 +1015,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <span className="review-progress">{currentIndex + 1} of {totalShots}</span>
       </div>
 
-      {/* Review action buttons - positioned above video */}
-      <div className="review-actions">
-        <button onClick={handleReject} className="btn-no-shot">
-          ✕ No Golf Shot
-        </button>
-        <button
-          onClick={handleApprove}
-          className="btn-primary btn-large"
-          disabled={reviewStep !== 'reviewing'}
-        >
-          ✓ Approve Shot
-        </button>
-      </div>
-
       {/* Non-blocking feedback error banner */}
       {feedbackError && (
         <div className="feedback-error" role="alert">
@@ -1043,23 +1029,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         </div>
       )}
 
-      {/* Instruction banner based on review step */}
-      <div className="marking-instruction">
-        {reviewStep === 'marking_landing' && (
-          <>
-            <span className="step-badge">Step 1</span>
-            <span className="instruction-text">Click where the ball landed</span>
-          </>
-        )}
-        {reviewStep === 'reviewing' && (
-          <>
-            <span className="step-badge complete">Ready</span>
-            <span className="instruction-text">Review the trajectory, then approve or reject</span>
-          </>
-        )}
-      </div>
-
-      {/* TracerConfigPanel - above video for easy access */}
+      {/* TracerConfigPanel - above buttons for easy access */}
       {reviewStep === 'reviewing' && (
         <TracerConfigPanel
           config={tracerConfig}
@@ -1083,6 +1053,36 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           impactTimeAdjusted={impactTimeAdjusted}
         />
       )}
+
+      {/* Review action buttons - between config and video */}
+      <div className="review-actions">
+        <button onClick={handleReject} className="btn-no-shot">
+          ✕ No Golf Shot
+        </button>
+        <button
+          onClick={handleApprove}
+          className="btn-primary btn-large"
+          disabled={reviewStep !== 'reviewing'}
+        >
+          ✓ Approve Shot
+        </button>
+      </div>
+
+      {/* Instruction banner based on review step */}
+      <div className="marking-instruction">
+        {reviewStep === 'marking_landing' && (
+          <>
+            <span className="step-badge">Step 1</span>
+            <span className="instruction-text">Click where the ball landed</span>
+          </>
+        )}
+        {reviewStep === 'reviewing' && (
+          <>
+            <span className="step-badge complete">Ready</span>
+            <span className="instruction-text">Review the trajectory, then approve or reject</span>
+          </>
+        )}
+      </div>
 
       <div
         ref={videoContainerRef}
