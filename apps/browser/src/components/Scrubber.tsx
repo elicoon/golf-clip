@@ -7,6 +7,9 @@ interface ScrubberProps {
   onTimeUpdate: (start: number, end: number) => void
   disabled?: boolean
   videoDuration?: number // Total video duration for extended boundary support
+  // Strike time indicators
+  originalStrikeTime?: number  // Initial auto-detected strike time (orange)
+  strikeTime?: number          // Current (possibly adjusted) strike time (green)
 }
 
 type DragTarget = 'start' | 'end' | 'playhead' | null
@@ -18,6 +21,8 @@ export function Scrubber({
   onTimeUpdate,
   disabled = false,
   videoDuration,
+  originalStrikeTime,
+  strikeTime,
 }: ScrubberProps) {
   const scrubberRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState<DragTarget>(null)
@@ -279,6 +284,26 @@ export function Scrubber({
           onMouseDown={(e) => handleMouseDown(e, 'playhead')}
           title="Current playback position"
         />
+
+        {/* Strike time indicators */}
+        {strikeTime !== undefined && (
+          <div className="scrubber-strike-indicators">
+            {/* Original detection (orange) - only show if different from current */}
+            {originalStrikeTime !== undefined && Math.abs(originalStrikeTime - strikeTime) > 0.05 && (
+              <div
+                className="strike-indicator strike-indicator-original"
+                style={{ left: `${timeToPosition(originalStrikeTime)}%` }}
+                title={`Original detection: ${formatTime(originalStrikeTime)}`}
+              />
+            )}
+            {/* Current impact time (green) */}
+            <div
+              className="strike-indicator strike-indicator-current"
+              style={{ left: `${timeToPosition(strikeTime)}%` }}
+              title={`Impact time: ${formatTime(strikeTime)}`}
+            />
+          </div>
+        )}
       </div>
 
       {/* Time labels */}
