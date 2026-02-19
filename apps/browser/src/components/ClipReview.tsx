@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useProcessingStore, TrajectoryData, TracerConfig, VideoSegment } from '../stores/processingStore'
-import { useReviewActionsStore } from '../stores/reviewActionsStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
@@ -675,20 +674,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     // User can then click the export button when ready (if any shots were approved)
   }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment, showFeedbackError])
 
-  // Register handlers and progress with the shared store so header can display them
-  const { setHandlers, setCanApprove, setProgress, clearHandlers } = useReviewActionsStore()
-  useEffect(() => {
-    setHandlers(handleApprove, handleReject)
-    return () => clearHandlers()
-  }, [handleApprove, handleReject, setHandlers, clearHandlers])
-
-  useEffect(() => {
-    setCanApprove(reviewStep === 'reviewing')
-  }, [reviewStep, setCanApprove])
-
-  useEffect(() => {
-    setProgress(currentIndex, totalShots)
-  }, [currentIndex, totalShots, setProgress])
 
   const togglePlayPause = useCallback(() => {
     if (!videoRef.current) return

@@ -82,15 +82,6 @@ vi.mock('../stores/processingStore', () => ({
   })),
 }))
 
-vi.mock('../stores/reviewActionsStore', () => ({
-  useReviewActionsStore: vi.fn(() => ({
-    setHandlers: vi.fn(),
-    setCanApprove: vi.fn(),
-    setProgress: vi.fn(),
-    clearHandlers: vi.fn(),
-  })),
-}))
-
 vi.mock('../lib/feedback-service', () => ({
   submitShotFeedback: vi.fn(),
   submitTracerFeedback: vi.fn(),
