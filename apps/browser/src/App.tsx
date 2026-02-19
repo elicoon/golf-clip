@@ -1,6 +1,7 @@
 // apps/browser/src/App.tsx
 import { useState, useEffect } from 'react'
 import { VideoDropzone } from './components/VideoDropzone'
+import { WalkthroughSteps } from './components/WalkthroughSteps'
 import { ClipReview } from './components/ClipReview'
 import { useProcessingStore } from './stores/processingStore'
 
@@ -54,19 +55,24 @@ export default function App() {
         {view === 'upload' && !error && (
           <>
             <h1 className="app-title">GolfClip</h1>
-            <div className="about-box">
-              <p>
-                GolfClip is a vibe-coded golf video editing platform to address two pain points:
-              </p>
-              <ol>
-                <li>Editing long videos into short, relevant clips (centered around club impact) is tedious and time consuming.</li>
-                <li>Adding animated tracers to golf clips is challenging and time consuming.</li>
-              </ol>
-              <p className="about-box-disclaimer">
-                GolfClip is not intended as a production app. It is an experiment to test whether Claude Code can build technically complicated, compute intensive, domain specific software. No code was manually written for GolfClip.
-              </p>
+            <div className="upload-layout">
+              <WalkthroughSteps />
+              <div className="upload-content">
+                <div className="about-box">
+                  <p>
+                    GolfClip is a vibe-coded golf video editing platform to address two pain points:
+                  </p>
+                  <ol>
+                    <li>Editing long videos into short, relevant clips (centered around club impact) is tedious and time consuming.</li>
+                    <li>Adding animated tracers to golf clips is challenging and time consuming.</li>
+                  </ol>
+                  <p className="about-box-disclaimer">
+                    GolfClip is not intended as a production app. It is an experiment to test whether Claude Code can build technically complicated, compute intensive, domain specific software. No code was manually written for GolfClip.
+                  </p>
+                </div>
+                <VideoDropzone />
+              </div>
             </div>
-            <VideoDropzone />
           </>
         )}
 
