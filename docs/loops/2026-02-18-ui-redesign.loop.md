@@ -23,7 +23,7 @@ AGENT CONTRACT:
 |-------|-------|
 | **Workflow Type** | `feature` |
 | **Status** | `in-progress` |
-| **Iteration** | `0` |
+| **Iteration** | `1` |
 | **Max Iterations** | `12` |
 | **Created** | 2026-02-18 |
 | **Last Updated** | 2026-02-18 |
@@ -79,7 +79,7 @@ AGENT CONTRACT:
 ## Steps
 
 ### Step 1: Remove skip shot confirmation dialog
-**Status:** [CURRENT]
+**Status:** [DONE]
 
 **Purpose:** Simplify the reject flow — no confirmation step needed
 
@@ -103,15 +103,16 @@ AGENT CONTRACT:
 
 **Actual Outputs:**
 ```
-[To be filled after execution]
+tsc --noEmit: clean (0 errors)
+Commit: b181bc3
 ```
 
-**Verification:** `cd apps/browser && npx tsc --noEmit` passes
+**Verification:** `cd apps/browser && npx tsc --noEmit` — PASS
 
 ---
 
 ### Step 2: Remove header and distribute content
-**Status:** [NEXT]
+**Status:** [CURRENT]
 
 **Purpose:** Remove the sticky header, move title to upload screen only
 
