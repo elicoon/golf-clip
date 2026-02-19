@@ -292,6 +292,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setTrajectory(null)
     setVideoError(null) // Clear video error on shot change
     setFeedbackError(null) // Clear feedback error on shot change
+    setGenerateStatus(null) // Clear generate status on shot change
+    if (generateStatusTimerRef.current) {
+      clearTimeout(generateStatusTimerRef.current)
+      generateStatusTimerRef.current = null
+    }
     setImpactTimeAdjusted(false)
     // Reset zoom/pan when navigating to new shot
     setZoomLevel(1)
@@ -441,7 +446,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       }
 
       // Show inline status feedback
-      setGenerateStatus('Trajectory updated')
+      setGenerateStatus('Tracer generated. Click play to see animation')
       if (generateStatusTimerRef.current) clearTimeout(generateStatusTimerRef.current)
       generateStatusTimerRef.current = window.setTimeout(() => {
         setGenerateStatus(null)
@@ -1046,7 +1051,23 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         </div>
       )}
 
-      {/* TracerConfigPanel - above buttons for easy access */}
+      {/* Instruction banner based on review step */}
+      <div className="marking-instruction">
+        {reviewStep === 'marking_landing' && (
+          <>
+            <span className="step-badge">Step 1</span>
+            <span className="instruction-text">Click where the ball landed</span>
+          </>
+        )}
+        {reviewStep === 'reviewing' && (
+          <>
+            <span className="step-badge complete">Ready</span>
+            <span className="instruction-text">Review the trajectory, then approve or reject</span>
+          </>
+        )}
+      </div>
+
+      {/* TracerConfigPanel - below instruction banner */}
       {reviewStep === 'reviewing' && (
         <TracerConfigPanel
           config={tracerConfig}
@@ -1071,36 +1092,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           generateStatus={generateStatus}
         />
       )}
-
-      {/* Instruction banner based on review step */}
-      <div className="marking-instruction">
-        {reviewStep === 'marking_landing' && (
-          <>
-            <span className="step-badge">Step 1</span>
-            <span className="instruction-text">Click where the ball landed</span>
-          </>
-        )}
-        {reviewStep === 'reviewing' && (
-          <>
-            <span className="step-badge complete">Ready</span>
-            <span className="instruction-text">Review the trajectory, then approve or reject</span>
-          </>
-        )}
-      </div>
-
-      {/* Review action buttons - between instruction and video */}
-      <div className="review-actions">
-        <button onClick={handleReject} className="btn-no-shot">
-          ✕ No Golf Shot
-        </button>
-        <button
-          onClick={handleApprove}
-          className="btn-primary btn-large"
-          disabled={reviewStep !== 'reviewing'}
-        >
-          ✓ Approve Shot
-        </button>
-      </div>
 
       <div
         ref={videoContainerRef}
@@ -1226,6 +1217,20 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           handleTrimUpdate(newStart + currentShot.startTime, newEnd + currentShot.startTime)
         }}
       />
+
+      {/* Review action buttons - below scrubber */}
+      <div className="review-actions">
+        <button onClick={handleReject} className="btn-no-shot">
+          ✕ No Golf Shot
+        </button>
+        <button
+          onClick={handleApprove}
+          className="btn-primary btn-large"
+          disabled={reviewStep !== 'reviewing'}
+        >
+          ✓ Approve Shot
+        </button>
+      </div>
 
       {/* Playback and tracer controls */}
       <div className="tracer-controls">

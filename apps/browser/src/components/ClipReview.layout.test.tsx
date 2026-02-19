@@ -140,29 +140,29 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
   })
 
   describe('Review Action Buttons Position', () => {
-    it('should render review-actions div BEFORE video-container in the DOM', () => {
+    it('should render review-actions div AFTER scrubber in the DOM', () => {
       render(<ClipReview onComplete={vi.fn()} />)
 
       const clipReview = document.querySelector('.clip-review')
       const reviewActions = document.querySelector('.review-actions')
-      const videoContainer = document.querySelector('.video-container')
 
       expect(clipReview).not.toBeNull()
       expect(reviewActions).not.toBeNull()
-      expect(videoContainer).not.toBeNull()
 
       // Get all children of clip-review to check order
       const children = Array.from(clipReview!.children)
       const reviewActionsIndex = children.findIndex(el => el.classList.contains('review-actions'))
-      const videoContainerIndex = children.findIndex(el => el.classList.contains('video-container'))
+      const scrubberIndex = children.findIndex(el =>
+        el.classList.contains('scrubber') || el.classList.contains('scrubber-container')
+      )
 
-      // CRITICAL: review-actions should come BEFORE video-container
+      // review-actions should come AFTER scrubber (below timeline)
       expect(reviewActionsIndex).toBeGreaterThanOrEqual(0)
-      expect(videoContainerIndex).toBeGreaterThanOrEqual(0)
-      expect(reviewActionsIndex).toBeLessThan(videoContainerIndex)
+      expect(scrubberIndex).toBeGreaterThanOrEqual(0)
+      expect(reviewActionsIndex).toBeGreaterThan(scrubberIndex)
     })
 
-    it('should position review-actions before video-container, transport/scrubber after', () => {
+    it('should position video-container before scrubber, review-actions after scrubber', () => {
       render(<ClipReview onComplete={vi.fn()} />)
 
       const clipReview = document.querySelector('.clip-review')
@@ -170,7 +170,6 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
 
       const children = Array.from(clipReview!.children)
 
-      // Find relevant elements - Scrubber root element has class 'scrubber-container'
       const scrubberIndex = children.findIndex(el =>
         el.classList.contains('scrubber') || el.classList.contains('scrubber-container')
       )
@@ -178,26 +177,17 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
       const videoContainerIndex = children.findIndex(el => el.classList.contains('video-container'))
       const transportIndex = children.findIndex(el => el.className.includes('video-transport-controls'))
 
-      // Expected order: review-actions -> video-container -> transport -> scrubber
-      // (controls are below the video)
-      expect(reviewActionsIndex).toBeGreaterThanOrEqual(0)
-      expect(reviewActionsIndex).toBeLessThan(videoContainerIndex)
+      // Expected order: video-container -> transport -> scrubber -> review-actions
       expect(videoContainerIndex).toBeLessThan(transportIndex)
       expect(transportIndex).toBeLessThan(scrubberIndex)
+      expect(scrubberIndex).toBeLessThan(reviewActionsIndex)
     })
 
-    it('should have review-actions within first 5 elements of clip-review', () => {
+    it('should have review-actions present in the DOM', () => {
       render(<ClipReview onComplete={vi.fn()} />)
 
-      const clipReview = document.querySelector('.clip-review')
-      expect(clipReview).not.toBeNull()
-
-      const children = Array.from(clipReview!.children)
-      const reviewActionsIndex = children.findIndex(el => el.classList.contains('review-actions'))
-
-      // review-actions should be near the top (within first 5 elements)
-      expect(reviewActionsIndex).toBeGreaterThanOrEqual(0)
-      expect(reviewActionsIndex).toBeLessThan(5)
+      const reviewActions = document.querySelector('.review-actions')
+      expect(reviewActions).not.toBeNull()
     })
 
     it('should have both "No Golf Shot" and "Approve Shot" buttons in review-actions', () => {
@@ -448,11 +438,11 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
 
       // Expected structure (in order):
       // 1. review-header
-      // 2. review-actions (ABOVE video)
-      // 3. marking-instruction
-      // 4. video-container
-      // 5. video-transport-controls (BELOW video)
-      // 6. scrubber-container (Scrubber component, BELOW video)
+      // 2. marking-instruction
+      // 3. video-container
+      // 4. video-transport-controls (BELOW video)
+      // 5. scrubber-container (Scrubber component, BELOW video)
+      // 6. review-actions (BELOW scrubber)
       // ... other elements below
 
       const headerIndex = classNames.findIndex(c => c.includes('review-header'))
@@ -468,11 +458,11 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
       expect(transportIndex).toBeGreaterThanOrEqual(0)
       expect(scrubberIndex).toBeGreaterThanOrEqual(0)
 
-      // Verify order: header -> actions -> video -> transport -> scrubber
-      expect(headerIndex).toBeLessThan(reviewActionsIndex)
-      expect(reviewActionsIndex).toBeLessThan(videoContainerIndex)
+      // Verify order: header -> video -> transport -> scrubber -> actions
+      expect(headerIndex).toBeLessThan(videoContainerIndex)
       expect(videoContainerIndex).toBeLessThan(transportIndex)
       expect(transportIndex).toBeLessThan(scrubberIndex)
+      expect(scrubberIndex).toBeLessThan(reviewActionsIndex)
     })
 
     it('should not have redundant navigation sections', () => {
