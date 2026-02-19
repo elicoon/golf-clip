@@ -126,6 +126,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   // Detected video FPS for frame-accurate stepping (default 30, detected on first frame)
   const videoFpsRef = useRef<number>(30)
 
+  // Original strike time for comparison in scrubber indicator
+  const originalStrikeTimeRef = useRef<number>(0)
+
   // Feedback tracking - store initial values for comparison
   const initialTracerParamsRef = useRef<{
     originX?: number
@@ -298,6 +301,8 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         clipStart: currentShot.clipStart,
         clipEnd: currentShot.clipEnd
       }
+      // Store original strike time for scrubber indicator
+      originalStrikeTimeRef.current = currentShot.strikeTime
     }
   }, [currentShot?.id])
 
@@ -1201,6 +1206,8 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         startTime={currentShot.clipStart - currentShot.startTime}
         endTime={currentShot.clipEnd - currentShot.startTime}
         videoDuration={currentShot.endTime - currentShot.startTime}
+        originalStrikeTime={originalStrikeTimeRef.current - currentShot.startTime}
+        strikeTime={currentShot.strikeTime - currentShot.startTime}
         onTimeUpdate={(newStart, newEnd) => {
           // Convert blob-relative times back to global for storage
           handleTrimUpdate(newStart + currentShot.startTime, newEnd + currentShot.startTime)

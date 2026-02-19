@@ -1272,6 +1272,38 @@ kbd {
   border-radius: var(--border-radius-sm);
 }
 
+/* Strike time indicators */
+.scrubber-strike-indicators {
+  position: absolute;
+  bottom: -6px;
+  left: 0;
+  right: 0;
+  height: 12px;
+  pointer-events: none;
+}
+
+.strike-indicator {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  cursor: help;
+}
+
+.strike-indicator-original {
+  background-color: var(--color-warning);
+  opacity: 0.8;
+  z-index: 1;
+}
+
+.strike-indicator-current {
+  background-color: var(--color-primary);
+  z-index: 2;
+}
+
 /* ============================================
    Export Progress Modal
    ============================================ */
