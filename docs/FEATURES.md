@@ -213,11 +213,12 @@ When you mark landing:
 ### Tracer Appearance
 
 - **Color**: Red (#ff0000)
-- **Style**: Multi-layer glow effect
-  - Outer glow: 8px wide, 40% opacity
-  - Inner glow: 5px wide, 60% opacity
-  - Core line: 3px wide, 100% opacity
-- **Animation**: Progressive drawing effect (line grows as video plays)
+- **Style**: 3-layer bezier glow effect (shared renderer in `tracer-renderer.ts`)
+  - Outer glow: wide, low opacity with bezier-smoothed path
+  - Mid glow: medium width, medium opacity
+  - Core line: thin, full opacity
+- **Animation**: Progressive drawing effect (line grows as video plays) with physics-based easing (easeOutCubic/linear blend)
+- **Rendering**: Identical between review (TrajectoryEditor.tsx) and export (video-frame-pipeline-v4.ts) via shared `drawTracerLine()` function
 - **Markers**:
   - Apex marker at highest point (gold diamond)
   - Landing marker at end point (arrow icon)
@@ -225,8 +226,8 @@ When you mark landing:
 ### Frontend Components
 
 **TrajectoryEditor.tsx** - Canvas overlay on video player:
+- Uses shared `drawTracerLine()` from `tracer-renderer.ts` for consistent rendering
 - Progressive animation (line grows as video plays)
-- Control points: green (detected) vs gray (interpolated)
 - Custom SVG cursors for marker placement (crosshair, arrow, diamond icons)
 - Touch/pointer event support for mobile
 - Safari fallback for canvas blur filter
@@ -354,11 +355,12 @@ An earlier design proposed a more sophisticated 3-stage easing model based on re
 
 ### V4 Export Tracer Rendering
 
-For exported videos, the tracer is composited during the encoding pass:
+For exported videos, the tracer is composited during the encoding pass using the same shared renderer (`tracer-renderer.ts`) as the review UI:
 1. For each video frame, calculate `currentTime` relative to trajectory start
-2. Filter trajectory points where `timestamp <= currentTime`
-3. Interpolate leading edge position between last visible point and next point
-4. Draw glow layer (8px, 40% opacity) then main line (4px, 100% opacity)
+2. Call `drawTracerLine()` with current time, trajectory points, and canvas context
+3. The shared renderer handles physics-based easing, path-length interpolation, and 3-layer bezier glow
+
+**Audio sync:** The export pipeline returns `actualStartTime` (actual first frame time after HTML5 keyframe seek snap) so audio muxing via FFmpeg aligns precisely with the captured video.
 
 **Important:** The video element must be positioned in the viewport (not off-screen) during capture, or Chrome will throttle `requestVideoFrameCallback` to ~1fps.
 
@@ -521,7 +523,9 @@ Export requires `requestVideoFrameCallback` support:
 
 | File | Purpose |
 |------|---------|
-| `video-frame-pipeline-v4.ts` | Real-time capture pipeline |
+| `video-frame-pipeline-v4.ts` | Real-time capture pipeline (returns `actualStartTime` for audio sync) |
+| `tracer-renderer.ts` | Shared tracer drawing used by both review and export |
+| `ffmpeg-client.ts` | FFmpeg WASM operations including audio muxing into exported clips |
 | `ClipReview.tsx` | Export UI and controls |
 
 ---
