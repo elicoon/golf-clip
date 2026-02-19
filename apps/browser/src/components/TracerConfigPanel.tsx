@@ -25,6 +25,8 @@ interface TracerConfigPanelProps {
   onSetImpactTime?: () => void
   impactTime?: number
   impactTimeAdjusted?: boolean
+  // Inline status after generate
+  generateStatus?: string | null
 }
 
 type HeightOption = 'low' | 'medium' | 'high'
@@ -50,6 +52,7 @@ export function TracerConfigPanel({
   onSetImpactTime,
   impactTime,
   impactTimeAdjusted,
+  generateStatus,
 }: TracerConfigPanelProps) {
   const [showStyleOptions, setShowStyleOptions] = useState(false)
   const handleHeightChange = useCallback(
@@ -152,7 +155,7 @@ export function TracerConfigPanel({
       {!isCollapsed && (
         <div className="config-body">
           <div className="config-grid">
-            {/* Left column: trajectory shape controls */}
+            {/* Column 1: Shot shape controls */}
             <div className="config-column">
               <div className="config-row">
                 <label>Shot Height</label>
@@ -187,7 +190,10 @@ export function TracerConfigPanel({
                   ))}
                 </div>
               </div>
+            </div>
 
+            {/* Column 2: Sliders and timing */}
+            <div className="config-column">
               <div className="config-row">
                 <label>Flight Time</label>
                 <div className="slider-group">
@@ -203,23 +209,6 @@ export function TracerConfigPanel({
                   />
                   <span className="flight-time-value">{config.flightTime.toFixed(1)}s</span>
                 </div>
-              </div>
-            </div>
-
-            {/* Right column: point markers */}
-            <div className="config-column">
-              <div className="config-row">
-                <label>Origin Point</label>
-                <button
-                  type="button"
-                  className={`btn-option btn-origin ${originMarked ? 'marked' : ''}`}
-                  onClick={onMarkOrigin}
-                  disabled={isGenerating}
-                  title={originMarked ? 'Click to re-mark where ball starts' : 'Click to mark where ball starts on video'}
-                >
-                  {originMarked ? 'Re-mark Origin' : 'Mark on Video'}
-                </button>
-                <span className="optional-hint">(if auto wrong)</span>
               </div>
 
               {onSetImpactTime && (
@@ -237,6 +226,23 @@ export function TracerConfigPanel({
                   <span className="optional-hint">(if auto wrong)</span>
                 </div>
               )}
+            </div>
+
+            {/* Column 3: Point markers */}
+            <div className="config-column">
+              <div className="config-row">
+                <label>Origin Point</label>
+                <button
+                  type="button"
+                  className={`btn-option btn-origin ${originMarked ? 'marked' : ''}`}
+                  onClick={onMarkOrigin}
+                  disabled={isGenerating}
+                  title={originMarked ? 'Click to re-mark where ball starts' : 'Click to mark where ball starts on video'}
+                >
+                  {originMarked ? 'Re-mark Origin' : 'Mark on Video'}
+                </button>
+                <span className="optional-hint">(if auto wrong)</span>
+              </div>
 
               {onMarkLanding && (
                 <div className="config-row">
@@ -425,6 +431,9 @@ export function TracerConfigPanel({
                 'Generate'
               )}
             </button>
+            {generateStatus && (
+              <p className="generate-status">{generateStatus}</p>
+            )}
           </div>
         </div>
       )}
