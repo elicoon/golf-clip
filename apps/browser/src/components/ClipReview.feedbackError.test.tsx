@@ -86,6 +86,9 @@ vi.mock('../lib/video-frame-pipeline-v4', () => ({
     exportWithTracer: vi.fn().mockResolvedValue(new Blob(['mock'], { type: 'video/mp4' })),
   })),
   isVideoFrameCallbackSupported: vi.fn().mockReturnValue(true),
+  ExportTimeoutError: class ExportTimeoutError extends Error {
+    constructor(message: string) { super(message); this.name = 'ExportTimeoutError' }
+  },
 }))
 
 // Mock trajectory generator
@@ -157,7 +160,7 @@ describe('ClipReview Feedback Error Display', () => {
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
 
     // Confirm the dialog
-    fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
+
 
     // Flush promises so the .then() callback executes
     await flushPromises()
@@ -203,7 +206,7 @@ describe('ClipReview Feedback Error Display', () => {
 
     // Click "No Golf Shot" to reject
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
-    fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
+
 
     await flushPromises()
 
@@ -221,7 +224,7 @@ describe('ClipReview Feedback Error Display', () => {
 
     // Reject to trigger error
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
-    fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
+
 
     await flushPromises()
 
@@ -290,7 +293,7 @@ describe('ClipReview Feedback Error Display', () => {
 
     // Reject first shot
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
-    fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
+
 
     await flushPromises()
 

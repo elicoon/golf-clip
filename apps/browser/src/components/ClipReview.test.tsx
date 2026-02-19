@@ -79,6 +79,9 @@ vi.mock('../lib/video-frame-pipeline-v4', () => ({
     exportWithTracer: vi.fn().mockResolvedValue(new Blob(['mock'], { type: 'video/mp4' })),
   })),
   isVideoFrameCallbackSupported: vi.fn().mockReturnValue(true),
+  ExportTimeoutError: class ExportTimeoutError extends Error {
+    constructor(message: string) { super(message); this.name = 'ExportTimeoutError' }
+  },
 }))
 
 // Mock trajectory generator
@@ -488,40 +491,31 @@ describe('ClipReview Navigation Controls - Redundancy Bug', () => {
   })
 
   describe('review-actions Positioning', () => {
-    it('should have review-actions div positioned early in the DOM', () => {
+    it('should have review-actions div positioned after scrubber in the DOM', () => {
       render(<ClipReview onComplete={vi.fn()} />)
 
       const clipReview = document.querySelector('.clip-review')
       const reviewActions = document.querySelector('.review-actions')
-      const videoContainer = document.querySelector('.video-container')
 
       expect(clipReview).not.toBeNull()
       expect(reviewActions).not.toBeNull()
-      expect(videoContainer).not.toBeNull()
 
       // Get all children of clip-review to check order
       const children = Array.from(clipReview!.children)
       const reviewActionsIndex = children.findIndex(el => el.classList.contains('review-actions'))
-      const videoContainerIndex = children.findIndex(el => el.classList.contains('video-container'))
+      const scrubberIndex = children.findIndex(el =>
+        el.classList.contains('scrubber') || el.classList.contains('scrubber-container')
+      )
 
-      // FAILING TEST: review-actions is after video-container
-      // After fix: review-actions should be BEFORE video-container (near top)
-      expect(reviewActionsIndex).toBeLessThan(videoContainerIndex)
+      // review-actions should be AFTER scrubber (below timeline)
+      expect(reviewActionsIndex).toBeGreaterThan(scrubberIndex)
     })
 
-    it('should have review-actions within first 5 elements of clip-review', () => {
+    it('should have review-actions present in the DOM', () => {
       render(<ClipReview onComplete={vi.fn()} />)
 
-      const clipReview = document.querySelector('.clip-review')
-      expect(clipReview).not.toBeNull()
-
-      const children = Array.from(clipReview!.children)
-      const reviewActionsIndex = children.findIndex(el => el.classList.contains('review-actions'))
-
-      // FAILING TEST: review-actions is currently near the end
-      // After fix: Should be within first 5 elements (near header/top)
-      expect(reviewActionsIndex).toBeLessThan(5)
-      expect(reviewActionsIndex).toBeGreaterThanOrEqual(0)
+      const reviewActions = document.querySelector('.review-actions')
+      expect(reviewActions).not.toBeNull()
     })
   })
 

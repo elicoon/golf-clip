@@ -77,7 +77,20 @@ export function VideoDropzone() {
   const [error, setError] = useState<string | null>(null)
   const [isCheckingCodec] = useState(false)  // Kept for legacy progress view - set via per-video state now
   const [hevcWarning, setHevcWarning] = useState<HevcWarningState>(initialHevcState)
-  const { status, progress, progressMessage, fileName, setStatus } = useProcessingStore()
+  const { status: globalStatus, progress: globalProgress, progressMessage: globalProgressMessage, fileName: globalFileName, setStatus, videos } = useProcessingStore()
+
+  // Bridge per-video state to progress display: find first actively processing video
+  const activeProcessingVideo = (() => {
+    if (!videos || !(videos instanceof Map)) return null
+    for (const [, v] of videos) {
+      if (v.status === 'pending' || v.status === 'loading' || v.status === 'processing') return v
+    }
+    return null
+  })()
+  const status = activeProcessingVideo?.status ?? globalStatus
+  const progress = activeProcessingVideo?.progress ?? globalProgress
+  const progressMessage = activeProcessingVideo?.progressMessage ?? globalProgressMessage
+  const fileName = activeProcessingVideo?.fileName ?? globalFileName
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
   const transcodeAbortRef = useRef<AbortController | null>(null)
@@ -292,8 +305,8 @@ export function VideoDropzone() {
     )
   }
 
-  // Show progress view when loading/processing
-  if (status === 'loading' || status === 'processing') {
+  // Show progress view when pending/loading/processing
+  if (status === 'pending' || status === 'loading' || status === 'processing') {
     return (
       <div className="dropzone">
         <div className="dropzone-content">
