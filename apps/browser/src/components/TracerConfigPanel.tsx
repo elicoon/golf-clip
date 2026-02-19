@@ -151,124 +151,125 @@ export function TracerConfigPanel({
 
       {!isCollapsed && (
         <div className="config-body">
-          {/* Shot Height */}
-          <div className="config-row">
-            <label>Shot Height</label>
-            <div className="button-group">
-              {heightOptions.map((opt) => (
+          <div className="config-grid">
+            {/* Left column: trajectory shape controls */}
+            <div className="config-column">
+              <div className="config-row">
+                <label>Shot Height</label>
+                <div className="button-group">
+                  {heightOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`btn-option ${config.height === opt.value ? 'active' : ''}`}
+                      onClick={() => handleHeightChange(opt.value)}
+                      disabled={isGenerating}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="config-row">
+                <label>Shot Shape</label>
+                <div className="button-group">
+                  {shapeOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`btn-option ${config.shape === opt.value ? 'active' : ''}`}
+                      onClick={() => handleShapeChange(opt.value)}
+                      disabled={isGenerating}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="config-row">
+                <label>Flight Time</label>
+                <div className="slider-group">
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    step={0.1}
+                    value={config.flightTime}
+                    onChange={handleFlightTimeChange}
+                    disabled={isGenerating}
+                    className="flight-time-slider"
+                  />
+                  <span className="flight-time-value">{config.flightTime.toFixed(1)}s</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right column: point markers */}
+            <div className="config-column">
+              <div className="config-row">
+                <label>Origin Point</label>
                 <button
-                  key={opt.value}
                   type="button"
-                  className={`btn-option ${config.height === opt.value ? 'active' : ''}`}
-                  onClick={() => handleHeightChange(opt.value)}
+                  className={`btn-option btn-origin ${originMarked ? 'marked' : ''}`}
+                  onClick={onMarkOrigin}
                   disabled={isGenerating}
+                  title={originMarked ? 'Click to re-mark where ball starts' : 'Click to mark where ball starts on video'}
                 >
-                  {opt.label}
+                  {originMarked ? 'Re-mark Origin' : 'Mark on Video'}
                 </button>
-              ))}
-            </div>
-          </div>
+                <span className="optional-hint">(if auto wrong)</span>
+              </div>
 
-          {/* Shot Shape */}
-          <div className="config-row">
-            <label>Shot Shape</label>
-            <div className="button-group">
-              {shapeOptions.map((opt) => (
+              {onSetImpactTime && (
+                <div className="config-row">
+                  <label>Impact Time</label>
+                  <button
+                    type="button"
+                    className={`btn-option btn-impact ${impactTimeAdjusted ? 'marked' : ''}`}
+                    onClick={onSetImpactTime}
+                    disabled={isGenerating}
+                    title={`Current: ${formatTime(impactTime ?? 0)} - Click to set to current video position`}
+                  >
+                    {impactTimeAdjusted ? `Adjusted: ${formatTime(impactTime ?? 0)}` : 'Set to Playhead'}
+                  </button>
+                  <span className="optional-hint">(if auto wrong)</span>
+                </div>
+              )}
+
+              {onMarkLanding && (
+                <div className="config-row">
+                  <label>Landing Point</label>
+                  <button
+                    type="button"
+                    className={`btn-option btn-landing ${landingMarked ? 'marked' : ''}`}
+                    onClick={onMarkLanding}
+                    disabled={isGenerating || isMarkingLanding}
+                    title={landingMarked ? 'Click to re-mark where ball landed' : 'Click to mark where ball landed on video'}
+                  >
+                    {isMarkingLanding ? 'Click on video...' : landingMarked ? 'Re-mark Landing' : 'Mark on Video'}
+                  </button>
+                </div>
+              )}
+
+              <div className="config-row">
+                <label>Apex Point</label>
                 <button
-                  key={opt.value}
                   type="button"
-                  className={`btn-option ${config.shape === opt.value ? 'active' : ''}`}
-                  onClick={() => handleShapeChange(opt.value)}
+                  className={`btn-option btn-apex ${apexMarked ? 'marked' : ''}`}
+                  onClick={onMarkApex}
                   disabled={isGenerating}
+                  title={apexMarked ? 'Click to re-mark apex point' : 'Click to mark apex point on video'}
                 >
-                  {opt.label}
+                  {apexMarked ? 'Re-mark Apex' : 'Mark on Video'}
                 </button>
-              ))}
+                <span className="optional-hint">(optional)</span>
+              </div>
             </div>
           </div>
 
-          {/* Flight Time */}
-          <div className="config-row">
-            <label>Flight Time</label>
-            <div className="slider-group">
-              <input
-                type="range"
-                min={1}
-                max={10}
-                step={0.1}
-                value={config.flightTime}
-                onChange={handleFlightTimeChange}
-                disabled={isGenerating}
-                className="flight-time-slider"
-              />
-              <span className="flight-time-value">{config.flightTime.toFixed(1)}s</span>
-            </div>
-          </div>
-
-          {/* Origin Point */}
-          <div className="config-row">
-            <label>Origin Point</label>
-            <button
-              type="button"
-              className={`btn-option btn-origin ${originMarked ? 'marked' : ''}`}
-              onClick={onMarkOrigin}
-              disabled={isGenerating}
-              title={originMarked ? 'Click to re-mark where ball starts' : 'Click to mark where ball starts on video'}
-            >
-              {originMarked ? 'Re-mark Origin' : 'Mark on Video'}
-            </button>
-            <span className="optional-hint">(if auto wrong)</span>
-          </div>
-
-          {/* Impact Time */}
-          {onSetImpactTime && (
-            <div className="config-row">
-              <label>Impact Time</label>
-              <button
-                type="button"
-                className={`btn-option btn-impact ${impactTimeAdjusted ? 'marked' : ''}`}
-                onClick={onSetImpactTime}
-                disabled={isGenerating}
-                title={`Current: ${formatTime(impactTime ?? 0)} - Click to set to current video position`}
-              >
-                {impactTimeAdjusted ? `Adjusted: ${formatTime(impactTime ?? 0)}` : 'Set to Playhead'}
-              </button>
-              <span className="optional-hint">(if auto wrong)</span>
-            </div>
-          )}
-
-          {/* Landing Point */}
-          {onMarkLanding && (
-            <div className="config-row">
-              <label>Landing Point</label>
-              <button
-                type="button"
-                className={`btn-option btn-landing ${landingMarked ? 'marked' : ''}`}
-                onClick={onMarkLanding}
-                disabled={isGenerating || isMarkingLanding}
-                title={landingMarked ? 'Click to re-mark where ball landed' : 'Click to mark where ball landed on video'}
-              >
-                {isMarkingLanding ? 'Click on video...' : landingMarked ? 'Re-mark Landing' : 'Mark on Video'}
-              </button>
-            </div>
-          )}
-
-          {/* Apex Point */}
-          <div className="config-row">
-            <label>Apex Point</label>
-            <button
-              type="button"
-              className={`btn-option btn-apex ${apexMarked ? 'marked' : ''}`}
-              onClick={onMarkApex}
-              disabled={isGenerating}
-              title={apexMarked ? 'Click to re-mark apex point' : 'Click to mark apex point on video'}
-            >
-              {apexMarked ? 'Re-mark Apex' : 'Mark on Video'}
-            </button>
-            <span className="optional-hint">(optional)</span>
-          </div>
-
-          {/* Style Options Toggle */}
+          {/* Style Options Toggle - full width below grid */}
           <div className="config-row">
             <button
               type="button"
