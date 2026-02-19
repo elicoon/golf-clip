@@ -89,6 +89,8 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [isMarkingOrigin, setIsMarkingOrigin] = useState(false)
   const [isMarkingLanding, setIsMarkingLanding] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [generateStatus, setGenerateStatus] = useState<string | null>(null)
+  const generateStatusTimerRef = useRef<number | null>(null)
   const [impactTimeAdjusted, setImpactTimeAdjusted] = useState(false)
 
   // Export state
@@ -275,6 +277,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       if (feedbackErrorTimerRef.current) {
         clearTimeout(feedbackErrorTimerRef.current)
       }
+      if (generateStatusTimerRef.current) {
+        clearTimeout(generateStatusTimerRef.current)
+      }
     }
   }, [])
 
@@ -434,6 +439,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       if (currentShot) {
         updateSegment(currentShot.id, { trajectory: traj })
       }
+
+      // Show inline status feedback
+      setGenerateStatus('Trajectory updated')
+      if (generateStatusTimerRef.current) clearTimeout(generateStatusTimerRef.current)
+      generateStatusTimerRef.current = window.setTimeout(() => {
+        setGenerateStatus(null)
+      }, 3000)
     } finally {
       setIsGenerating(false)
     }
@@ -1056,22 +1068,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           onSetImpactTime={handleSetImpactTime}
           impactTime={currentShot ? currentShot.strikeTime - currentShot.startTime : 0}
           impactTimeAdjusted={impactTimeAdjusted}
+          generateStatus={generateStatus}
         />
       )}
-
-      {/* Review action buttons - between config and video */}
-      <div className="review-actions">
-        <button onClick={handleReject} className="btn-no-shot">
-          ✕ No Golf Shot
-        </button>
-        <button
-          onClick={handleApprove}
-          className="btn-primary btn-large"
-          disabled={reviewStep !== 'reviewing'}
-        >
-          ✓ Approve Shot
-        </button>
-      </div>
 
       {/* Instruction banner based on review step */}
       <div className="marking-instruction">
@@ -1087,6 +1086,20 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
             <span className="instruction-text">Review the trajectory, then approve or reject</span>
           </>
         )}
+      </div>
+
+      {/* Review action buttons - between instruction and video */}
+      <div className="review-actions">
+        <button onClick={handleReject} className="btn-no-shot">
+          ✕ No Golf Shot
+        </button>
+        <button
+          onClick={handleApprove}
+          className="btn-primary btn-large"
+          disabled={reviewStep !== 'reviewing'}
+        >
+          ✓ Approve Shot
+        </button>
       </div>
 
       <div

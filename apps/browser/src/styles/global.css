@@ -306,7 +306,7 @@ button:disabled {
   max-width: 1000px;
   margin: 0 auto;
   padding: 0 var(--spacing-lg);
-  align-items: start;
+  align-items: center;
 }
 
 .upload-content {
@@ -2814,7 +2814,7 @@ kbd {
 
 .config-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: var(--spacing-md) var(--spacing-lg);
 }
 
@@ -2900,6 +2900,14 @@ kbd {
 
 .config-actions .btn-generate {
   min-width: 140px;
+}
+
+.generate-status {
+  font-size: 0.8rem;
+  color: var(--color-success, #4ade80);
+  margin: 0;
+  text-align: right;
+  animation: fadeIn 0.2s ease;
 }
 
 /* Responsive adjustments for config panel */
