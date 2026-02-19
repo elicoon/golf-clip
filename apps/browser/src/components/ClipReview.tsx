@@ -4,7 +4,6 @@ import { useReviewActionsStore } from '../stores/reviewActionsStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
-import { ConfirmDialog } from './ConfirmDialog'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
 import { VideoFramePipelineV4, ExportConfigV4, ExportResolution, ExportTimeoutError, isVideoFrameCallbackSupported } from '../lib/video-frame-pipeline-v4'
@@ -112,8 +111,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [feedbackError, setFeedbackError] = useState<string | null>(null)
   const feedbackErrorTimerRef = useRef<number | null>(null)
 
-  // Confirm dialog state for destructive actions (Escape / "No Golf Shot")
-  const [showRejectConfirm, setShowRejectConfirm] = useState(false)
 
   // Auto-loop state
   const [autoLoopEnabled, setAutoLoopEnabled] = useState(true)
@@ -288,7 +285,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     setTrajectory(null)
     setVideoError(null) // Clear video error on shot change
     setFeedbackError(null) // Clear feedback error on shot change
-    setShowRejectConfirm(false)
     setImpactTimeAdjusted(false)
     // Reset zoom/pan when navigating to new shot
     setZoomLevel(1)
@@ -679,17 +675,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     // User can then click the export button when ready (if any shots were approved)
   }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment, showFeedbackError])
 
-  // Wrapper that shows confirmation dialog instead of rejecting immediately
-  const handleRejectWithConfirm = useCallback(() => {
-    setShowRejectConfirm(true)
-  }, [])
-
   // Register handlers and progress with the shared store so header can display them
   const { setHandlers, setCanApprove, setProgress, clearHandlers } = useReviewActionsStore()
   useEffect(() => {
-    setHandlers(handleApprove, handleRejectWithConfirm)
+    setHandlers(handleApprove, handleReject)
     return () => clearHandlers()
-  }, [handleApprove, handleRejectWithConfirm, setHandlers, clearHandlers])
+  }, [handleApprove, handleReject, setHandlers, clearHandlers])
 
   useEffect(() => {
     setCanApprove(reviewStep === 'reviewing')
@@ -852,9 +843,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           break
         case 'Escape':
           e.preventDefault()
-          if (!showRejectConfirm) {
-            setShowRejectConfirm(true)
-          }
+          handleReject()
           break
         case '[':
           // Set in point (trim start)
@@ -904,7 +893,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [togglePlayPause, handlePrevious, handleNext, handleApprove, handleReject, reviewStep, trajectory, currentShot, handleTrimUpdate, showRejectConfirm, handleSetImpactTime])
+  }, [togglePlayPause, handlePrevious, handleNext, handleApprove, handleReject, reviewStep, trajectory, currentShot, handleTrimUpdate, handleSetImpactTime])
 
   if (!currentShot) {
     const approvedCount = segments.filter(s => s.approved === 'approved').length
@@ -1043,7 +1032,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
       {/* Review action buttons - positioned above video */}
       <div className="review-actions">
-        <button onClick={() => setShowRejectConfirm(true)} className="btn-no-shot">
+        <button onClick={handleReject} className="btn-no-shot">
           ✕ No Golf Shot
         </button>
         <button
@@ -1371,19 +1360,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         </div>
       )}
 
-      {/* Confirmation dialog for destructive actions (Escape / No Golf Shot) */}
-      {showRejectConfirm && (
-        <ConfirmDialog
-          message="Skip this shot? It will be marked as not a golf shot."
-          confirmLabel="Skip Shot"
-          cancelLabel="Cancel"
-          onConfirm={() => {
-            setShowRejectConfirm(false)
-            handleReject()
-          }}
-          onCancel={() => setShowRejectConfirm(false)}
-        />
-      )}
     </div>
   )
 }
