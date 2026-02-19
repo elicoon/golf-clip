@@ -20,10 +20,7 @@ Thanks for your interest in contributing to GolfClip! This document provides gui
 
 ### Prerequisites
 
-- macOS (Apple Silicon or Intel) or Windows
-- Python 3.11+
 - Node.js 18+
-- FFmpeg installed and in PATH
 - Git
 
 ### Clone the Repository
@@ -37,43 +34,27 @@ cd golf-clip
 
 ## Development Setup
 
-### Backend Setup
-
-```bash
-# Create Python virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies (including dev dependencies)
-pip install -e ".[dev]"
-```
-
-### Frontend Setup
+GolfClip is a browser-only app. No backend server is required for development.
 
 ```bash
 cd apps/browser
 npm install
-```
-
-### Running the Development Servers
-
-You need two terminal windows:
-
-**Terminal 1 - Backend:**
-```bash
-cd golf-clip
-source .venv/bin/activate
-cd apps/desktop
-uvicorn backend.main:app --host 127.0.0.1 --port 8420 --reload
-```
-
-**Terminal 2 - Frontend:**
-```bash
-cd golf-clip/apps/browser
 npm run dev
 ```
 
 The app will be available at http://localhost:5173
+
+### Desktop Backend (Paused)
+
+The Python/FastAPI desktop backend (`apps/desktop/`) is paused and not required. If you need it for any reason:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+cd apps/desktop
+uvicorn backend.main:app --host 127.0.0.1 --port 8420 --reload
+```
 
 ---
 
@@ -87,7 +68,7 @@ golf-clip/
 │   │       ├── components/   # ClipReview, TrajectoryEditor, Scrubber
 │   │       ├── lib/          # audio-detector, ffmpeg-client, tracer-renderer, video-frame-pipeline, trajectory-generator
 │   │       └── stores/       # Zustand state management
-│   └── desktop/          # Desktop backend (Python + FastAPI)
+│   └── desktop/          # Desktop backend (Python + FastAPI) [PAUSED]
 │       └── backend/
 │           ├── api/          # REST + SSE endpoints
 │           ├── detection/    # Shot detection algorithms
@@ -127,28 +108,7 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
 ## Code Style
 
-### Python (Backend)
-
-- Follow PEP 8
-- Use type hints
-- Document public functions with docstrings
-
-```python
-async def detect_shots(video_path: str, sensitivity: float = 0.5) -> list[dict]:
-    """
-    Detect golf shots in a video using audio analysis.
-
-    Args:
-        video_path: Path to the video file
-        sensitivity: Detection sensitivity (0-1)
-
-    Returns:
-        List of detected shots with timestamps and confidence
-    """
-    ...
-```
-
-### TypeScript (Frontend)
+### TypeScript
 
 - Use functional components with hooks
 - Type all props and state
@@ -167,32 +127,18 @@ interface TrajectoryConfig {
 
 ## Testing
 
-### Running Backend Tests
-
 ```bash
-cd golf-clip/apps/desktop
+cd apps/browser
 
-# Run all tests
-pytest tests/ -v
+# Unit tests
+npm run test
 
-# Run specific test file
-pytest tests/test_audio_detection.py -v
+# Type checking
+npx tsc --noEmit
 
-# Skip slow tests
-pytest tests/ -v -m "not slow"
-
-# Run with coverage
-pytest tests/ -v --cov=backend --cov-report=html
+# E2E tests (Playwright)
+npm run test:e2e
 ```
-
-### Test Video
-
-Use any short golf video for testing:
-```
-path/to/your/video.mp4
-```
-
-The video should contain visible golf shots for detection to produce results.
 
 ---
 
@@ -238,39 +184,35 @@ How you tested this change.
 
 ## Architecture Overview
 
+### Browser App
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         FRONTEND                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │ VideoDropzone│  │ProcessingView│  │     ClipReview       │   │
-│  └──────────────┘  └──────────────┘  │  ┌────────────────┐  │   │
-│                                       │  │TrajectoryEditor│  │   │
-│                                       │  └────────────────┘  │   │
-│                                       └──────────────────────┘   │
-│                           │                                      │
-│                    Zustand Store                                 │
-│                           │                                      │
-└───────────────────────────┼─────────────────────────────────────┘
-                            │ HTTP / SSE
-┌───────────────────────────┼─────────────────────────────────────┐
-│                      BACKEND (FastAPI)                           │
-│                           │                                      │
-│  ┌────────────────────────┴───────────────────────────────────┐ │
-│  │                      API Routes                             │ │
-│  │  /upload  /process  /shots  /trajectory  /export            │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                           │                                      │
-│  ┌─────────────┐  ┌───────────────┐  ┌────────────────────────┐ │
-│  │   Audio     │  │    Origin     │  │      Trajectory        │ │
-│  │  Detection  │  │   Detection   │  │      Generation        │ │
-│  │  (librosa)  │  │ (YOLO+OpenCV) │  │    (Physics Model)     │ │
-│  └─────────────┘  └───────────────┘  └────────────────────────┘ │
-│                           │                                      │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │                   SQLite Database                            │ │
-│  │     jobs │ shots │ shot_trajectories │ shot_feedback         │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+Vite dev server
+    │
+    ▼
+React SPA (Zustand store)
+    │
+    ├── Audio detection (Essentia.js WASM)
+    ├── Video decoding (WebCodecs / FFmpeg WASM)
+    ├── Trajectory generation (client-side physics)
+    └── Video export (FFmpeg WASM muxing)
+```
+
+All processing happens client-side in the browser. No server required.
+
+### Desktop Backend (Paused)
+
+The original desktop architecture is preserved in `apps/desktop/` but not actively developed.
+
+```
+React Frontend → HTTP/SSE → FastAPI Backend
+                                │
+                  ┌─────────────┼─────────────┐
+                  │             │             │
+            Audio Detection  Origin Det.  Trajectory Gen.
+            (librosa)        (YOLO+CV2)   (Physics Model)
+                                │
+                          SQLite Database
 ```
 
 ---
@@ -279,28 +221,25 @@ How you tested this change.
 
 ### Audio Shot Detection
 
-Golf ball strikes produce a distinctive transient sound (the "thwack"). The detector:
-1. Extracts audio using FFmpeg
-2. Applies bandpass filter (1000-8000 Hz)
-3. Detects transient peaks
-4. Scores each peak on multiple features (amplitude, spectral content, decay)
-5. Deduplicates nearby detections
+Golf ball strikes produce a distinctive transient sound (the "thwack").
 
-### Ball Origin Detection
+**Browser:** Essentia.js WASM analyzes audio frames in the browser using onset detection and spectral analysis.
 
-Finding where the ball was at impact:
-1. Detect golfer using YOLO
-2. Find club shaft using line detection
-3. Locate clubhead via color analysis
-4. Ball position = clubhead center (at address, ball sits in front of clubface)
+**Desktop Backend (paused):** Server-side pipeline using librosa — extracts audio with FFmpeg, applies bandpass filter, scores transient peaks on amplitude/spectral content/decay.
+
+### Ball Origin Detection [Desktop Backend — Paused]
+
+Finding where the ball was at impact using YOLO + OpenCV. Not yet ported to browser.
 
 ### Trajectory Generation
 
 The shot tracer uses a physics-based approach:
-1. Start point: detected ball origin
+1. Start point: detected or user-placed ball origin
 2. End point: user-marked landing position
 3. Arc: parabolic curve with configurable shape, height, and curve
 4. Animation: physics-based timing (fast start, slow apex, steady descent)
+
+Works the same in both browser and desktop.
 
 ---
 

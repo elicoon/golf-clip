@@ -424,6 +424,8 @@ The browser app exports clips client-side using WebCodecs API with a two-pass re
 | Two-pass design | Capture first, encode after | Encoding is slow; would miss frames if done in callback |
 | Timestamp handling | `firstTimestampBehavior: 'offset'` | Clips don't start at t=0; muxer auto-offsets |
 | Keyframes | Every 30 frames | Balance between file size and seek performance |
+| Return value | `{ blob, actualStartTime }` | `actualStartTime` aligns audio extraction with captured frames |
+| Timeout / abort | `AbortSignal`, `timeoutMs`, `stallTimeoutMs` | Prevents hung exports; throws `ExportTimeoutError` on stall or overall timeout |
 
 ### Audio Muxing
 
@@ -440,7 +442,7 @@ The pipeline returns `actualStartTime` (the real first frame time after keyframe
 | File | Purpose |
 |------|---------|
 | `video-frame-pipeline-v4.ts` | Real-time capture + WebCodecs encoding |
-| `tracer-renderer.ts` | Shared tracer drawing (3-layer bezier glow, physics easing) |
+| `tracer-renderer.ts` | Shared renderer used by both TrajectoryEditor and export pipeline (3-layer bezier glow, physics easing) |
 | `ffmpeg-client.ts` | FFmpeg WASM operations including audio muxing |
 | `ClipReview.tsx` | Export UI with resolution dropdown |
 
@@ -459,9 +461,9 @@ graph TB
         CR[ClipReview]
     end
 
-    subgraph "Header Components"
+    subgraph "Upload Components"
+        WS[WalkthroughSteps]
         VQ[VideoQueue]
-        RA[ReviewActions]
     end
 
     subgraph "Clip Review Components"
@@ -478,8 +480,8 @@ graph TB
 
     App --> VD
     App --> CR
+    App --> WS
     App --> VQ
-    App --> RA
 
     CR --> TE
     CR --> SC
@@ -487,7 +489,6 @@ graph TB
     CR --> EOP
 
     VD --> HTM
-    CR --> CD
 
     style App fill:#e3f2fd
     style CR fill:#fff3e0
@@ -511,17 +512,17 @@ graph TB
 │  └── HEVC codec detection with transcode modal                               │
 │                                                                              │
 │  ClipReview.tsx                                                              │
-│  ├── Video player with FPS-aware frame stepping                              │
-│  ├── Shot-by-shot navigation                                                 │
+│  ├── Video player with zoom/pan controls and FPS-aware frame stepping        │
+│  ├── Transport controls below video (play/pause, frame step, playback speed) │
+│  ├── Instruction banners guiding the review workflow                         │
 │  ├── Landing point marking (direct click on video)                           │
-│  ├── Tracer toggle and configuration                                         │
+│  ├── Tracer config panel with 3-column layout                                │
 │  ├── Client-side export via WebCodecs (two-pass pipeline)                    │
-│  └── "No Golf Shot" / "Approve Shot" buttons                                │
+│  ├── Approve/reject buttons below scrubber                                   │
+│  └── Shot-by-shot navigation                                                 │
 │                                                                              │
-│  ReviewActions.tsx                                                           │
-│  ├── Header-mounted approve/reject buttons                                   │
-│  ├── Shot progress display (e.g., "2 of 5")                                 │
-│  └── Shares handlers with ClipReview via reviewActionsStore                  │
+│  WalkthroughSteps.tsx                                                        │
+│  └── Step-by-step walkthrough shown on the upload screen                     │
 │                                                                              │
 │  VideoQueue.tsx                                                              │
 │  ├── Header-mounted video queue display                                      │
@@ -561,8 +562,6 @@ graph TB
 
 ### State Management (Zustand)
 
-Two stores manage frontend state:
-
 **processingStore.ts** — Central state for video processing and review:
 ```typescript
 interface ProcessingState {
@@ -579,17 +578,6 @@ interface ProcessingState {
   updateVideoSegment: (videoId, segmentIndex, updates) => void
   setSegmentTrajectory: (videoId, segmentIndex, trajectory) => void
   // ... reset, queue management
-}
-```
-
-**reviewActionsStore.ts** — Bridges ClipReview and header ReviewActions:
-```typescript
-interface ReviewActionsState {
-  handleApprove: (() => void) | null  // Registered by ClipReview
-  handleReject: (() => void) | null
-  canApprove: boolean                 // Landing marked + tracer reviewed
-  currentIndex: number                // Shot progress (e.g., 2 of 5)
-  totalShots: number
 }
 ```
 

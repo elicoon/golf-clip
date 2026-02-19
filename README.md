@@ -2,7 +2,7 @@
 
 AI-powered golf shot detection and clip export. Drop in a round video, get back trimmed clips with professional shot tracer overlays — all processed client-side in the browser.
 
-**Live demo:** https://browser-seven-sigma.vercel.app
+**Live demo:** https://golfclip.elicoon.com
 
 GolfClip analyzes video audio to detect ball strikes via transient analysis, identifies the ball origin using computer vision (YOLO + shaft/clubhead detection), generates physics-based flight trajectories, and exports polished clips with animated tracer overlays using the WebCodecs API.
 
@@ -11,7 +11,11 @@ GolfClip analyzes video audio to detect ball strikes via transient analysis, ide
 - **Automatic shot detection** — Audio transient analysis finds ball strikes by scoring peak height, spectral flatness, rise time, decay ratio, and more
 - **Ball origin detection** — Computer vision pipeline using YOLO person detection, line segment detection, and clubhead color analysis to locate the ball at impact
 - **Shot tracer overlay** — Physics-based parabolic trajectories with configurable height, shape (draw/fade/slice), and flight time, rendered as animated glow lines
-- **Client-side export** — Two-pass WebCodecs pipeline: real-time frame capture via `requestVideoFrameCallback`, then encoding with tracer compositing via `mp4-muxer`
+- **Shared tracer renderer** — Identical tracer rendering in review playback and export, ensuring WYSIWYG output
+- **Client-side export** — Two-pass WebCodecs pipeline with timeout/abort handling, stall detection, time estimates, and cancel support
+- **Video zoom & pan** — 1x–4x zoom with keyboard controls (+/-/0) and drag-to-pan for precise ball origin placement
+- **Transport controls** — Frame stepping, skip to start/end, and strike time indicators on the scrubber
+- **Walkthrough guide** — 3-step visual guide on the upload screen for new users
 - **Confidence scoring** — Multi-feature weighted scoring flags uncertain detections for review
 - **ML feedback loop** — Collects true positive/false positive labels, tracer correction deltas, and origin accuracy data for iterative model improvement
 

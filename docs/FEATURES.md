@@ -708,6 +708,7 @@ origin_feedback (id, job_id FK, shot_id, auto_origin vs manual_origin, error met
 ## Implemented Enhancements
 
 - **Multi-video upload**: Upload multiple videos at once via drag-and-drop or file picker. Videos are queued and processed sequentially. `VideoQueue.tsx` shows queue status in the header.
+- **Video Zoom Controls**: Zoom (1x-4x) with pan support for precise marker placement during review
 
 ## Future Enhancements
 
@@ -716,4 +717,3 @@ origin_feedback (id, job_id FK, shot_id, auto_origin vs manual_origin, error met
 - **Multiple Tracer Styles**: Different colors, effects, animations
 - **Hole Overlays**: Display hole number, yardage, shot count
 - **Cloud Processing**: Offload heavy processing to cloud
-- **Video Zoom Controls**: Zoom (1x-4x) with pan support for precise marker placement during review
