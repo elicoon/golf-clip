@@ -2816,6 +2816,7 @@ kbd {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: var(--spacing-md) var(--spacing-lg);
+  align-items: start;
 }
 
 .config-column {
@@ -2881,25 +2882,14 @@ kbd {
   font-style: italic;
 }
 
-.config-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--spacing-sm);
-  margin-top: var(--spacing-sm);
-  padding-top: var(--spacing-md);
-  border-top: 1px solid var(--color-bg-tertiary);
+.config-row-generate {
+  margin-top: var(--spacing-xs);
 }
 
-.config-hint {
-  font-size: 0.8rem;
-  color: var(--color-warning);
-  margin: 0;
-  text-align: right;
-}
-
-.config-actions .btn-generate {
-  min-width: 140px;
+.config-row-generate .btn-generate {
+  min-width: 180px;
+  padding: 10px 24px;
+  font-size: 1rem;
 }
 
 .generate-status {
@@ -2934,11 +2924,7 @@ kbd {
     width: 100%;
   }
 
-  .config-actions {
-    align-items: stretch;
-  }
-
-  .config-actions .btn-generate {
+  .config-row-generate .btn-generate {
     width: 100%;
   }
 }
