@@ -83,7 +83,7 @@ export function VideoDropzone() {
   const activeProcessingVideo = (() => {
     if (!videos || !(videos instanceof Map)) return null
     for (const [, v] of videos) {
-      if (v.status === 'loading' || v.status === 'processing') return v
+      if (v.status === 'pending' || v.status === 'loading' || v.status === 'processing') return v
     }
     return null
   })()
@@ -305,8 +305,8 @@ export function VideoDropzone() {
     )
   }
 
-  // Show progress view when loading/processing
-  if (status === 'loading' || status === 'processing') {
+  // Show progress view when pending/loading/processing
+  if (status === 'pending' || status === 'loading' || status === 'processing') {
     return (
       <div className="dropzone">
         <div className="dropzone-content">
