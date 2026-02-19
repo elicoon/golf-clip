@@ -2,8 +2,6 @@
 import { useState, useEffect } from 'react'
 import { VideoDropzone } from './components/VideoDropzone'
 import { ClipReview } from './components/ClipReview'
-import { VideoQueue } from './components/VideoQueue'
-import { ReviewActions } from './components/ReviewActions'
 import { useProcessingStore } from './stores/processingStore'
 
 type AppView = 'upload' | 'review' | 'export'
@@ -14,7 +12,6 @@ export default function App() {
 
   // Get active video state
   const activeVideo = activeVideoId ? videos.get(activeVideoId) : undefined
-  const hasVideos = videos.size > 0
   const approvedCount = (activeVideo?.segments || segments).filter(s => s.approved === 'approved').length
 
   const handleReviewComplete = () => {
@@ -42,21 +39,6 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>GolfClip</h1>
-        {/* Video queue in header for easy access */}
-        {hasVideos && <VideoQueue />}
-        {/* Review actions in header during review */}
-        {view === 'review' && <ReviewActions />}
-        <div className="header-actions">
-          {(view !== 'upload' || hasVideos) && (
-            <button onClick={handleReset} className="btn-secondary">
-              New Video
-            </button>
-          )}
-        </div>
-      </header>
-
       <main className="app-main">
 
         {error && (
@@ -71,6 +53,7 @@ export default function App() {
 
         {view === 'upload' && !error && (
           <>
+            <h1 className="app-title">GolfClip</h1>
             <div className="about-box">
               <p>
                 GolfClip is a vibe-coded golf video editing platform to address two pain points:
