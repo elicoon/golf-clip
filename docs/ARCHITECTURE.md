@@ -397,7 +397,7 @@ The browser app exports clips client-side using WebCodecs API with a two-pass re
 │  │  ctx.drawImage(bitmap, 0, 0)  ───▶  Draw video frame               │    │
 │  │       │                                                             │    │
 │  │       ▼                                                             │    │
-│  │  drawTracer(ctx, trajectory, time)  ───▶  Composite tracer         │    │
+│  │  drawTracerLine(ctx, trajectory, time) ─▶  Composite tracer         │    │
 │  │       │                                                             │    │
 │  │       ▼                                                             │    │
 │  │  new VideoFrame(canvas, { timestamp })                              │    │
@@ -425,11 +425,23 @@ The browser app exports clips client-side using WebCodecs API with a two-pass re
 | Timestamp handling | `firstTimestampBehavior: 'offset'` | Clips don't start at t=0; muxer auto-offsets |
 | Keyframes | Every 30 frames | Balance between file size and seek performance |
 
+### Audio Muxing
+
+After the video-only MP4 is produced, the export pipeline muxes audio from the original segment using FFmpeg WASM:
+
+1. Extract audio from original segment blob for the clip time range
+2. Mux extracted audio into the video-only export
+3. Use precise seeking (`-ss` after `-i`) to avoid keyframe-based drift
+
+The pipeline returns `actualStartTime` (the real first frame time after keyframe seek snap) so audio extraction aligns precisely with the captured video frames.
+
 ### Key Files
 
 | File | Purpose |
 |------|---------|
 | `video-frame-pipeline-v4.ts` | Real-time capture + WebCodecs encoding |
+| `tracer-renderer.ts` | Shared tracer drawing (3-layer bezier glow, physics easing) |
+| `ffmpeg-client.ts` | FFmpeg WASM operations including audio muxing |
 | `ClipReview.tsx` | Export UI with resolution dropdown |
 
 ---

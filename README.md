@@ -52,7 +52,7 @@ apps/
 ├── browser/          # Active: production web app (React + TypeScript + Vite)
 │   └── src/
 │       ├── components/   # ClipReview, TrajectoryEditor, Scrubber, VideoDropzone
-│       ├── lib/          # audio-detector, ffmpeg-client, video-frame-pipeline, trajectory-generator
+│       ├── lib/          # audio-detector, ffmpeg-client, tracer-renderer, video-frame-pipeline, trajectory-generator
 │       └── stores/       # Zustand state management
 └── desktop/          # Paused: desktop backend (Python + FastAPI)
     ├── api/              # REST + SSE endpoints

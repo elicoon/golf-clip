@@ -85,7 +85,7 @@ golf-clip/
 │   ├── browser/          # Production web app (React + TypeScript + Vite)
 │   │   └── src/
 │   │       ├── components/   # ClipReview, TrajectoryEditor, Scrubber
-│   │       ├── lib/          # audio-detector, trajectory-generator, video-frame-pipeline
+│   │       ├── lib/          # audio-detector, ffmpeg-client, tracer-renderer, video-frame-pipeline, trajectory-generator
 │   │       └── stores/       # Zustand state management
 │   └── desktop/          # Desktop backend (Python + FastAPI)
 │       └── backend/
