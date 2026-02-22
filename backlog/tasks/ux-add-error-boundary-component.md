@@ -1,6 +1,6 @@
 ### Add Error Boundary to Prevent White Screen of Death
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** high
 - **Type:** bug-fix
 - **Scope:** small
@@ -8,7 +8,7 @@
 - **Blockers:** none
 - **Notes:** React app has no error boundary. Runtime errors cause white screen with no user feedback. Error boundaries catch React component errors and display fallback UI, preventing total app crash and allowing users to recover (via "Try Again" button or reset).
 - **Added:** 2026-02-16
-- **Updated:** 2026-02-16
+- **Updated:** 2026-02-22
 
 #### Acceptance Criteria
 - [ ] ErrorBoundary component wraps App in index.tsx
