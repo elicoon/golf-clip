@@ -1,9 +1,12 @@
-import { defineConfig } from 'vite'
+import { defineConfig, configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    exclude: ['e2e/**', ...configDefaults.exclude],
+  },
   resolve: {
     // Help Vite resolve packages from the monorepo root node_modules
     preserveSymlinks: true,
