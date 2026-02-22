@@ -57,10 +57,11 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     )
 
+    // Logger outputs: [timestamp] [ERROR] [ErrorBoundary], message, context
     expect(consoleSpy).toHaveBeenCalledWith(
-      'ErrorBoundary caught an error:',
-      expect.any(Error),
-      expect.objectContaining({ componentStack: expect.any(String) })
+      expect.stringMatching(/\[ERROR\] \[ErrorBoundary\]/),
+      'Caught an error',
+      expect.objectContaining({ error: 'Test error message', stack: expect.any(String), componentStack: expect.any(String) })
     )
   })
 

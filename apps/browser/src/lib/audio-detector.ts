@@ -8,6 +8,10 @@
  * Essentia.js SuperFluxExtractor does not work correctly with lower sample rates.
  */
 
+import { createLogger } from './logger'
+
+const log = createLogger('AudioDetector')
+
 // Essentia types (library doesn't have proper TS types for all exports)
 interface EssentiaModule {
   arrayToVector(array: Float32Array): unknown
@@ -120,7 +124,7 @@ export async function detectStrikes(
     throw new Error('Sample rate must be positive')
   }
   if (sampleRate !== 44100) {
-    console.warn(`[AudioDetector] Warning: Sample rate is ${sampleRate}Hz. Essentia.js works best with 44100Hz.`)
+    log.warn('Non-standard sample rate. Essentia.js works best with 44100Hz.', { sampleRate })
   }
   if (!essentia || !loaded) {
     throw new Error('Essentia not loaded. Call loadEssentia() first.')
@@ -172,7 +176,7 @@ export async function detectStrikes(
       onsetTimes = Array.from(converted)
     } catch (e) {
       // Empty vector - no onsets detected, which is a valid result
-      console.debug('[AudioDetector] Empty onset vector:', e)
+      log.debug('Empty onset vector', { error: String(e) })
       onsetTimes = []
     }
   }
@@ -213,19 +217,19 @@ export async function detectStrikes(
       const centroidResult = essentia.SpectralCentroidTime(windowVector, sampleRate)
       centroid = centroidResult.centroid
     } catch (e) {
-      console.debug('[AudioDetector] SpectralCentroidTime failed, using default:', e)
+      log.debug('SpectralCentroidTime failed, using default', { error: String(e) })
     }
     try {
       const flatnessResult = essentia.Flatness(windowVector)
       flatness = flatnessResult.flatness
     } catch (e) {
-      console.debug('[AudioDetector] Flatness calculation failed, using default:', e)
+      log.debug('Flatness calculation failed, using default', { error: String(e) })
     }
     try {
       const rmsResult = essentia.RMS(windowVector)
       rms = rmsResult.rms
     } catch (e) {
-      console.debug('[AudioDetector] RMS calculation failed, using default:', e)
+      log.debug('RMS calculation failed, using default', { error: String(e) })
     }
 
     // Calculate decay ratio: compare energy after onset to peak energy
@@ -304,14 +308,14 @@ function calculateDecayRatio(
     const peakResult = essentia.RMS(peakVector)
     peakRms = peakResult.rms
   } catch (e) {
-    console.debug('[AudioDetector] Peak RMS calculation failed:', e)
+    log.debug('Peak RMS calculation failed', { error: String(e) })
   }
   try {
     const decayVector = essentia.arrayToVector(decayWindow)
     const decayResult = essentia.RMS(decayVector)
     decayRms = decayResult.rms
   } catch (e) {
-    console.debug('[AudioDetector] Decay RMS calculation failed:', e)
+    log.debug('Decay RMS calculation failed', { error: String(e) })
   }
 
   // Calculate ratio (clamp to 0-1 range)
