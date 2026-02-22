@@ -5,7 +5,7 @@ import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
-import { VideoFramePipelineV4, ExportConfigV4, ExportResolution, ExportTimeoutError, isVideoFrameCallbackSupported } from '../lib/video-frame-pipeline-v4'
+import { VideoFramePipelineV4, ExportConfigV4, ExportResolution, ExportTimeoutError, checkWebCodecsSupport } from '../lib/video-frame-pipeline-v4'
 import { loadFFmpeg, muxAudioIntoClip } from '../lib/ffmpeg-client'
 import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
 import { createLogger } from '../lib/logger'
@@ -30,6 +30,8 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     updateVideoSegment,
     approveVideoSegment,
     rejectVideoSegment,
+    initError,
+    setInitError,
   } = useProcessingStore()
 
   // Use multi-video segments when available, fall back to legacy segments
@@ -286,6 +288,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     }
   }, [])
 
+  // Check WebCodecs support on mount — surface error before user attempts export
+  useEffect(() => {
+    const webCodecsError = checkWebCodecsSupport()
+    if (webCodecsError) {
+      setInitError(webCodecsError)
+    }
+  }, [setInitError])
+
   // Reset marking state when shot changes
   useEffect(() => {
     setLandingPoint(null)
@@ -500,8 +510,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       return
     }
 
-    if (!isVideoFrameCallbackSupported()) {
-      alert('requestVideoFrameCallback is not supported in this browser. Please use Chrome 83+, Edge 83+, or Safari 15.4+.')
+    // Defensive: mount-time check disables the button, but guard here too for safety
+    const webCodecsError = checkWebCodecsSupport()
+    if (webCodecsError) {
+      setInitError(webCodecsError)
       return
     }
 
@@ -916,6 +928,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <p className="review-complete-summary">
           {approvedCount} {approvedCount === 1 ? 'shot' : 'shots'} approved
         </p>
+        {initError && (
+          <div className="init-error-banner" role="alert">
+            <span className="init-error-icon">&#9888;</span>
+            <p>{initError}</p>
+          </div>
+        )}
         <div className="review-complete-actions">
           {approvedCount > 0 && (
             <>
@@ -932,7 +950,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                 <button
                   onClick={handleExport}
                   className="btn-primary btn-large"
-                  disabled={!isVideoFrameCallbackSupported()}
+                  disabled={!!initError}
                 >
                   Export {approvedCount} Clip{approvedCount !== 1 ? 's' : ''}
                 </button>
@@ -1041,6 +1059,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <span className="review-title">Review Shots</span>
         <span className="review-progress">{currentIndex + 1} of {totalShots}</span>
       </div>
+
+      {/* Initialization error banner (FFmpeg/WebCodecs) */}
+      {initError && (
+        <div className="init-error-banner" role="alert">
+          <span className="init-error-icon">&#9888;</span>
+          <p>{initError}</p>
+        </div>
+      )}
 
       {/* Non-blocking feedback error banner */}
       {feedbackError && (

@@ -191,6 +191,54 @@ describe('isVideoFrameCallbackSupported - Node.js environment', () => {
   })
 })
 
+describe('checkWebCodecsSupport', () => {
+  it('should export checkWebCodecsSupport function', async () => {
+    const module = await import('./video-frame-pipeline-v4')
+    expect(typeof module.checkWebCodecsSupport).toBe('function')
+  })
+
+  it('should return error message when VideoEncoder is undefined', async () => {
+    // In jsdom/Node.js, VideoEncoder is not defined
+    const { checkWebCodecsSupport } = await import('./video-frame-pipeline-v4')
+    const result = checkWebCodecsSupport()
+    expect(result).not.toBeNull()
+    expect(result).toContain('WebCodecs')
+  })
+
+  it('should return rVFC error when WebCodecs exists but rVFC does not', async () => {
+    // Stub WebCodecs globals but leave HTMLVideoElement missing (Node.js env)
+    const origVideoEncoder = globalThis.VideoEncoder
+    const origVideoFrame = globalThis.VideoFrame
+
+    try {
+      // @ts-expect-error - stubbing global for test
+      globalThis.VideoEncoder = class {}
+      // @ts-expect-error - stubbing global for test
+      globalThis.VideoFrame = class {}
+
+      const { checkWebCodecsSupport } = await import('./video-frame-pipeline-v4')
+      const result = checkWebCodecsSupport()
+
+      // In Node.js, HTMLVideoElement doesn't exist so rVFC check fails
+      expect(result).not.toBeNull()
+      expect(result).toContain('requestVideoFrameCallback')
+    } finally {
+      if (origVideoEncoder === undefined) {
+        // @ts-expect-error - cleanup
+        delete globalThis.VideoEncoder
+      } else {
+        globalThis.VideoEncoder = origVideoEncoder
+      }
+      if (origVideoFrame === undefined) {
+        // @ts-expect-error - cleanup
+        delete globalThis.VideoFrame
+      } else {
+        globalThis.VideoFrame = origVideoFrame
+      }
+    }
+  })
+})
+
 describe('VideoFramePipelineV4 - Documentation', () => {
   /**
    * V4 uses requestVideoFrameCallback() for real-time frame capture.

@@ -71,6 +71,20 @@ export function isVideoFrameCallbackSupported(): boolean {
 }
 
 /**
+ * Check WebCodecs API availability.
+ * Returns null if supported, or a user-facing error message if not.
+ */
+export function checkWebCodecsSupport(): string | null {
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+    return 'Video export requires WebCodecs API support. Use Chrome 94+, Edge 94+, or Safari 16.4+. Firefox does not support WebCodecs.'
+  }
+  if (!isVideoFrameCallbackSupported()) {
+    return 'Video export requires requestVideoFrameCallback support. Use Chrome 83+, Edge 83+, or Safari 15.4+.'
+  }
+  return null
+}
+
+/**
  * V4 Export Pipeline using requestVideoFrameCallback for real-time capture
  */
 export class VideoFramePipelineV4 {

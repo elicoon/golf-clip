@@ -323,4 +323,54 @@ describe('FFmpegClient', () => {
       'FFmpeg not loaded. Call loadFFmpeg() first.'
     )
   })
+
+  it('sets initError in store when FFmpeg WASM load fails', async () => {
+    vi.doMock('@ffmpeg/ffmpeg', () => ({
+      FFmpeg: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+        this.load = vi.fn().mockRejectedValue(new Error('Failed to fetch WASM'))
+      }),
+    }))
+    vi.doMock('@ffmpeg/util', () => ({
+      toBlobURL: vi.fn().mockResolvedValue('blob:mock'),
+      fetchFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+    }))
+
+    const { loadFFmpeg } = await import('./ffmpeg-client')
+    const { useProcessingStore } = await import('../stores/processingStore')
+
+    // Ensure initError is null before
+    useProcessingStore.getState().setInitError(null)
+    expect(useProcessingStore.getState().initError).toBeNull()
+
+    // loadFFmpeg should throw AND set initError in the store
+    await expect(loadFFmpeg()).rejects.toThrow('Failed to fetch WASM')
+
+    const initError = useProcessingStore.getState().initError
+    expect(initError).not.toBeNull()
+    expect(initError).toContain('Failed to load video processing engine')
+    expect(initError).toContain('Failed to fetch WASM')
+  })
+
+  it('sets initError with SharedArrayBuffer hint when relevant', async () => {
+    vi.doMock('@ffmpeg/ffmpeg', () => ({
+      FFmpeg: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+        this.load = vi.fn().mockRejectedValue(new Error('SharedArrayBuffer is not defined'))
+      }),
+    }))
+    vi.doMock('@ffmpeg/util', () => ({
+      toBlobURL: vi.fn().mockResolvedValue('blob:mock'),
+      fetchFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+    }))
+
+    const { loadFFmpeg } = await import('./ffmpeg-client')
+    const { useProcessingStore } = await import('../stores/processingStore')
+
+    useProcessingStore.getState().setInitError(null)
+
+    await expect(loadFFmpeg()).rejects.toThrow('SharedArrayBuffer')
+
+    const initError = useProcessingStore.getState().initError
+    expect(initError).toContain('SharedArrayBuffer')
+    expect(initError).toContain('Chrome or Edge')
+  })
 })

@@ -1794,6 +1794,27 @@ kbd {
   border-radius: var(--border-radius-sm);
 }
 
+.init-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  color: var(--color-danger);
+  font-size: 0.875rem;
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+  background-color: var(--color-danger-dim);
+  border-radius: var(--border-radius-sm);
+}
+
+.init-error-banner p {
+  margin: 0;
+}
+
+.init-error-icon {
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
 .feedback-actions {
   display: flex;
   gap: var(--spacing-md);

@@ -1,6 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL, fetchFile } from '@ffmpeg/util'
 import { createLogger } from './logger'
+import { useProcessingStore } from '../stores/processingStore'
 
 const log = createLogger('ffmpeg-client')
 
@@ -17,10 +18,23 @@ export async function loadFFmpeg(): Promise<void> {
   // with core 0.12.x. The core WASM binary is loaded separately from CDN.
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
 
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-  })
+  try {
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    })
+  } catch (err) {
+    ffmpeg = null
+    const message = err instanceof Error ? err.message : String(err)
+    log.error('FFmpeg WASM failed to load', { error: message })
+
+    const userMessage = message.includes('SharedArrayBuffer')
+      ? 'Video processing requires SharedArrayBuffer support. Use Chrome or Edge with cross-origin isolation enabled.'
+      : `Failed to load video processing engine. ${message}. Try refreshing the page or using Chrome/Edge.`
+
+    useProcessingStore.getState().setInitError(userMessage)
+    throw err
+  }
 
   loaded = true
 }
