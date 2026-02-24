@@ -10,6 +10,8 @@
     "test": "npm run test -w apps/browser",
     "test:e2e": "npm run test:e2e -w apps/browser",
     "test:coverage": "npm run test:coverage -w apps/browser",
-    "lint": "npm run lint -w apps/browser"
+    "lint": "npm run lint -w apps/browser",
+    "format": "npm run format -w apps/browser",
+    "format:check": "npm run format:check -w apps/browser"
   }
 }

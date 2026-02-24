@@ -1,6 +1,7 @@
 import tseslint from '@typescript-eslint/eslint-plugin'
 import tsparser from '@typescript-eslint/parser'
 import reactHooks from 'eslint-plugin-react-hooks'
+import prettier from 'eslint-config-prettier'
 
 export default [
   // TypeScript recommended (flat config)
@@ -37,6 +38,9 @@ export default [
       'react-hooks/immutability': 'off',
     },
   },
+
+  // Disable ESLint rules that conflict with Prettier
+  prettier,
 
   // Ignore non-source files
   {
