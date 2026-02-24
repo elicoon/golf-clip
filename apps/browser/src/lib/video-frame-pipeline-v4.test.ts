@@ -191,6 +191,41 @@ describe('isVideoFrameCallbackSupported - Node.js environment', () => {
   })
 })
 
+describe('ExportTimeoutError', () => {
+  it('should be an instance of Error', async () => {
+    const { ExportTimeoutError } = await import('./video-frame-pipeline-v4')
+    const error = new ExportTimeoutError('test timeout')
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error.name).toBe('ExportTimeoutError')
+    expect(error.message).toBe('test timeout')
+  })
+
+  it('should have correct prototype chain', async () => {
+    const { ExportTimeoutError } = await import('./video-frame-pipeline-v4')
+    const error = new ExportTimeoutError('test')
+
+    expect(error instanceof ExportTimeoutError).toBe(true)
+    expect(error instanceof Error).toBe(true)
+  })
+})
+
+describe('VideoFramePipelineV4 - Error Handling', () => {
+  it('should throw when requestVideoFrameCallback is not supported', async () => {
+    const { VideoFramePipelineV4 } = await import('./video-frame-pipeline-v4')
+    const pipeline = new VideoFramePipelineV4()
+
+    await expect(
+      pipeline.exportWithTracer({
+        videoBlob: new Blob(['test'], { type: 'video/mp4' }),
+        trajectory: [],
+        startTime: 0,
+        endTime: 1,
+      }),
+    ).rejects.toThrow('requestVideoFrameCallback is not supported')
+  })
+})
+
 describe('VideoFramePipelineV4 - Documentation', () => {
   /**
    * V4 uses requestVideoFrameCallback() for real-time frame capture.

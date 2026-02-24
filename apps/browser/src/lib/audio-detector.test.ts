@@ -59,10 +59,34 @@ describe('AudioDetector', () => {
   })
 })
 
+describe('unloadEssentia', () => {
+  it('resets loaded state', async () => {
+    vi.resetModules()
+    const { unloadEssentia, isEssentiaLoaded } = await import('./audio-detector')
+
+    expect(isEssentiaLoaded()).toBe(false)
+    unloadEssentia()
+    expect(isEssentiaLoaded()).toBe(false)
+  })
+})
+
 describe('DetectionConfig defaults', () => {
   it('should have minStrikeInterval of 25 seconds for golf', async () => {
     const { DEFAULT_CONFIG } = await import('./audio-detector')
     expect(DEFAULT_CONFIG.minStrikeInterval).toBeGreaterThanOrEqual(15)
+  })
+
+  it('has frequency range for golf strike detection (1000-8000 Hz)', async () => {
+    const { DEFAULT_CONFIG } = await import('./audio-detector')
+    expect(DEFAULT_CONFIG.frequencyLow).toBe(1000)
+    expect(DEFAULT_CONFIG.frequencyHigh).toBe(8000)
+    expect(DEFAULT_CONFIG.frequencyHigh).toBeGreaterThan(DEFAULT_CONFIG.frequencyLow)
+  })
+
+  it('has sensitivity in 0-1 range', async () => {
+    const { DEFAULT_CONFIG } = await import('./audio-detector')
+    expect(DEFAULT_CONFIG.sensitivity).toBeGreaterThanOrEqual(0)
+    expect(DEFAULT_CONFIG.sensitivity).toBeLessThanOrEqual(1)
   })
 })
 

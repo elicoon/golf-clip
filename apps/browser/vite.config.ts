@@ -10,10 +10,10 @@ export default defineConfig({
       provider: 'v8',
       exclude: ['e2e/**', ...configDefaults.exclude],
       thresholds: {
-        statements: 51,
+        statements: 60,
         branches: 65,
-        functions: 44,
-        lines: 51,
+        functions: 60,
+        lines: 60,
       },
     },
   },
