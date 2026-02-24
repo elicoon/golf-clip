@@ -52,10 +52,10 @@ describe('VideoFramePipelineV4 - Interface Compatibility with V3', () => {
     // by importing both modules
 
     // V4 ExportConfigV4 should have same required fields as V3 ExportConfigV3
-    const v4Module = await import('./video-frame-pipeline-v4')
+    const _v4Module = await import('./video-frame-pipeline-v4')
 
     // Create a valid config object
-    const config: v4Module.ExportConfigV4 = {
+    const config: _v4Module.ExportConfigV4 = {
       videoBlob: new Blob(['test'], { type: 'video/mp4' }),
       trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
       startTime: 0,
@@ -70,7 +70,7 @@ describe('VideoFramePipelineV4 - Interface Compatibility with V3', () => {
   })
 
   it('should support optional resolution parameter like V3', async () => {
-    const v4Module = await import('./video-frame-pipeline-v4')
+    const _v4Module = await import('./video-frame-pipeline-v4')
 
     // Resolution should be optional
     const config = {
@@ -78,14 +78,14 @@ describe('VideoFramePipelineV4 - Interface Compatibility with V3', () => {
       trajectory: [],
       startTime: 0,
       endTime: 1,
-      resolution: '1080p' as v4Module.ExportResolution,
+      resolution: '1080p' as _v4Module.ExportResolution,
     }
 
     expect(config.resolution).toBe('1080p')
   })
 
   it('should support optional tracerStyle parameter like V3', async () => {
-    const v4Module = await import('./video-frame-pipeline-v4')
+    const _v4Module = await import('./video-frame-pipeline-v4')
 
     const config = {
       videoBlob: new Blob(['test'], { type: 'video/mp4' }),
@@ -104,15 +104,15 @@ describe('VideoFramePipelineV4 - Interface Compatibility with V3', () => {
   })
 
   it('should support optional onProgress callback like V3', async () => {
-    const v4Module = await import('./video-frame-pipeline-v4')
-    const progressUpdates: v4Module.ExportProgressV4[] = []
+    const _v4Module = await import('./video-frame-pipeline-v4')
+    const progressUpdates: _v4Module.ExportProgressV4[] = []
 
     const config = {
       videoBlob: new Blob(['test'], { type: 'video/mp4' }),
       trajectory: [],
       startTime: 0,
       endTime: 1,
-      onProgress: (progress: v4Module.ExportProgressV4) => {
+      onProgress: (progress: _v4Module.ExportProgressV4) => {
         progressUpdates.push(progress)
       },
     }
@@ -126,10 +126,10 @@ describe('VideoFramePipelineV4 - Progress Interface', () => {
     // V4 ExportProgressV4 should have same phases as V3 ExportProgressV3
     // Phases: 'preparing' | 'extracting' | 'encoding' | 'muxing' | 'complete'
 
-    const v4Module = await import('./video-frame-pipeline-v4')
+    const _v4Module = await import('./video-frame-pipeline-v4')
 
     // Create mock progress objects with all valid phases
-    const validPhases: v4Module.ExportProgressV4['phase'][] = [
+    const validPhases: _v4Module.ExportProgressV4['phase'][] = [
       'preparing',
       'extracting',
       'encoding',
@@ -138,7 +138,7 @@ describe('VideoFramePipelineV4 - Progress Interface', () => {
     ]
 
     for (const phase of validPhases) {
-      const progress: v4Module.ExportProgressV4 = {
+      const progress: _v4Module.ExportProgressV4 = {
         phase,
         progress: 50,
       }
@@ -147,9 +147,9 @@ describe('VideoFramePipelineV4 - Progress Interface', () => {
   })
 
   it('should support optional currentFrame and totalFrames like V3', async () => {
-    const v4Module = await import('./video-frame-pipeline-v4')
+    const _v4Module = await import('./video-frame-pipeline-v4')
 
-    const progress: v4Module.ExportProgressV4 = {
+    const progress: _v4Module.ExportProgressV4 = {
       phase: 'encoding',
       progress: 50,
       currentFrame: 150,
@@ -162,9 +162,9 @@ describe('VideoFramePipelineV4 - Progress Interface', () => {
 
   it('should support V4-specific currentTime and endTime fields', async () => {
     // V4 adds these fields for real-time progress tracking
-    const v4Module = await import('./video-frame-pipeline-v4')
+    const _v4Module = await import('./video-frame-pipeline-v4')
 
-    const progress: v4Module.ExportProgressV4 = {
+    const progress: _v4Module.ExportProgressV4 = {
       phase: 'encoding',
       progress: 50,
       currentTime: 2.5,

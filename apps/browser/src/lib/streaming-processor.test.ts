@@ -56,7 +56,7 @@ describe('Segment Extraction', () => {
     vi.clearAllMocks()
     // Re-setup the mock return value before each test
     vi.mocked(ffmpegClient.extractVideoSegment).mockResolvedValue(
-      new Blob(['mock video data'], { type: 'video/mp4' })
+      new Blob(['mock video data'], { type: 'video/mp4' }),
     )
   })
 
@@ -146,12 +146,14 @@ describe('Segment Extraction', () => {
     it('should reject unplayable segments with clear error', async () => {
       // Setup mock to reject
       vi.mocked(ffmpegClient.extractVideoSegment).mockRejectedValueOnce(
-        new Error('FFmpeg segment extraction failed with exit code 1')
+        new Error('FFmpeg segment extraction failed with exit code 1'),
       )
 
       const sourceBlob = createMockVideoBlob('invalid')
 
-      await expect(ffmpegClient.extractVideoSegment(sourceBlob, 0, 5)).rejects.toThrow('FFmpeg segment extraction failed')
+      await expect(ffmpegClient.extractVideoSegment(sourceBlob, 0, 5)).rejects.toThrow(
+        'FFmpeg segment extraction failed',
+      )
     })
 
     it('should handle zero-length segment request', async () => {
@@ -242,7 +244,7 @@ describe('Segment Store Integration', () => {
         endTime: 20,
         blob: expect.any(Blob),
         objectUrl: expect.stringMatching(/^blob:/),
-      })
+      }),
     )
   })
 

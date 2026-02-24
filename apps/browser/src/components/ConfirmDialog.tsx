@@ -41,9 +41,16 @@ export function ConfirmDialog({
   }, [onCancel])
 
   return (
-    <div className="confirm-dialog-overlay" data-testid="confirm-dialog" role="dialog" aria-modal="true">
+    <div
+      className="confirm-dialog-overlay"
+      data-testid="confirm-dialog"
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="confirm-dialog">
-        <p className="confirm-dialog-message" id="confirm-dialog-message">{message}</p>
+        <p className="confirm-dialog-message" id="confirm-dialog-message">
+          {message}
+        </p>
         <div className="confirm-dialog-actions">
           <button
             ref={cancelRef}
@@ -53,11 +60,7 @@ export function ConfirmDialog({
           >
             {cancelLabel}
           </button>
-          <button
-            onClick={onConfirm}
-            className="btn-danger"
-            data-testid="confirm-dialog-confirm"
-          >
+          <button onClick={onConfirm} className="btn-danger" data-testid="confirm-dialog-confirm">
             {confirmLabel}
           </button>
         </div>

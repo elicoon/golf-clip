@@ -19,7 +19,7 @@ import { getVideoDuration } from './segment-extractor'
 import { useProcessingStore } from '../stores/processingStore'
 
 const AUDIO_CHUNK_DURATION = 30 // Analyze 30 seconds at a time
-const SAMPLE_RATE = 44100  // Essentia.js SuperFluxExtractor requires 44100Hz
+const SAMPLE_RATE = 44100 // Essentia.js SuperFluxExtractor requires 44100Hz
 
 /**
  * Validate that a video blob is playable in the browser.
@@ -79,7 +79,7 @@ export interface ProcessingCallbacks {
 export async function processVideoFile(
   file: File,
   videoId?: string,
-  callbacks: ProcessingCallbacks = {}
+  callbacks: ProcessingCallbacks = {},
 ): Promise<StrikeDetection[]> {
   const store = useProcessingStore.getState()
 
@@ -177,7 +177,7 @@ export async function processVideoFile(
       for (const strike of chunkStrikes) {
         const adjustedStrike = {
           ...strike,
-          timestamp: strike.timestamp + chunkStart
+          timestamp: strike.timestamp + chunkStart,
         }
         allStrikes.push(adjustedStrike)
         addStrike(adjustedStrike)
@@ -207,7 +207,9 @@ export async function processVideoFile(
       // Validate segment is playable in browser
       const isPlayable = await validateSegmentPlayability(segmentBlob)
       if (!isPlayable) {
-        console.warn(`[streaming-processor] Segment ${i + 1} may not be playable (codec issue). User will see error in review.`)
+        console.warn(
+          `[streaming-processor] Segment ${i + 1} may not be playable (codec issue). User will see error in review.`,
+        )
         // Still add the segment - the ClipReview will show an error message
         // This is better than silently failing or transcoding every segment which is slow
       }
@@ -235,7 +237,6 @@ export async function processVideoFile(
     callbacks.onComplete?.(allStrikes)
 
     return allStrikes
-
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error))
     setError(err.message)

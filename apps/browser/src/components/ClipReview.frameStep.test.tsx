@@ -74,7 +74,7 @@ describe('Frame Step Logic', () => {
       expect(steppedTimes).toHaveLength(10)
 
       // All times should be distinct
-      const uniqueTimes = new Set(steppedTimes.map(t => t.toFixed(10)))
+      const uniqueTimes = new Set(steppedTimes.map((t) => t.toFixed(10)))
       expect(uniqueTimes.size).toBe(10)
 
       // Each step should advance by exactly 1 frame duration
@@ -131,7 +131,7 @@ describe('Frame Step Logic', () => {
       expect(steppedTimes).toHaveLength(10)
 
       // All times should be distinct
-      const uniqueTimes = new Set(steppedTimes.map(t => t.toFixed(10)))
+      const uniqueTimes = new Set(steppedTimes.map((t) => t.toFixed(10)))
       expect(uniqueTimes.size).toBe(10)
 
       // Each step should go back by exactly 1 frame duration
@@ -237,7 +237,7 @@ describe('Frame Step Logic', () => {
         for (let i = 0; i < 10; i++) {
           times.push(stepFrameForward(times[times.length - 1], fps))
         }
-        const uniqueTimes = new Set(times.map(t => t.toFixed(10)))
+        const uniqueTimes = new Set(times.map((t) => t.toFixed(10)))
         expect(uniqueTimes.size).toBe(11) // 10 steps + initial = 11 unique values
       }
     })

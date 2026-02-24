@@ -70,16 +70,16 @@ export interface TracerConfig {
 export interface VideoSegment {
   id: string
   strikeTime: number
-  startTime: number  // segment start time
-  endTime: number    // segment end time
+  startTime: number // segment start time
+  endTime: number // segment end time
   blob: Blob
   objectUrl: string
-  confidence: number        // detection confidence (0-1)
-  clipStart: number         // trimmed start time
-  clipEnd: number           // trimmed end time
-  approved: 'pending' | 'approved' | 'rejected'  // user approval state
-  landingPoint?: { x: number; y: number }  // marked landing point
-  trajectory?: TrajectoryData              // generated trajectory
+  confidence: number // detection confidence (0-1)
+  clipStart: number // trimmed start time
+  clipEnd: number // trimmed end time
+  approved: 'pending' | 'approved' | 'rejected' // user approval state
+  landingPoint?: { x: number; y: number } // marked landing point
+  trajectory?: TrajectoryData // generated trajectory
 }
 
 interface ProcessingState {
@@ -102,14 +102,17 @@ interface ProcessingState {
 
   // Multi-video support
   videos: Map<VideoId, VideoState>
-  activeVideoId: VideoId | null  // Currently displayed video
+  activeVideoId: VideoId | null // Currently displayed video
 
   // Legacy single-video actions
   setStatus: (status: ProcessingState['status']) => void
   setError: (error: string | null) => void
   setProgress: (progress: number, message?: string) => void
   addStrike: (strike: StrikeDetection) => void
-  addSegment: (segment: Omit<VideoSegment, 'confidence' | 'clipStart' | 'clipEnd' | 'approved'> & Partial<Pick<VideoSegment, 'confidence' | 'clipStart' | 'clipEnd' | 'approved'>>) => void
+  addSegment: (
+    segment: Omit<VideoSegment, 'confidence' | 'clipStart' | 'clipEnd' | 'approved'> &
+      Partial<Pick<VideoSegment, 'confidence' | 'clipStart' | 'clipEnd' | 'approved'>>,
+  ) => void
   setCurrentSegment: (index: number) => void
   setFileInfo: (name: string, duration: number) => void
   updateSegment: (id: string, updates: Partial<VideoSegment>) => void
@@ -126,7 +129,11 @@ interface ProcessingState {
   setVideoStatus: (id: VideoId, status: VideoState['status']) => void
   setVideoError: (id: VideoId, error: string | null) => void
   addVideoStrike: (id: VideoId, strike: StrikeDetection) => void
-  addVideoSegment: (id: VideoId, segment: Omit<VideoSegment, 'confidence' | 'clipStart' | 'clipEnd' | 'approved'> & Partial<Pick<VideoSegment, 'confidence' | 'clipStart' | 'clipEnd' | 'approved'>>) => void
+  addVideoSegment: (
+    id: VideoId,
+    segment: Omit<VideoSegment, 'confidence' | 'clipStart' | 'clipEnd' | 'approved'> &
+      Partial<Pick<VideoSegment, 'confidence' | 'clipStart' | 'clipEnd' | 'approved'>>,
+  ) => void
   setVideoFileInfo: (id: VideoId, duration: number) => void
   updateVideoSegment: (id: VideoId, segmentId: string, updates: Partial<VideoSegment>) => void
   approveVideoSegment: (id: VideoId, segmentId: string) => void
@@ -152,178 +159,198 @@ export const useProcessingStore = create<ProcessingState>((set, get) => ({
   // Legacy single-video actions
   setStatus: (status) => set({ status }),
   setError: (error) => set({ error, status: error ? 'error' : 'idle' }),
-  setProgress: (progress, message) => set({
-    progress,
-    progressMessage: message ?? ''
-  }),
-  addStrike: (strike) => set((state) => ({
-    strikes: [...state.strikes, strike]
-  })),
-  addSegment: (segment) => set((state) => {
-    const confidence = segment.confidence ?? 0.5
-    // Auto-approve high-confidence shots (>= 0.7) since they skip review
-    const approved = segment.approved ?? (confidence >= 0.7 ? 'approved' : 'pending')
-    return {
-      segments: [...state.segments, {
+  setProgress: (progress, message) =>
+    set({
+      progress,
+      progressMessage: message ?? '',
+    }),
+  addStrike: (strike) =>
+    set((state) => ({
+      strikes: [...state.strikes, strike],
+    })),
+  addSegment: (segment) =>
+    set((state) => {
+      const confidence = segment.confidence ?? 0.5
+      // Auto-approve high-confidence shots (>= 0.7) since they skip review
+      const approved = segment.approved ?? (confidence >= 0.7 ? 'approved' : 'pending')
+      return {
+        segments: [
+          ...state.segments,
+          {
+            ...segment,
+            confidence,
+            clipStart: segment.clipStart ?? segment.startTime,
+            clipEnd: segment.clipEnd ?? segment.endTime,
+            approved,
+          },
+        ],
+      }
+    }),
+  setCurrentSegment: (index) => set({ currentSegmentIndex: index }),
+  updateSegment: (id, updates) =>
+    set((state) => ({
+      segments: state.segments.map((seg) => (seg.id === id ? { ...seg, ...updates } : seg)),
+    })),
+  approveSegment: (id) =>
+    set((state) => ({
+      segments: state.segments.map((seg) =>
+        seg.id === id ? { ...seg, approved: 'approved' } : seg,
+      ),
+    })),
+  rejectSegment: (id) =>
+    set((state) => ({
+      segments: state.segments.map((seg) =>
+        seg.id === id ? { ...seg, approved: 'rejected' } : seg,
+      ),
+    })),
+  setFileInfo: (name, duration) => set({ fileName: name, fileDuration: duration }),
+
+  // Multi-video actions
+  addVideo: (id, fileName) =>
+    set((state) => {
+      const newVideos = new Map(state.videos)
+      newVideos.set(id, createVideoState(id, fileName))
+      return {
+        videos: newVideos,
+        // If this is the first video, make it active
+        activeVideoId: state.activeVideoId ?? id,
+      }
+    }),
+
+  removeVideo: (id) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (video) {
+        // Revoke object URLs for this video's segments
+        video.segments.forEach((seg) => URL.revokeObjectURL(seg.objectUrl))
+      }
+      const newVideos = new Map(state.videos)
+      newVideos.delete(id)
+      return {
+        videos: newVideos,
+        activeVideoId:
+          state.activeVideoId === id
+            ? (newVideos.keys().next().value ?? null)
+            : state.activeVideoId,
+      }
+    }),
+
+  setActiveVideo: (id) => set({ activeVideoId: id }),
+
+  updateVideoState: (id, updates) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (!video) return state
+      const newVideos = new Map(state.videos)
+      newVideos.set(id, { ...video, ...updates })
+      return { videos: newVideos }
+    }),
+
+  setVideoProgress: (id, progress, message) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (!video) return state
+      const newVideos = new Map(state.videos)
+      newVideos.set(id, { ...video, progress, progressMessage: message ?? '' })
+      return { videos: newVideos }
+    }),
+
+  setVideoStatus: (id, status) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (!video) return state
+      const newVideos = new Map(state.videos)
+      newVideos.set(id, { ...video, status })
+      return { videos: newVideos }
+    }),
+
+  setVideoError: (id, error) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (!video) return state
+      const newVideos = new Map(state.videos)
+      newVideos.set(id, { ...video, error, status: error ? 'error' : video.status })
+      return { videos: newVideos }
+    }),
+
+  addVideoStrike: (id, strike) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (!video) return state
+      const newVideos = new Map(state.videos)
+      newVideos.set(id, { ...video, strikes: [...video.strikes, strike] })
+      return { videos: newVideos }
+    }),
+
+  addVideoSegment: (id, segment) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (!video) return state
+      const newVideos = new Map(state.videos)
+      const confidence = segment.confidence ?? 0.5
+      // Auto-approve high-confidence shots (>= 0.7) since they skip review
+      const approved = segment.approved ?? (confidence >= 0.7 ? 'approved' : 'pending')
+      const fullSegment: VideoSegment = {
         ...segment,
         confidence,
         clipStart: segment.clipStart ?? segment.startTime,
         clipEnd: segment.clipEnd ?? segment.endTime,
         approved,
-      }]
-    }
-  }),
-  setCurrentSegment: (index) => set({ currentSegmentIndex: index }),
-  updateSegment: (id, updates) => set((state) => ({
-    segments: state.segments.map(seg =>
-      seg.id === id ? { ...seg, ...updates } : seg
-    )
-  })),
-  approveSegment: (id) => set((state) => ({
-    segments: state.segments.map(seg =>
-      seg.id === id ? { ...seg, approved: 'approved' } : seg
-    )
-  })),
-  rejectSegment: (id) => set((state) => ({
-    segments: state.segments.map(seg =>
-      seg.id === id ? { ...seg, approved: 'rejected' } : seg
-    )
-  })),
-  setFileInfo: (name, duration) => set({ fileName: name, fileDuration: duration }),
+      }
+      newVideos.set(id, { ...video, segments: [...video.segments, fullSegment] })
+      return { videos: newVideos }
+    }),
 
-  // Multi-video actions
-  addVideo: (id, fileName) => set((state) => {
-    const newVideos = new Map(state.videos)
-    newVideos.set(id, createVideoState(id, fileName))
-    return {
-      videos: newVideos,
-      // If this is the first video, make it active
-      activeVideoId: state.activeVideoId ?? id
-    }
-  }),
+  setVideoFileInfo: (id, duration) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (!video) return state
+      const newVideos = new Map(state.videos)
+      newVideos.set(id, { ...video, fileDuration: duration })
+      return { videos: newVideos }
+    }),
 
-  removeVideo: (id) => set((state) => {
-    const video = state.videos.get(id)
-    if (video) {
-      // Revoke object URLs for this video's segments
-      video.segments.forEach(seg => URL.revokeObjectURL(seg.objectUrl))
-    }
-    const newVideos = new Map(state.videos)
-    newVideos.delete(id)
-    return {
-      videos: newVideos,
-      activeVideoId: state.activeVideoId === id
-        ? (newVideos.keys().next().value ?? null)
-        : state.activeVideoId
-    }
-  }),
+  updateVideoSegment: (id, segmentId, updates) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (!video) return state
+      const newVideos = new Map(state.videos)
+      newVideos.set(id, {
+        ...video,
+        segments: video.segments.map((seg) =>
+          seg.id === segmentId ? { ...seg, ...updates } : seg,
+        ),
+      })
+      return { videos: newVideos }
+    }),
 
-  setActiveVideo: (id) => set({ activeVideoId: id }),
+  approveVideoSegment: (id, segmentId) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (!video) return state
+      const newVideos = new Map(state.videos)
+      newVideos.set(id, {
+        ...video,
+        segments: video.segments.map((seg) =>
+          seg.id === segmentId ? { ...seg, approved: 'approved' } : seg,
+        ),
+      })
+      return { videos: newVideos }
+    }),
 
-  updateVideoState: (id, updates) => set((state) => {
-    const video = state.videos.get(id)
-    if (!video) return state
-    const newVideos = new Map(state.videos)
-    newVideos.set(id, { ...video, ...updates })
-    return { videos: newVideos }
-  }),
-
-  setVideoProgress: (id, progress, message) => set((state) => {
-    const video = state.videos.get(id)
-    if (!video) return state
-    const newVideos = new Map(state.videos)
-    newVideos.set(id, { ...video, progress, progressMessage: message ?? '' })
-    return { videos: newVideos }
-  }),
-
-  setVideoStatus: (id, status) => set((state) => {
-    const video = state.videos.get(id)
-    if (!video) return state
-    const newVideos = new Map(state.videos)
-    newVideos.set(id, { ...video, status })
-    return { videos: newVideos }
-  }),
-
-  setVideoError: (id, error) => set((state) => {
-    const video = state.videos.get(id)
-    if (!video) return state
-    const newVideos = new Map(state.videos)
-    newVideos.set(id, { ...video, error, status: error ? 'error' : video.status })
-    return { videos: newVideos }
-  }),
-
-  addVideoStrike: (id, strike) => set((state) => {
-    const video = state.videos.get(id)
-    if (!video) return state
-    const newVideos = new Map(state.videos)
-    newVideos.set(id, { ...video, strikes: [...video.strikes, strike] })
-    return { videos: newVideos }
-  }),
-
-  addVideoSegment: (id, segment) => set((state) => {
-    const video = state.videos.get(id)
-    if (!video) return state
-    const newVideos = new Map(state.videos)
-    const confidence = segment.confidence ?? 0.5
-    // Auto-approve high-confidence shots (>= 0.7) since they skip review
-    const approved = segment.approved ?? (confidence >= 0.7 ? 'approved' : 'pending')
-    const fullSegment: VideoSegment = {
-      ...segment,
-      confidence,
-      clipStart: segment.clipStart ?? segment.startTime,
-      clipEnd: segment.clipEnd ?? segment.endTime,
-      approved,
-    }
-    newVideos.set(id, { ...video, segments: [...video.segments, fullSegment] })
-    return { videos: newVideos }
-  }),
-
-  setVideoFileInfo: (id, duration) => set((state) => {
-    const video = state.videos.get(id)
-    if (!video) return state
-    const newVideos = new Map(state.videos)
-    newVideos.set(id, { ...video, fileDuration: duration })
-    return { videos: newVideos }
-  }),
-
-  updateVideoSegment: (id, segmentId, updates) => set((state) => {
-    const video = state.videos.get(id)
-    if (!video) return state
-    const newVideos = new Map(state.videos)
-    newVideos.set(id, {
-      ...video,
-      segments: video.segments.map(seg =>
-        seg.id === segmentId ? { ...seg, ...updates } : seg
-      )
-    })
-    return { videos: newVideos }
-  }),
-
-  approveVideoSegment: (id, segmentId) => set((state) => {
-    const video = state.videos.get(id)
-    if (!video) return state
-    const newVideos = new Map(state.videos)
-    newVideos.set(id, {
-      ...video,
-      segments: video.segments.map(seg =>
-        seg.id === segmentId ? { ...seg, approved: 'approved' } : seg
-      )
-    })
-    return { videos: newVideos }
-  }),
-
-  rejectVideoSegment: (id, segmentId) => set((state) => {
-    const video = state.videos.get(id)
-    if (!video) return state
-    const newVideos = new Map(state.videos)
-    newVideos.set(id, {
-      ...video,
-      segments: video.segments.map(seg =>
-        seg.id === segmentId ? { ...seg, approved: 'rejected' } : seg
-      )
-    })
-    return { videos: newVideos }
-  }),
+  rejectVideoSegment: (id, segmentId) =>
+    set((state) => {
+      const video = state.videos.get(id)
+      if (!video) return state
+      const newVideos = new Map(state.videos)
+      newVideos.set(id, {
+        ...video,
+        segments: video.segments.map((seg) =>
+          seg.id === segmentId ? { ...seg, approved: 'rejected' } : seg,
+        ),
+      })
+      return { videos: newVideos }
+    }),
 
   getVideo: (id) => get().videos.get(id),
 
@@ -331,10 +358,10 @@ export const useProcessingStore = create<ProcessingState>((set, get) => ({
   reset: () => {
     const state = useProcessingStore.getState()
     // Revoke URLs for legacy segments
-    state.segments.forEach(seg => URL.revokeObjectURL(seg.objectUrl))
+    state.segments.forEach((seg) => URL.revokeObjectURL(seg.objectUrl))
     // Revoke URLs for multi-video segments
-    state.videos.forEach(video => {
-      video.segments.forEach(seg => URL.revokeObjectURL(seg.objectUrl))
+    state.videos.forEach((video) => {
+      video.segments.forEach((seg) => URL.revokeObjectURL(seg.objectUrl))
     })
     set({
       status: 'idle',

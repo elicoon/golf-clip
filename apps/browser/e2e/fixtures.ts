@@ -1,6 +1,10 @@
 import { test as base, Page, expect } from '@playwright/test'
 import path from 'path'
 import fs from 'fs'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 // Path to test video — large file, not in git
 const TEST_VIDEO_PATH = path.resolve(__dirname, '../../../test-videos/IMG_0991.mov')

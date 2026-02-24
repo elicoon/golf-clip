@@ -3,8 +3,8 @@
 import { TracerStyle } from '../types/tracer'
 
 export interface TrajectoryPoint {
-  x: number  // 0-1 normalized
-  y: number  // 0-1 normalized
+  x: number // 0-1 normalized
+  y: number // 0-1 normalized
   timestamp: number
 }
 
@@ -43,9 +43,18 @@ export class CanvasCompositor {
    */
   compositeFrame(
     videoFrame: HTMLCanvasElement | ImageBitmap | HTMLImageElement,
-    options: CompositeOptions
+    options: CompositeOptions,
   ): ImageData {
-    const { trajectory, currentTime, startTime, endTime, tracerStyle, landingPoint, apexPoint, originPoint } = options
+    const {
+      trajectory,
+      currentTime,
+      startTime,
+      endTime,
+      tracerStyle,
+      landingPoint,
+      apexPoint,
+      originPoint,
+    } = options
     const width = this.canvas.width
     const height = this.canvas.height
 
@@ -77,12 +86,12 @@ export class CanvasCompositor {
     _endTime: number,
     style: TracerStyle,
     width: number,
-    height: number
+    height: number,
   ): void {
     if (trajectory.length < 2) return
 
     // Filter points up to current time
-    const visiblePoints = trajectory.filter(p => p.timestamp <= currentTime)
+    const visiblePoints = trajectory.filter((p) => p.timestamp <= currentTime)
     if (visiblePoints.length < 2) return
 
     // Apply glow effect if enabled

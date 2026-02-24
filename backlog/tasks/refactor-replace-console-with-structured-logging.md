@@ -1,21 +1,22 @@
 ### Replace console.log with Structured Logging in Browser App
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** refactor
 - **Scope:** medium
 - **Planned completion:** none
+- **Actual completion:** 2026-02-22
 - **Blockers:** none
 - **Notes:** 45 console.log/error/warn statements across 7 files (streaming-processor, ffmpeg-client, feedback-service, audio-detector, video-frame-pipeline-v4, TrajectoryEditor.bounds.test, ClipReview). Production apps should use structured logging (timestamp, level, context) for debugging. Create logger module with dev/prod modes: verbose in dev, silent in prod unless debug flag enabled.
 - **Added:** 2026-02-16
-- **Updated:** 2026-02-16
+- **Updated:** 2026-02-23
 
 #### Acceptance Criteria
-- [ ] src/lib/logger.ts created with log levels (debug, info, warn, error) and context fields
-- [ ] Logger respects import.meta.env.PROD mode (silent in production by default)
-- [ ] All 45 console statements replaced with logger calls
-- [ ] Logger includes timestamp, level, message, and optional context object
-- [ ] Test coverage for logger (dev/prod mode, log levels, context formatting)
+- [x] src/lib/logger.ts created with log levels (debug, info, warn, error) and context fields
+- [x] Logger respects import.meta.env.PROD mode (silent in production by default)
+- [x] All 45 console statements replaced with logger calls
+- [x] Logger includes timestamp, level, message, and optional context object
+- [x] Test coverage for logger (dev/prod mode, log levels, context formatting)
 
 #### Next steps
 1. Create src/lib/logger.ts with createLogger() factory and log level methods

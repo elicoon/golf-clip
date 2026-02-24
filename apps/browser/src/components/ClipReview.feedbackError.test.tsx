@@ -66,10 +66,9 @@ const mockApproveSegment = vi.fn()
 const mockRejectSegment = vi.fn()
 const mockUseProcessingStore = vi.fn()
 vi.mock('../stores/processingStore', () => ({
-  useProcessingStore: Object.assign(
-    (...args: unknown[]) => mockUseProcessingStore(...args),
-    { getState: () => mockUseProcessingStore() }
-  ),
+  useProcessingStore: Object.assign((...args: unknown[]) => mockUseProcessingStore(...args), {
+    getState: () => mockUseProcessingStore(),
+  }),
 }))
 
 // Mock feedback service — mocks are hoisted, we'll configure per-test
@@ -87,7 +86,10 @@ vi.mock('../lib/video-frame-pipeline-v4', () => ({
   })),
   isVideoFrameCallbackSupported: vi.fn().mockReturnValue(true),
   ExportTimeoutError: class ExportTimeoutError extends Error {
-    constructor(message: string) { super(message); this.name = 'ExportTimeoutError' }
+    constructor(message: string) {
+      super(message)
+      this.name = 'ExportTimeoutError'
+    }
   },
 }))
 
@@ -111,7 +113,7 @@ async function flushPromises() {
   // Multiple rounds to handle chained .then() callbacks
   for (let i = 0; i < 5; i++) {
     await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
     })
   }
 }
@@ -161,7 +163,6 @@ describe('ClipReview Feedback Error Display', () => {
 
     // Confirm the dialog
 
-
     // Flush promises so the .then() callback executes
     await flushPromises()
 
@@ -207,7 +208,6 @@ describe('ClipReview Feedback Error Display', () => {
     // Click "No Golf Shot" to reject
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
 
-
     await flushPromises()
 
     // No error should appear
@@ -224,7 +224,6 @@ describe('ClipReview Feedback Error Display', () => {
 
     // Reject to trigger error
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
-
 
     await flushPromises()
 
@@ -293,7 +292,6 @@ describe('ClipReview Feedback Error Display', () => {
 
     // Reject first shot
     fireEvent.click(screen.getByRole('button', { name: /no golf shot/i }))
-
 
     await flushPromises()
 
