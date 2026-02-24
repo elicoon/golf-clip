@@ -172,6 +172,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       const detectFps = (_now: DOMHighResTimeStamp, metadata: { mediaTime: number }) => {
         if (firstMediaTime === null) {
           firstMediaTime = metadata.mediaTime
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- requestVideoFrameCallback not in TS DOM types
           ;(video as any).requestVideoFrameCallback(detectFps)
         } else if (metadata.mediaTime > firstMediaTime) {
           const frameDuration = metadata.mediaTime - firstMediaTime
@@ -181,6 +182,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           }
         }
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- requestVideoFrameCallback not in TS DOM types
       ;(video as any).requestVideoFrameCallback(detectFps)
     }
 
@@ -235,6 +237,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (video.readyState >= 3 && autoplayedShotIdRef.current !== currentShot.id) {
       handleVideoCanPlay()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on currentShot.id only to avoid re-running on every currentShot property change
   }, [currentShot?.id, handleVideoCanPlay])
 
   // Track video time for trajectory animation and auto-loop
@@ -327,6 +330,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       // Store original strike time for scrubber indicator
       originalStrikeTimeRef.current = currentShot.strikeTime
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on currentShot.id only to reset state per-shot without reacting to every property
   }, [currentShot?.id])
 
   // Reclamp pan offset when zoom level decreases to prevent showing empty space
@@ -917,6 +921,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- stepFrameBackward/stepFrameForward are stable callbacks; including them causes unnecessary re-binds
   }, [togglePlayPause, handlePrevious, handleNext, handleApprove, handleReject, reviewStep, trajectory, currentShot, handleTrimUpdate, handleSetImpactTime])
 
   if (!currentShot) {

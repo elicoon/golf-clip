@@ -20,10 +20,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, act } from '@testing-library/react'
+import { render, cleanup, act } from '@testing-library/react'
 import * as matchers from '@testing-library/jest-dom/matchers'
 import { Scrubber } from './Scrubber'
-import { createRef, RefObject } from 'react'
+import { RefObject } from 'react'
 
 // Extend Vitest's expect with jest-dom matchers
 expect.extend(matchers)

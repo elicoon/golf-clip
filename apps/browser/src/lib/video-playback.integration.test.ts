@@ -10,7 +10,7 @@ import {
   createMockVideoBlob,
   createMockVideoElement,
   assertVideoNotBlack,
-  waitForVideoReady,
+
   createMockSegment,
   mockFFmpegLogOutput,
 } from '../test/video-test-utils'
@@ -132,7 +132,7 @@ describe('Video Playback Integration', () => {
   describe('HEVC Handling', () => {
     it('should warn user before processing HEVC video', () => {
       // Test the HEVC detection flow
-      const hevcBlob = createMockVideoBlob('hevc')
+      const _hevcBlob = createMockVideoBlob('hevc')
 
       // Simulate codec detection
       const codecInfo = {
@@ -169,7 +169,7 @@ describe('Video Playback Integration', () => {
 
     it('should play video after HEVC transcoding', () => {
       // After transcoding, video should be H.264 and playable
-      const transcodedBlob = createMockVideoBlob('h264')
+      const _transcodedBlob = createMockVideoBlob('h264')
 
       // Create video element with transcoded source
       const video = createMockVideoElement({
@@ -243,14 +243,14 @@ describe('Video Playback Integration', () => {
 
     it('should handle error flow gracefully', async () => {
       // Step 1: User uploads problematic video
-      const uploadedFile = new File(
+      const _uploadedFile = new File(
         [createMockVideoBlob('hevc')],
         'iphone-video.mov',
         { type: 'video/quicktime' }
       )
 
       // Step 2: Codec detection identifies HEVC
-      const codecInfo = { codec: 'hevc', isHevc: true, isPlayable: false }
+      const _codecInfo = { codec: 'hevc', isHevc: true, isPlayable: false }
 
       // Step 3: Without transcoding, video would fail
       const video = createMockVideoElement({
@@ -285,7 +285,7 @@ describe('Video Playback Integration', () => {
     it('should maintain codec compatibility through extraction', () => {
       // H.264 source -> H.264 segment (stream copy)
       const sourceCodec = 'h264'
-      const extractionMethod = '-c copy' // FFmpeg stream copy
+      const _extractionMethod = '-c copy' // FFmpeg stream copy
       const expectedOutputCodec = 'h264'
 
       // Stream copy preserves codec
