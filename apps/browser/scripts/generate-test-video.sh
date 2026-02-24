@@ -14,10 +14,11 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-# Generate a 3-second 720p video with text overlay and audio track.
+# Generate a 3-second 720p green video with audio track.
 # Uses libx264 for broad compatibility, MOV container to match expected filename.
+# Avoids drawtext filter to prevent font dependency issues in CI.
 ffmpeg -y \
-  -f lavfi -i "color=c=green:size=1280x720:duration=3:rate=30,drawtext=text='Golf Test':fontsize=48:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2" \
+  -f lavfi -i "color=c=green:size=1280x720:duration=3:rate=30" \
   -f lavfi -i "sine=frequency=440:duration=3" \
   -c:v libx264 -preset ultrafast -crf 23 \
   -c:a aac -b:a 128k \
