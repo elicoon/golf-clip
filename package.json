@@ -9,6 +9,7 @@
     "build": "npm run build -w apps/browser",
     "test": "npm run test -w apps/browser",
     "test:e2e": "npm run test:e2e -w apps/browser",
+    "test:coverage": "npm run test:coverage -w apps/browser",
     "lint": "npm run lint -w apps/browser"
   }
 }
