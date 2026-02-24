@@ -107,8 +107,6 @@ describe('detectGpuCapabilities', () => {
     expect(result.webglAvailable).toBe(false)
     expect(result.hardwareAccelerationEnabled).toBe(false)
     expect(result.estimatedDecodeCapability).toBe('software')
-
-    vi.restoreAllMocks()
   })
 
   it('handles error when accessing WebGL context', async () => {
@@ -124,7 +122,5 @@ describe('detectGpuCapabilities', () => {
 
     expect(result.webglAvailable).toBe(false)
     expect(result.hardwareAccelerationEnabled).toBe(false)
-
-    vi.restoreAllMocks()
   })
 })

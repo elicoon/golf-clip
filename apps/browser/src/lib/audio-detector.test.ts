@@ -60,12 +60,15 @@ describe('AudioDetector', () => {
 })
 
 describe('unloadEssentia', () => {
-  it('resets loaded state', async () => {
+  it('is safe to call when Essentia is not loaded', async () => {
+    // Validates the defensive contract: calling unloadEssentia() when nothing
+    // is loaded must not throw. Loading Essentia requires WASM in a browser,
+    // so we can only verify the no-op path in unit tests.
     vi.resetModules()
     const { unloadEssentia, isEssentiaLoaded } = await import('./audio-detector')
 
     expect(isEssentiaLoaded()).toBe(false)
-    unloadEssentia()
+    unloadEssentia() // should not throw
     expect(isEssentiaLoaded()).toBe(false)
   })
 })
