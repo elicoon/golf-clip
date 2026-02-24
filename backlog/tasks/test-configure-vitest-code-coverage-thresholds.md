@@ -1,21 +1,22 @@
 ### Configure Vitest Code Coverage with Minimum Thresholds
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** test-coverage
 - **Scope:** small
 - **Planned completion:** none
+- **Actual completion:** 2026-02-24
 - **Blockers:** none
 - **Notes:** 25 unit test files exist but no coverage reporting is configured. Adding coverage metrics prevents silent regression — new code can pass tests while reducing overall coverage. Setting a baseline threshold now (based on current coverage) creates a ratchet that only moves up.
 - **Added:** 2026-02-23
-- **Updated:** 2026-02-23
+- **Updated:** 2026-02-24
 
 #### Acceptance Criteria
-- [ ] `@vitest/coverage-v8` installed as devDependency in `apps/browser`
-- [ ] `vite.config.ts` includes coverage config with `provider: 'v8'` and threshold settings (lines, branches, functions)
-- [ ] `npm run test:coverage` script exists and produces a coverage report
-- [ ] CI workflow includes coverage reporting step that fails if thresholds are not met
-- [ ] Thresholds are set to current baseline (measure first, then set — no arbitrary numbers)
+- [x] `@vitest/coverage-v8` installed as devDependency in `apps/browser`
+- [x] `vite.config.ts` includes coverage config with `provider: 'v8'` and threshold settings (lines, branches, functions)
+- [x] `npm run test:coverage` script exists and produces a coverage report
+- [x] CI workflow includes coverage reporting step that fails if thresholds are not met
+- [x] Thresholds are set to current baseline (measure first, then set — no arbitrary numbers)
 
 #### Next steps
 1. Install `@vitest/coverage-v8` in `apps/browser`

@@ -1,21 +1,22 @@
 ### Add Playwright E2E Smoke Tests to CI Workflow
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** test-coverage
 - **Scope:** medium
 - **Planned completion:** none
+- **Actual completion:** 2026-02-24
 - **Blockers:** none
 - **Notes:** 4 Playwright E2E spec files exist and were recently fixed (import conflict resolved in commit 26b20f0), but CI only runs Vitest unit tests. E2E tests validate the full user flow (video upload, shot detection, export) and would catch integration regressions that unit tests miss. Playwright has first-class CI support with `npx playwright install --with-deps`.
 - **Added:** 2026-02-23
-- **Updated:** 2026-02-23
+- **Updated:** 2026-02-24
 
 #### Acceptance Criteria
-- [ ] CI workflow has a separate `e2e` job that runs after the `test` job passes
-- [ ] Playwright browsers are installed in CI via `npx playwright install --with-deps chromium`
-- [ ] E2E tests run against a production build (`npm run build` + `npx vite preview`)
-- [ ] E2E job uploads Playwright HTML report and trace artifacts on failure
-- [ ] All 4 existing E2E spec files execute and pass in CI
+- [x] CI workflow has a separate `e2e` job that runs after the `test` job passes
+- [x] Playwright browsers are installed in CI via `npx playwright install --with-deps chromium`
+- [x] E2E tests run against a production build (`npm run build` + `npx vite preview`)
+- [x] E2E job uploads Playwright HTML report and trace artifacts on failure
+- [x] All 4 existing E2E spec files execute and pass in CI
 
 #### Next steps
 1. Read `apps/browser/playwright.config.ts` to understand current E2E configuration (baseURL, webServer, browser settings)
