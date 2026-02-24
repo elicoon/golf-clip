@@ -1488,7 +1488,7 @@ describe('Export Progress Phase Visibility', () => {
     const approvedSegment = createApprovedSegmentWithTrajectory({ id: 'seg-all-phases' })
     setupMockStoreWithApprovedSegments([approvedSegment])
 
-    const reportedPhases: string[] = []
+    const _reportedPhases: string[] = []
 
     mockExportWithTracer.mockImplementation(async (config: {
       onProgress?: (p: { phase: string; progress: number }) => void

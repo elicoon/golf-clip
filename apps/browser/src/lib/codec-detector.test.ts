@@ -67,7 +67,7 @@ describe('Codec Detection', () => {
         detectVideoCodec: async () => {
           // Simulate the detection logic
           const logs = mockFFmpegLogOutput('hevc').toLowerCase()
-          const isHevc = logs.includes('hevc') || logs.includes('h265') || logs.includes('hvc1')
+          const _isHevc = logs.includes('hevc') || logs.includes('h265') || logs.includes('hvc1')
           return {
             codec: 'hevc',
             isHevc: true,
