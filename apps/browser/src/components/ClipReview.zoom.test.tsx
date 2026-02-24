@@ -18,7 +18,9 @@ expect.extend(matchers)
 // Mock ResizeObserver
 class MockResizeObserver {
   callback: ResizeObserverCallback
-  constructor(callback: ResizeObserverCallback) { this.callback = callback }
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback
+  }
   observe() {}
   unobserve() {}
   disconnect() {}
@@ -27,17 +29,32 @@ global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
 
 // Mock canvas context
 HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
-  fillRect: vi.fn(), clearRect: vi.fn(), setTransform: vi.fn(),
-  drawImage: vi.fn(), save: vi.fn(), restore: vi.fn(),
-  beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
-  closePath: vi.fn(), stroke: vi.fn(), arc: vi.fn(),
-  fill: vi.fn(), measureText: vi.fn().mockReturnValue({ width: 0 }),
-  transform: vi.fn(), rect: vi.fn(), clip: vi.fn(),
-  scale: vi.fn(), translate: vi.fn(), rotate: vi.fn(),
+  fillRect: vi.fn(),
+  clearRect: vi.fn(),
+  setTransform: vi.fn(),
+  drawImage: vi.fn(),
+  save: vi.fn(),
+  restore: vi.fn(),
+  beginPath: vi.fn(),
+  moveTo: vi.fn(),
+  lineTo: vi.fn(),
+  closePath: vi.fn(),
+  stroke: vi.fn(),
+  arc: vi.fn(),
+  fill: vi.fn(),
+  measureText: vi.fn().mockReturnValue({ width: 0 }),
+  transform: vi.fn(),
+  rect: vi.fn(),
+  clip: vi.fn(),
+  scale: vi.fn(),
+  translate: vi.fn(),
+  rotate: vi.fn(),
   quadraticCurveTo: vi.fn(),
   canvas: { width: 800, height: 600 },
-  fillText: vi.fn(), getImageData: vi.fn().mockReturnValue({ data: [] }),
-  putImageData: vi.fn(), createImageData: vi.fn().mockReturnValue([]),
+  fillText: vi.fn(),
+  getImageData: vi.fn().mockReturnValue({ data: [] }),
+  putImageData: vi.fn(),
+  createImageData: vi.fn().mockReturnValue([]),
 }) as unknown as typeof HTMLCanvasElement.prototype.getContext
 
 // Mock segments - two shots needing review (confidence < 0.7)
@@ -91,7 +108,10 @@ vi.mock('../lib/video-frame-pipeline-v4', () => ({
   VideoFramePipelineV4: vi.fn(),
   isVideoFrameCallbackSupported: vi.fn(() => true),
   ExportTimeoutError: class ExportTimeoutError extends Error {
-    constructor(message: string) { super(message); this.name = 'ExportTimeoutError' }
+    constructor(message: string) {
+      super(message)
+      this.name = 'ExportTimeoutError'
+    }
   },
 }))
 

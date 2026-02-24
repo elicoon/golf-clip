@@ -38,7 +38,7 @@ describe('processingStore', () => {
         endTime: 8.0,
         blob: mockBlob,
         objectUrl: mockObjectUrl,
-        confidence: 0.75,  // High confidence - should auto-approve
+        confidence: 0.75, // High confidence - should auto-approve
       })
 
       const segments = useProcessingStore.getState().segments
@@ -59,7 +59,7 @@ describe('processingStore', () => {
         endTime: 8.0,
         blob: mockBlob,
         objectUrl: mockObjectUrl,
-        confidence: 0.5,  // Low confidence - should remain pending
+        confidence: 0.5, // Low confidence - should remain pending
       })
 
       const segments = useProcessingStore.getState().segments
@@ -80,7 +80,7 @@ describe('processingStore', () => {
         endTime: 8.0,
         blob: mockBlob,
         objectUrl: mockObjectUrl,
-        confidence: 0.7,  // Exactly at threshold - should auto-approve
+        confidence: 0.7, // Exactly at threshold - should auto-approve
       })
 
       const segments = useProcessingStore.getState().segments
@@ -103,7 +103,7 @@ describe('processingStore', () => {
         blob: mockBlob,
         objectUrl: mockObjectUrl,
         confidence: 0.9,
-        approved: 'rejected',  // Explicit status should be preserved
+        approved: 'rejected', // Explicit status should be preserved
       })
 
       const segments = useProcessingStore.getState().segments

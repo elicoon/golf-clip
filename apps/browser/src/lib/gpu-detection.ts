@@ -64,7 +64,7 @@ export async function detectGpuCapabilities(): Promise<GpuCapabilities> {
       ]
 
       result.isSoftwareRenderer = softwareIndicators.some(
-        indicator => rendererLower.includes(indicator) || vendorLower.includes(indicator)
+        (indicator) => rendererLower.includes(indicator) || vendorLower.includes(indicator),
       )
 
       // Clean up
@@ -128,10 +128,7 @@ export function getExportOptions(capabilities: GpuCapabilities): ExportOption[] 
     {
       id: 'cloud-processing',
       name: 'Cloud Processing',
-      description: [
-        '~30s per clip + upload time',
-        'Works on any device',
-      ],
+      description: ['~30s per clip + upload time', 'Works on any device'],
       available: false, // Not implemented yet
       recommended: false,
       unavailableReason: 'Coming soon',
@@ -139,10 +136,7 @@ export function getExportOptions(capabilities: GpuCapabilities): ExportOption[] 
     {
       id: 'offline-export',
       name: 'Offline Export',
-      description: [
-        '~10-15x realtime (10s clip = 2-3 min)',
-        'May timeout on longer clips',
-      ],
+      description: ['~10-15x realtime (10s clip = 2-3 min)', 'May timeout on longer clips'],
       available: true, // FFmpeg fallback is always available
       recommended: !browserAcceleratedAvailable,
     },

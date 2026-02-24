@@ -8,8 +8,8 @@ interface ScrubberProps {
   disabled?: boolean
   videoDuration?: number // Total video duration for extended boundary support
   // Strike time indicators
-  originalStrikeTime?: number  // Initial auto-detected strike time (orange)
-  strikeTime?: number          // Current (possibly adjusted) strike time (green)
+  originalStrikeTime?: number // Initial auto-detected strike time (orange)
+  strikeTime?: number // Current (possibly adjusted) strike time (green)
 }
 
 type DragTarget = 'start' | 'end' | 'playhead' | null
@@ -41,16 +41,16 @@ export function Scrubber({
 
   // Calculate window bounds - always show the full segment so user can extend to boundaries
   // When dragging, lock the window to prevent jumping
-  const windowStart = lockedWindow
-    ? lockedWindow.start
-    : 0  // Segment always starts at 0 (times are relative to segment)
+  const windowStart = lockedWindow ? lockedWindow.start : 0 // Segment always starts at 0 (times are relative to segment)
 
   // Guard against inverted window - ensure windowEnd > windowStart
   // Defensive: if endTime exceeds duration (e.g., global times were passed), expand window to fit
   const baseDuration = totalDuration || Math.max(endTime + 5, 30)
   const rawWindowEnd = lockedWindow
     ? lockedWindow.end
-    : (endTime > baseDuration ? endTime + 5 : baseDuration)
+    : endTime > baseDuration
+      ? endTime + 5
+      : baseDuration
   const windowEnd = Math.max(rawWindowEnd, windowStart + 1) // Ensure at least 1s window
 
   // Prevent division by zero/negative
@@ -87,30 +87,24 @@ export function Scrubber({
       if (windowDuration === 0) return 0
       return ((time - windowStart) / windowDuration) * 100
     },
-    [windowStart, windowDuration]
+    [windowStart, windowDuration],
   )
 
   const positionToTime = useCallback(
     (position: number): number => {
       return windowStart + (position / 100) * windowDuration
     },
-    [windowStart, windowDuration]
+    [windowStart, windowDuration],
   )
 
-  const getPositionFromEvent = useCallback(
-    (clientX: number): number => {
-      if (!scrubberRef.current) return 0
-      const rect = scrubberRef.current.getBoundingClientRect()
-      const position = ((clientX - rect.left) / rect.width) * 100
-      return Math.max(0, Math.min(100, position))
-    },
-    []
-  )
+  const getPositionFromEvent = useCallback((clientX: number): number => {
+    if (!scrubberRef.current) return 0
+    const rect = scrubberRef.current.getBoundingClientRect()
+    const position = ((clientX - rect.left) / rect.width) * 100
+    return Math.max(0, Math.min(100, position))
+  }, [])
 
-  const handleMouseDown = (
-    e: React.MouseEvent,
-    type: DragTarget
-  ) => {
+  const handleMouseDown = (e: React.MouseEvent, type: DragTarget) => {
     if (disabled) return
     e.preventDefault()
     e.stopPropagation()
@@ -151,7 +145,20 @@ export function Scrubber({
         }
       }
     },
-    [isDragging, getPositionFromEvent, positionToTime, startTime, endTime, duration, videoDuration, onTimeUpdate, videoRef, windowStart, windowEnd, disabled]
+    [
+      isDragging,
+      getPositionFromEvent,
+      positionToTime,
+      startTime,
+      endTime,
+      duration,
+      videoDuration,
+      onTimeUpdate,
+      videoRef,
+      windowStart,
+      windowEnd,
+      disabled,
+    ],
   )
 
   const handleMouseUp = useCallback(() => {
@@ -217,10 +224,7 @@ export function Scrubber({
         <div className="scrubber-track" />
 
         {/* Out-of-bounds regions (dimmed) */}
-        <div
-          className="scrubber-region-outside"
-          style={{ left: 0, width: `${startPos}%` }}
-        />
+        <div className="scrubber-region-outside" style={{ left: 0, width: `${startPos}%` }} />
         <div
           className="scrubber-region-outside"
           style={{ left: `${endPos}%`, width: `${100 - endPos}%` }}
@@ -237,10 +241,7 @@ export function Scrubber({
 
         {/* Hover preview indicator */}
         {hoverPosition !== null && hoverTime !== null && !isDragging && (
-          <div
-            className="scrubber-hover-preview"
-            style={{ left: `${hoverPosition}%` }}
-          >
+          <div className="scrubber-hover-preview" style={{ left: `${hoverPosition}%` }}>
             <div className="scrubber-hover-thumbnail">
               {/* Placeholder for future thumbnail preview */}
               <div className="scrubber-hover-thumbnail-placeholder" />
@@ -289,13 +290,14 @@ export function Scrubber({
         {strikeTime !== undefined && (
           <div className="scrubber-strike-indicators">
             {/* Original detection (orange) - only show if different from current */}
-            {originalStrikeTime !== undefined && Math.abs(originalStrikeTime - strikeTime) > 0.05 && (
-              <div
-                className="strike-indicator strike-indicator-original"
-                style={{ left: `${timeToPosition(originalStrikeTime)}%` }}
-                title={`Original detection: ${formatTime(originalStrikeTime)}`}
-              />
-            )}
+            {originalStrikeTime !== undefined &&
+              Math.abs(originalStrikeTime - strikeTime) > 0.05 && (
+                <div
+                  className="strike-indicator strike-indicator-original"
+                  style={{ left: `${timeToPosition(originalStrikeTime)}%` }}
+                  title={`Original detection: ${formatTime(originalStrikeTime)}`}
+                />
+              )}
             {/* Current impact time (green) */}
             <div
               className="strike-indicator strike-indicator-current"
@@ -319,7 +321,8 @@ export function Scrubber({
       {/* Clip duration indicator */}
       <div className="scrubber-clip-info">
         <span className="scrubber-clip-duration">
-          Clip: {formatTime(startTime)} - {formatTime(endTime)} ({formatDuration(endTime - startTime)})
+          Clip: {formatTime(startTime)} - {formatTime(endTime)} (
+          {formatDuration(endTime - startTime)})
         </span>
       </div>
     </div>

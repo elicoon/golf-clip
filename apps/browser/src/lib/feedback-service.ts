@@ -38,16 +38,19 @@ interface TracerParams {
 }
 
 // Generate session ID once per browser session
-const SESSION_ID = (typeof crypto !== 'undefined' && crypto.randomUUID)
-  ? crypto.randomUUID()
-  : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+const SESSION_ID =
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
 
 export interface FeedbackResult {
   success: boolean
   error?: string
 }
 
-export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId'>): Promise<FeedbackResult> {
+export async function submitShotFeedback(
+  feedback: Omit<ShotFeedback, 'sessionId'>,
+): Promise<FeedbackResult> {
   const client = getSupabaseClient()
   if (!client) {
     console.warn('Supabase not configured, skipping feedback submission')
@@ -75,7 +78,9 @@ export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId
   return { success: true }
 }
 
-export async function submitTracerFeedback(feedback: Omit<TracerFeedback, 'sessionId'>): Promise<FeedbackResult> {
+export async function submitTracerFeedback(
+  feedback: Omit<TracerFeedback, 'sessionId'>,
+): Promise<FeedbackResult> {
   const client = getSupabaseClient()
   if (!client) {
     console.warn('Supabase not configured, skipping feedback submission')

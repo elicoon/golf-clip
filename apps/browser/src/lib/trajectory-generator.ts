@@ -70,7 +70,7 @@ export function generateTrajectory(
   config: TracerConfig,
   originPoint?: Point2D,
   apexPoint?: Point2D,
-  startTimeOffset: number = 0
+  startTimeOffset: number = 0,
 ): TrajectoryData {
   const origin = originPoint || DEFAULT_ORIGIN
 
@@ -103,7 +103,8 @@ export function generateTrajectory(
 
     // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
     const mt = 1 - t
-    const x = mt * mt * origin.x + 2 * mt * t * (controlPoint.x + shapeCurve * t) + t * t * landingPoint.x
+    const x =
+      mt * mt * origin.x + 2 * mt * t * (controlPoint.x + shapeCurve * t) + t * t * landingPoint.x
     const y = mt * mt * origin.y + 2 * mt * t * controlPoint.y + t * t * landingPoint.y
 
     points.push({

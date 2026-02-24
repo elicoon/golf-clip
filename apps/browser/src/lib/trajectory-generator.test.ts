@@ -164,13 +164,13 @@ describe('generateTrajectory', () => {
         defaultLanding,
         makeConfig({ shape: 'hook' }),
         undefined,
-        apex
+        apex,
       )
       const sliceResult = generateTrajectory(
         defaultLanding,
         makeConfig({ shape: 'slice' }),
         undefined,
-        apex
+        apex,
       )
 
       // With explicit apex, shape curve offset = 0, so hook and slice should be identical
@@ -203,7 +203,13 @@ describe('generateTrajectory', () => {
   describe('startTimeOffset', () => {
     it('shifts all timestamps by the offset', () => {
       const offset = 5.0
-      const result = generateTrajectory(defaultLanding, makeConfig({ flightTime: 2 }), undefined, undefined, offset)
+      const result = generateTrajectory(
+        defaultLanding,
+        makeConfig({ flightTime: 2 }),
+        undefined,
+        undefined,
+        offset,
+      )
 
       expect(result.points[0].timestamp).toBeCloseTo(5.0, 5)
       expect(result.points[result.points.length - 1].timestamp).toBeCloseTo(7.0, 5)

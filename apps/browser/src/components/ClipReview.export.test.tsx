@@ -85,7 +85,7 @@ vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
 // Mock the processing store
 const mockUseProcessingStore = vi.fn()
 vi.mock('../stores/processingStore', async (importOriginal) => {
-  const original = await importOriginal() as typeof import('../stores/processingStore')
+  const original = (await importOriginal()) as typeof import('../stores/processingStore')
   return {
     ...original,
     useProcessingStore: (...args: unknown[]) => mockUseProcessingStore(...args),
@@ -106,7 +106,10 @@ vi.mock('../lib/video-frame-pipeline-v4', () => ({
   })),
   isVideoFrameCallbackSupported: vi.fn().mockReturnValue(true),
   ExportTimeoutError: class ExportTimeoutError extends Error {
-    constructor(message: string) { super(message); this.name = 'ExportTimeoutError' }
+    constructor(message: string) {
+      super(message)
+      this.name = 'ExportTimeoutError'
+    }
   },
 }))
 
@@ -167,7 +170,8 @@ function setupMockStoreWithApprovedSegments(segments: VideoSegment[]) {
 
   // Also mock getState for direct store access in handleExport
   const mockGetState = vi.fn().mockReturnValue({ segments })
-  ;(useProcessingStore as unknown as { getState: () => { segments: VideoSegment[] } }).getState = mockGetState
+  ;(useProcessingStore as unknown as { getState: () => { segments: VideoSegment[] } }).getState =
+    mockGetState
 }
 
 // =============================================================================
@@ -203,9 +207,12 @@ describe('Export Modal Visibility', () => {
     fireEvent.click(exportButton)
 
     // Export modal should appear
-    await waitFor(() => {
-      expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
   })
 
   it('should show progress text during export', async () => {
@@ -221,9 +228,12 @@ describe('Export Modal Visibility', () => {
     fireEvent.click(exportButton)
 
     // Wait for modal to appear with progress text
-    await waitFor(() => {
-      expect(screen.getByText(/clip 1 of 1/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/clip 1 of 1/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
   })
 
   it('should show cancel button during export', async () => {
@@ -241,9 +251,12 @@ describe('Export Modal Visibility', () => {
     fireEvent.click(exportButton)
 
     // Wait for modal
-    await waitFor(() => {
-      expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     // Cancel button should be visible
     const cancelButton = screen.getByRole('button', { name: /cancel/i })
@@ -278,12 +291,15 @@ describe('Export Modal Auto-Close After Completion', () => {
     fireEvent.click(exportButton)
 
     // Should show success state eventually
-    await waitFor(() => {
-      // Look for success indicator
-      const successElement = document.querySelector('.export-success-icon')
-      const completeText = screen.queryByText(/export complete/i)
-      expect(successElement || completeText).toBeTruthy()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        // Look for success indicator
+        const successElement = document.querySelector('.export-success-icon')
+        const completeText = screen.queryByText(/export complete/i)
+        expect(successElement || completeText).toBeTruthy()
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('should auto-close modal after 1.5 seconds on success (BUG FIX)', async () => {
@@ -297,10 +313,13 @@ describe('Export Modal Auto-Close After Completion', () => {
     fireEvent.click(exportButton)
 
     // Wait for success state
-    await waitFor(() => {
-      const successElement = document.querySelector('.export-success-icon')
-      expect(successElement).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successElement = document.querySelector('.export-success-icon')
+        expect(successElement).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
 
     // Modal should still be visible at this point
     expect(document.querySelector('.export-modal')).toBeInTheDocument()
@@ -323,10 +342,13 @@ describe('Export Modal Auto-Close After Completion', () => {
     fireEvent.click(exportButton)
 
     // Wait for export to complete
-    await waitFor(() => {
-      const successElement = document.querySelector('.export-success-icon')
-      expect(successElement).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successElement = document.querySelector('.export-success-icon')
+        expect(successElement).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
 
     // onComplete should NOT be called yet (still showing success)
     expect(onComplete).not.toHaveBeenCalled()
@@ -349,10 +371,13 @@ describe('Export Modal Auto-Close After Completion', () => {
     fireEvent.click(exportButton)
 
     // Wait for Done button to appear
-    await waitFor(() => {
-      const doneButton = screen.queryByRole('button', { name: /done/i })
-      expect(doneButton).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const doneButton = screen.queryByRole('button', { name: /done/i })
+        expect(doneButton).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
 
     // Click Done button manually (before auto-close)
     const doneButton = screen.getByRole('button', { name: /done/i })
@@ -392,10 +417,13 @@ describe('Export Error State', () => {
     fireEvent.click(exportButton)
 
     // Should show error state - look for the header specifically
-    await waitFor(() => {
-      const errorHeader = document.querySelector('.export-modal-header')
-      expect(errorHeader?.textContent).toMatch(/export failed/i)
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        const errorHeader = document.querySelector('.export-modal-header')
+        expect(errorHeader?.textContent).toMatch(/export failed/i)
+      },
+      { timeout: 3000 },
+    )
 
     // Should show error message in the error message element
     const errorMessage = document.querySelector('.export-error-message')
@@ -415,10 +443,13 @@ describe('Export Error State', () => {
     fireEvent.click(exportButton)
 
     // Should show error icon
-    await waitFor(() => {
-      const errorIcon = document.querySelector('.export-error-icon')
-      expect(errorIcon).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        const errorIcon = document.querySelector('.export-error-icon')
+        expect(errorIcon).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
   })
 
   it('should have Close button when error occurs', async () => {
@@ -434,10 +465,13 @@ describe('Export Error State', () => {
     fireEvent.click(exportButton)
 
     // Should show Close button
-    await waitFor(() => {
-      const closeButton = screen.getByRole('button', { name: /close/i })
-      expect(closeButton).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        const closeButton = screen.getByRole('button', { name: /close/i })
+        expect(closeButton).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
   })
 
   it('should close modal when Close button is clicked after error', async () => {
@@ -453,9 +487,12 @@ describe('Export Error State', () => {
     fireEvent.click(exportButton)
 
     // Wait for error state
-    await waitFor(() => {
-      expect(screen.getByText(/export failed/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/export failed/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     // Click Close button
     const closeButton = screen.getByRole('button', { name: /close/i })
@@ -479,9 +516,12 @@ describe('Export Error State', () => {
     const exportButton = screen.getByRole('button', { name: /export 1 clip/i })
     fireEvent.click(exportButton)
 
-    await waitFor(() => {
-      expect(screen.getByText(/export failed/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/export failed/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     const closeButton = screen.getByRole('button', { name: /close/i })
     fireEvent.click(closeButton)
@@ -520,9 +560,12 @@ describe('Export Cancel Button', () => {
     fireEvent.click(exportButton)
 
     // Wait for modal
-    await waitFor(() => {
-      expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     // Click Cancel
     const cancelButton = screen.getByRole('button', { name: /cancel/i })
@@ -546,9 +589,12 @@ describe('Export Cancel Button', () => {
     const exportButton = screen.getByRole('button', { name: /export 1 clip/i })
     fireEvent.click(exportButton)
 
-    await waitFor(() => {
-      expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     const cancelButton = screen.getByRole('button', { name: /cancel/i })
     fireEvent.click(cancelButton)
@@ -571,9 +617,12 @@ describe('Export Cancel Button', () => {
     fireEvent.click(exportButton)
 
     // Wait for modal
-    await waitFor(() => {
-      expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     // Cancel
     const cancelButton = screen.getByRole('button', { name: /cancel/i })
@@ -616,9 +665,12 @@ describe('Export Hang Prevention', () => {
     fireEvent.click(exportButton)
 
     // Wait for modal
-    await waitFor(() => {
-      expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     // Progress bar should exist
     const progressBar = document.querySelector('.export-progress-bar')
@@ -629,11 +681,13 @@ describe('Export Hang Prevention', () => {
     const approvedSegment = createApprovedSegmentWithTrajectory({ id: 'seg-1' })
     setupMockStoreWithApprovedSegments([approvedSegment])
 
-    mockExportWithTracer.mockImplementation(async (config: { onProgress?: (p: { phase: string; progress: number }) => void }) => {
-      // Report progress up to 99% then complete without 100%
-      config.onProgress?.({ phase: 'encoding', progress: 99 })
-      return new Blob(['mock-video'], { type: 'video/mp4' })
-    })
+    mockExportWithTracer.mockImplementation(
+      async (config: { onProgress?: (p: { phase: string; progress: number }) => void }) => {
+        // Report progress up to 99% then complete without 100%
+        config.onProgress?.({ phase: 'encoding', progress: 99 })
+        return new Blob(['mock-video'], { type: 'video/mp4' })
+      },
+    )
 
     const onComplete = vi.fn()
     render(<ClipReview onComplete={onComplete} />)
@@ -642,11 +696,14 @@ describe('Export Hang Prevention', () => {
     fireEvent.click(exportButton)
 
     // Should show success state (not stuck at 99%)
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      const doneButton = screen.queryByRole('button', { name: /done/i })
-      expect(successIcon || doneButton).toBeTruthy()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        const doneButton = screen.queryByRole('button', { name: /done/i })
+        expect(successIcon || doneButton).toBeTruthy()
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('should complete even when no progress callbacks fire (0% hang scenario)', async () => {
@@ -666,10 +723,13 @@ describe('Export Hang Prevention', () => {
     fireEvent.click(exportButton)
 
     // Should show success, not stuck at 0%
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
 
     // Advance timers to auto-close
     await vi.advanceTimersByTimeAsync(1600)
@@ -711,9 +771,12 @@ describe('Multiple Clips Export', () => {
     fireEvent.click(exportButton)
 
     // Should show progress for multiple clips
-    await waitFor(() => {
-      expect(screen.getByText(/clip \d of 3/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/clip \d of 3/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
   })
 
   it('should auto-close after all clips are exported', async () => {
@@ -730,10 +793,13 @@ describe('Multiple Clips Export', () => {
     fireEvent.click(exportButton)
 
     // Wait for export to complete (success state)
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 10000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 10000 },
+    )
 
     // Advance timer for auto-close
     await vi.advanceTimersByTimeAsync(1600)
@@ -822,16 +888,22 @@ describe('Export Pipeline Hang Prevention', () => {
     fireEvent.click(exportButton)
 
     // Wait for export to start
-    await waitFor(() => {
-      expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     // Export should complete within reasonable time
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      const doneButton = screen.queryByRole('button', { name: /done/i })
-      expect(successIcon || doneButton).toBeTruthy()
-    }, { timeout: 60000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        const doneButton = screen.queryByRole('button', { name: /done/i })
+        expect(successIcon || doneButton).toBeTruthy()
+      },
+      { timeout: 60000 },
+    )
   })
 
   it('should show progress updates during export (not stuck at 0%)', async () => {
@@ -843,17 +915,17 @@ describe('Export Pipeline Hang Prevention', () => {
     setupMockStoreWithApprovedSegments([approvedSegment])
 
     // Mock export that fires progress callbacks
-    mockExportWithTracer.mockImplementation(async (config: {
-      onProgress?: (p: { phase: string; progress: number }) => void
-    }) => {
-      // Simulate progress updates
-      config.onProgress?.({ phase: 'extracting', progress: 25 })
-      config.onProgress?.({ phase: 'extracting', progress: 50 })
-      config.onProgress?.({ phase: 'compositing', progress: 75 })
-      config.onProgress?.({ phase: 'encoding', progress: 90 })
-      config.onProgress?.({ phase: 'complete', progress: 100 })
-      return new Blob(['mock-video'], { type: 'video/mp4' })
-    })
+    mockExportWithTracer.mockImplementation(
+      async (config: { onProgress?: (p: { phase: string; progress: number }) => void }) => {
+        // Simulate progress updates
+        config.onProgress?.({ phase: 'extracting', progress: 25 })
+        config.onProgress?.({ phase: 'extracting', progress: 50 })
+        config.onProgress?.({ phase: 'compositing', progress: 75 })
+        config.onProgress?.({ phase: 'encoding', progress: 90 })
+        config.onProgress?.({ phase: 'complete', progress: 100 })
+        return new Blob(['mock-video'], { type: 'video/mp4' })
+      },
+    )
 
     const onComplete = vi.fn()
     render(<ClipReview onComplete={onComplete} />)
@@ -862,10 +934,13 @@ describe('Export Pipeline Hang Prevention', () => {
     fireEvent.click(exportButton)
 
     // Should see export complete (which means progress callbacks fired)
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('should handle HEVC export error gracefully', async () => {
@@ -892,10 +967,13 @@ describe('Export Pipeline Hang Prevention', () => {
     fireEvent.click(exportButton)
 
     // Should show error state, not hang
-    await waitFor(() => {
-      const errorHeader = document.querySelector('.export-modal-header')
-      expect(errorHeader?.textContent).toMatch(/export failed/i)
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const errorHeader = document.querySelector('.export-modal-header')
+        expect(errorHeader?.textContent).toMatch(/export failed/i)
+      },
+      { timeout: 5000 },
+    )
 
     // Error message should mention HEVC or transcoding
     const errorMessage = document.querySelector('.export-error-message')
@@ -927,10 +1005,13 @@ describe('Export Pipeline Hang Prevention', () => {
     fireEvent.click(exportButton)
 
     // Should complete without hanging
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 10000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 10000 },
+    )
   })
 
   it('should allow cancellation when export is slow', async () => {
@@ -941,9 +1022,12 @@ describe('Export Pipeline Hang Prevention', () => {
     setupMockStoreWithApprovedSegments([approvedSegment])
 
     // Mock slow export (simulates hang)
-    mockExportWithTracer.mockImplementation(() => new Promise(() => {
-      // Never resolves - simulates hang
-    }))
+    mockExportWithTracer.mockImplementation(
+      () =>
+        new Promise(() => {
+          // Never resolves - simulates hang
+        }),
+    )
 
     const onComplete = vi.fn()
     render(<ClipReview onComplete={onComplete} />)
@@ -952,9 +1036,12 @@ describe('Export Pipeline Hang Prevention', () => {
     fireEvent.click(exportButton)
 
     // Wait for modal to appear
-    await waitFor(() => {
-      expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     // Cancel button should be available
     const cancelButton = screen.getByRole('button', { name: /cancel/i })
@@ -981,15 +1068,15 @@ describe('Export Pipeline Hang Prevention', () => {
     setupMockStoreWithApprovedSegments([approvedSegment])
 
     // Mock export that reports phases
-    mockExportWithTracer.mockImplementation(async (config: {
-      onProgress?: (p: { phase: string; progress: number }) => void
-    }) => {
-      config.onProgress?.({ phase: 'extracting', progress: 50 })
-      await new Promise(resolve => setTimeout(resolve, 100))
-      config.onProgress?.({ phase: 'compositing', progress: 75 })
-      await new Promise(resolve => setTimeout(resolve, 100))
-      return new Blob(['mock-video'], { type: 'video/mp4' })
-    })
+    mockExportWithTracer.mockImplementation(
+      async (config: { onProgress?: (p: { phase: string; progress: number }) => void }) => {
+        config.onProgress?.({ phase: 'extracting', progress: 50 })
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        config.onProgress?.({ phase: 'compositing', progress: 75 })
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        return new Blob(['mock-video'], { type: 'video/mp4' })
+      },
+    )
 
     const onComplete = vi.fn()
     render(<ClipReview onComplete={onComplete} />)
@@ -998,18 +1085,24 @@ describe('Export Pipeline Hang Prevention', () => {
     fireEvent.click(exportButton)
 
     // Wait for export to start
-    await waitFor(() => {
-      expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     // Advance timers to trigger phase updates
     await vi.advanceTimersByTimeAsync(300)
 
     // Export should complete
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
   })
 })
 
@@ -1048,10 +1141,13 @@ describe('Export with Pre-Detected Codec Info', () => {
     fireEvent.click(exportButton)
 
     // Should complete successfully
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('should block export for known HEVC video', async () => {
@@ -1066,7 +1162,7 @@ describe('Export with Pre-Detected Codec Info', () => {
 
     // Mock export to throw HEVC error (simulating pre-check)
     mockExportWithTracer.mockRejectedValue(
-      new Error('Cannot export HEVC video. The video must be transcoded to H.264 first.')
+      new Error('Cannot export HEVC video. The video must be transcoded to H.264 first.'),
     )
 
     const onComplete = vi.fn()
@@ -1076,10 +1172,13 @@ describe('Export with Pre-Detected Codec Info', () => {
     fireEvent.click(exportButton)
 
     // Should show error about HEVC
-    await waitFor(() => {
-      const errorHeader = document.querySelector('.export-modal-header')
-      expect(errorHeader?.textContent).toMatch(/export failed/i)
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const errorHeader = document.querySelector('.export-modal-header')
+        expect(errorHeader?.textContent).toMatch(/export failed/i)
+      },
+      { timeout: 5000 },
+    )
   })
 })
 
@@ -1166,10 +1265,13 @@ describe('Export 4K Video Scenarios', () => {
     fireEvent.click(exportButton)
 
     // Should complete without hanging
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 10000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 10000 },
+    )
   })
 
   it('should handle export timeout gracefully for stuck 4K decode', async () => {
@@ -1182,7 +1284,9 @@ describe('Export 4K Video Scenarios', () => {
 
     // Simulate pipeline timeout error
     mockExportWithTracer.mockRejectedValue(
-      new Error('Frame extraction timed out after 120 seconds. The video may be too large or in an unsupported format.')
+      new Error(
+        'Frame extraction timed out after 120 seconds. The video may be too large or in an unsupported format.',
+      ),
     )
 
     const onComplete = vi.fn()
@@ -1192,10 +1296,13 @@ describe('Export 4K Video Scenarios', () => {
     fireEvent.click(exportButton)
 
     // Should show error state with timeout message
-    await waitFor(() => {
-      const errorHeader = document.querySelector('.export-modal-header')
-      expect(errorHeader?.textContent).toMatch(/export failed/i)
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const errorHeader = document.querySelector('.export-modal-header')
+        expect(errorHeader?.textContent).toMatch(/export failed/i)
+      },
+      { timeout: 5000 },
+    )
 
     // Error message should mention timeout
     const errorMessage = document.querySelector('.export-error-message')
@@ -1221,9 +1328,12 @@ describe('Export 4K Video Scenarios', () => {
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
     // Wait for error
-    await waitFor(() => {
-      expect(screen.getByText(/export failed/i)).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/export failed/i)).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
 
     // Close error modal
     const closeButton = screen.getByRole('button', { name: /close/i })
@@ -1238,10 +1348,13 @@ describe('Export 4K Video Scenarios', () => {
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
     // Second attempt should succeed
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
   })
 })
 
@@ -1271,9 +1384,7 @@ describe('Export Memory Limit Handling', () => {
     setupMockStoreWithApprovedSegments([approvedSegment])
 
     // Simulate memory exhaustion error
-    mockExportWithTracer.mockRejectedValue(
-      new Error('RuntimeError: memory access out of bounds')
-    )
+    mockExportWithTracer.mockRejectedValue(new Error('RuntimeError: memory access out of bounds'))
 
     const onComplete = vi.fn()
     render(<ClipReview onComplete={onComplete} />)
@@ -1281,28 +1392,32 @@ describe('Export Memory Limit Handling', () => {
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
     // Should show error
-    await waitFor(() => {
-      const errorHeader = document.querySelector('.export-modal-header')
-      expect(errorHeader?.textContent).toMatch(/export failed/i)
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const errorHeader = document.querySelector('.export-modal-header')
+        expect(errorHeader?.textContent).toMatch(/export failed/i)
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('should handle WebAssembly.Memory allocation failure', async () => {
     const approvedSegment = createApprovedSegmentWithTrajectory({ id: 'seg-wasm-memory' })
     setupMockStoreWithApprovedSegments([approvedSegment])
 
-    mockExportWithTracer.mockRejectedValue(
-      new Error('WebAssembly.Memory allocation failed')
-    )
+    mockExportWithTracer.mockRejectedValue(new Error('WebAssembly.Memory allocation failed'))
 
     const onComplete = vi.fn()
     render(<ClipReview onComplete={onComplete} />)
 
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
-    await waitFor(() => {
-      expect(screen.getByText(/export failed/i)).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/export failed/i)).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('should not call onComplete after memory error', async () => {
@@ -1316,9 +1431,12 @@ describe('Export Memory Limit Handling', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
-    await waitFor(() => {
-      expect(screen.getByText(/export failed/i)).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/export failed/i)).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
 
     // Close modal
     fireEvent.click(screen.getByRole('button', { name: /close/i }))
@@ -1362,10 +1480,13 @@ describe('Export Long Clip Scenarios', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 10000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 10000 },
+    )
   })
 
   it('should successfully export 30 second clip with downscaling', async () => {
@@ -1375,26 +1496,29 @@ describe('Export Long Clip Scenarios', () => {
     setupMockStoreWithApprovedSegments([approvedSegment])
 
     // Mock progress to simulate phases
-    mockExportWithTracer.mockImplementation(async (config: {
-      onProgress?: (p: { phase: string; progress: number }) => void
-    }) => {
-      config.onProgress?.({ phase: 'preparing', progress: 100 })
-      config.onProgress?.({ phase: 'extracting', progress: 100 })
-      config.onProgress?.({ phase: 'compositing', progress: 100 })
-      config.onProgress?.({ phase: 'encoding', progress: 100 })
-      config.onProgress?.({ phase: 'complete', progress: 100 })
-      return new Blob(['video'], { type: 'video/mp4' })
-    })
+    mockExportWithTracer.mockImplementation(
+      async (config: { onProgress?: (p: { phase: string; progress: number }) => void }) => {
+        config.onProgress?.({ phase: 'preparing', progress: 100 })
+        config.onProgress?.({ phase: 'extracting', progress: 100 })
+        config.onProgress?.({ phase: 'compositing', progress: 100 })
+        config.onProgress?.({ phase: 'encoding', progress: 100 })
+        config.onProgress?.({ phase: 'complete', progress: 100 })
+        return new Blob(['video'], { type: 'video/mp4' })
+      },
+    )
 
     const onComplete = vi.fn()
     render(<ClipReview onComplete={onComplete} />)
 
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 10000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 10000 },
+    )
   })
 })
 
@@ -1423,18 +1547,18 @@ describe('Export Progress Phase Visibility', () => {
     const approvedSegment = createApprovedSegmentWithTrajectory({ id: 'seg-phase-preparing' })
     setupMockStoreWithApprovedSegments([approvedSegment])
 
-    mockExportWithTracer.mockImplementation(async (config: {
-      onProgress?: (p: { phase: string; progress: number }) => void
-    }) => {
-      // Report preparing phase, then hang briefly
-      config.onProgress?.({ phase: 'preparing', progress: 50 })
-      await new Promise(resolve => setTimeout(resolve, 500))
-      config.onProgress?.({ phase: 'extracting', progress: 100 })
-      config.onProgress?.({ phase: 'compositing', progress: 100 })
-      config.onProgress?.({ phase: 'encoding', progress: 100 })
-      config.onProgress?.({ phase: 'complete', progress: 100 })
-      return new Blob(['video'], { type: 'video/mp4' })
-    })
+    mockExportWithTracer.mockImplementation(
+      async (config: { onProgress?: (p: { phase: string; progress: number }) => void }) => {
+        // Report preparing phase, then hang briefly
+        config.onProgress?.({ phase: 'preparing', progress: 50 })
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        config.onProgress?.({ phase: 'extracting', progress: 100 })
+        config.onProgress?.({ phase: 'compositing', progress: 100 })
+        config.onProgress?.({ phase: 'encoding', progress: 100 })
+        config.onProgress?.({ phase: 'complete', progress: 100 })
+        return new Blob(['video'], { type: 'video/mp4' })
+      },
+    )
 
     const onComplete = vi.fn()
     render(<ClipReview onComplete={onComplete} />)
@@ -1442,46 +1566,55 @@ describe('Export Progress Phase Visibility', () => {
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
     // Wait for modal to show
-    await waitFor(() => {
-      expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/exporting clips/i)).toBeInTheDocument()
+      },
+      { timeout: 3000 },
+    )
 
     // Advance timers to complete
     await vi.advanceTimersByTimeAsync(600)
 
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('should show extracting phase during frame extraction', async () => {
     const approvedSegment = createApprovedSegmentWithTrajectory({ id: 'seg-phase-extracting' })
     setupMockStoreWithApprovedSegments([approvedSegment])
 
-    mockExportWithTracer.mockImplementation(async (config: {
-      onProgress?: (p: { phase: string; progress: number }) => void
-    }) => {
-      config.onProgress?.({ phase: 'preparing', progress: 100 })
-      config.onProgress?.({ phase: 'extracting', progress: 25 })
-      config.onProgress?.({ phase: 'extracting', progress: 50 })
-      config.onProgress?.({ phase: 'extracting', progress: 75 })
-      config.onProgress?.({ phase: 'extracting', progress: 100 })
-      config.onProgress?.({ phase: 'compositing', progress: 100 })
-      config.onProgress?.({ phase: 'encoding', progress: 100 })
-      config.onProgress?.({ phase: 'complete', progress: 100 })
-      return new Blob(['video'], { type: 'video/mp4' })
-    })
+    mockExportWithTracer.mockImplementation(
+      async (config: { onProgress?: (p: { phase: string; progress: number }) => void }) => {
+        config.onProgress?.({ phase: 'preparing', progress: 100 })
+        config.onProgress?.({ phase: 'extracting', progress: 25 })
+        config.onProgress?.({ phase: 'extracting', progress: 50 })
+        config.onProgress?.({ phase: 'extracting', progress: 75 })
+        config.onProgress?.({ phase: 'extracting', progress: 100 })
+        config.onProgress?.({ phase: 'compositing', progress: 100 })
+        config.onProgress?.({ phase: 'encoding', progress: 100 })
+        config.onProgress?.({ phase: 'complete', progress: 100 })
+        return new Blob(['video'], { type: 'video/mp4' })
+      },
+    )
 
     const onComplete = vi.fn()
     render(<ClipReview onComplete={onComplete} />)
 
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('should transition through all phases in order', async () => {
@@ -1490,25 +1623,28 @@ describe('Export Progress Phase Visibility', () => {
 
     const _reportedPhases: string[] = []
 
-    mockExportWithTracer.mockImplementation(async (config: {
-      onProgress?: (p: { phase: string; progress: number }) => void
-    }) => {
-      const phases = ['preparing', 'extracting', 'compositing', 'encoding', 'complete']
-      for (const phase of phases) {
-        config.onProgress?.({ phase, progress: 100 })
-      }
-      return new Blob(['video'], { type: 'video/mp4' })
-    })
+    mockExportWithTracer.mockImplementation(
+      async (config: { onProgress?: (p: { phase: string; progress: number }) => void }) => {
+        const phases = ['preparing', 'extracting', 'compositing', 'encoding', 'complete']
+        for (const phase of phases) {
+          config.onProgress?.({ phase, progress: 100 })
+        }
+        return new Blob(['video'], { type: 'video/mp4' })
+      },
+    )
 
     const onComplete = vi.fn()
     render(<ClipReview onComplete={onComplete} />)
 
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
   })
 })
 
@@ -1544,10 +1680,13 @@ describe('Export Different Codecs', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
-    await waitFor(() => {
-      const successIcon = document.querySelector('.export-success-icon')
-      expect(successIcon).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        const successIcon = document.querySelector('.export-success-icon')
+        expect(successIcon).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('should show clear error for HEVC video', async () => {
@@ -1568,9 +1707,12 @@ describe('Export Different Codecs', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
-    await waitFor(() => {
-      expect(screen.getByText(/export failed/i)).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/export failed/i)).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
 
     // Error should mention HEVC or transcoding
     const errorMessage = document.querySelector('.export-error-message')
@@ -1582,7 +1724,7 @@ describe('Export Different Codecs', () => {
     setupMockStoreWithApprovedSegments([approvedSegment])
 
     mockExportWithTracer.mockRejectedValue(
-      new Error('Unsupported codec: vp9. Only H.264 is supported for export.')
+      new Error('Unsupported codec: vp9. Only H.264 is supported for export.'),
     )
 
     const onComplete = vi.fn()
@@ -1590,8 +1732,11 @@ describe('Export Different Codecs', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /export 1 clip/i }))
 
-    await waitFor(() => {
-      expect(screen.getByText(/export failed/i)).toBeInTheDocument()
-    }, { timeout: 5000 })
+    await waitFor(
+      () => {
+        expect(screen.getByText(/export failed/i)).toBeInTheDocument()
+      },
+      { timeout: 5000 },
+    )
   })
 })

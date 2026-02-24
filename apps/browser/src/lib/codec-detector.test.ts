@@ -10,7 +10,7 @@ import { mockFFmpegLogOutput } from '../test/video-test-utils'
 
 // Mock FFmpeg module
 vi.mock('./ffmpeg-client', async (importOriginal) => {
-  const original = await importOriginal() as Record<string, unknown>
+  const original = (await importOriginal()) as Record<string, unknown>
   return {
     ...original,
     // Will be overridden in individual tests
@@ -175,7 +175,9 @@ describe('Codec Detection', () => {
       const { detectVideoCodec } = await import('./ffmpeg-client')
 
       // Create a "large" file (10MB)
-      const largeFile = new File([new ArrayBuffer(10 * 1024 * 1024)], 'large.mp4', { type: 'video/mp4' })
+      const largeFile = new File([new ArrayBuffer(10 * 1024 * 1024)], 'large.mp4', {
+        type: 'video/mp4',
+      })
 
       await detectVideoCodec(largeFile)
       // Test passes if it completes without reading the full 10MB
@@ -186,11 +188,19 @@ describe('Codec Detection', () => {
     // Document expected playability for various codecs
     const playabilityTests = [
       { codec: 'h264', expected: true, reason: 'H.264 is universally supported' },
-      { codec: 'hevc', expected: false, reason: 'HEVC requires hardware/OS support, not available in Chrome/Windows' },
+      {
+        codec: 'hevc',
+        expected: false,
+        reason: 'HEVC requires hardware/OS support, not available in Chrome/Windows',
+      },
       { codec: 'vp8', expected: true, reason: 'VP8 is supported in all modern browsers' },
       { codec: 'vp9', expected: true, reason: 'VP9 is supported in all modern browsers' },
       { codec: 'av1', expected: false, reason: 'AV1 support is still limited' },
-      { codec: 'unknown', expected: false, reason: 'Unknown codecs should be treated as unplayable' },
+      {
+        codec: 'unknown',
+        expected: false,
+        reason: 'Unknown codecs should be treated as unplayable',
+      },
     ]
 
     playabilityTests.forEach(({ codec, expected, reason }) => {

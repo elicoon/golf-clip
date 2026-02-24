@@ -32,14 +32,11 @@ declare module 'essentia.js/dist/essentia.js-core.es.js' {
       hopSize?: number,
       ratioThreshold?: number,
       sampleRate?: number,
-      threshold?: number
+      threshold?: number,
     ): { onsets: number[] }
 
     // Spectral analysis
-    SpectralCentroidTime(
-      array: unknown,
-      sampleRate?: number
-    ): { centroid: number }
+    SpectralCentroidTime(array: unknown, sampleRate?: number): { centroid: number }
 
     Flatness(array: unknown): { flatness: number }
 
@@ -48,7 +45,7 @@ declare module 'essentia.js/dist/essentia.js-core.es.js' {
       signal: unknown,
       bandwidth?: number,
       cutoffFrequency?: number,
-      sampleRate?: number
+      sampleRate?: number,
     ): { signal: unknown }
 
     // Energy

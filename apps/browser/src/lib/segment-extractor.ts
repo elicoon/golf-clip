@@ -18,7 +18,7 @@
 export function estimateByteOffset(
   fileSize: number,
   totalDuration: number,
-  timestamp: number
+  timestamp: number,
 ): number {
   // Account for headers (typically first ~1MB has metadata)
   const headerSize = Math.min(1_000_000, fileSize * 0.01)
@@ -43,7 +43,7 @@ export async function extractSegment(
   file: File,
   startTime: number,
   endTime: number,
-  totalDuration: number
+  totalDuration: number,
 ): Promise<Blob> {
   // Add buffer before and after for keyframe seeking
   const bufferSeconds = 2

@@ -1,11 +1,22 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useProcessingStore, TrajectoryData, TracerConfig, VideoSegment } from '../stores/processingStore'
+import {
+  useProcessingStore,
+  TrajectoryData,
+  TracerConfig,
+  VideoSegment,
+} from '../stores/processingStore'
 import { Scrubber } from './Scrubber'
 import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
-import { VideoFramePipelineV4, ExportConfigV4, ExportResolution, ExportTimeoutError, isVideoFrameCallbackSupported } from '../lib/video-frame-pipeline-v4'
+import {
+  VideoFramePipelineV4,
+  ExportConfigV4,
+  ExportResolution,
+  ExportTimeoutError,
+  isVideoFrameCallbackSupported,
+} from '../lib/video-frame-pipeline-v4'
 import { loadFFmpeg, muxAudioIntoClip } from '../lib/ffmpeg-client'
 import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
 
@@ -34,29 +45,38 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const segments = activeVideo?.segments ?? legacySegments
 
   // Wrapper functions that route to multi-video or legacy store actions
-  const updateSegment = useCallback((id: string, updates: Partial<VideoSegment>) => {
-    if (activeVideoId) {
-      updateVideoSegment(activeVideoId, id, updates)
-    } else {
-      legacyUpdateSegment(id, updates)
-    }
-  }, [activeVideoId, updateVideoSegment, legacyUpdateSegment])
+  const updateSegment = useCallback(
+    (id: string, updates: Partial<VideoSegment>) => {
+      if (activeVideoId) {
+        updateVideoSegment(activeVideoId, id, updates)
+      } else {
+        legacyUpdateSegment(id, updates)
+      }
+    },
+    [activeVideoId, updateVideoSegment, legacyUpdateSegment],
+  )
 
-  const approveSegment = useCallback((id: string) => {
-    if (activeVideoId) {
-      approveVideoSegment(activeVideoId, id)
-    } else {
-      legacyApproveSegment(id)
-    }
-  }, [activeVideoId, approveVideoSegment, legacyApproveSegment])
+  const approveSegment = useCallback(
+    (id: string) => {
+      if (activeVideoId) {
+        approveVideoSegment(activeVideoId, id)
+      } else {
+        legacyApproveSegment(id)
+      }
+    },
+    [activeVideoId, approveVideoSegment, legacyApproveSegment],
+  )
 
-  const rejectSegment = useCallback((id: string) => {
-    if (activeVideoId) {
-      rejectVideoSegment(activeVideoId, id)
-    } else {
-      legacyRejectSegment(id)
-    }
-  }, [activeVideoId, rejectVideoSegment, legacyRejectSegment])
+  const rejectSegment = useCallback(
+    (id: string) => {
+      if (activeVideoId) {
+        rejectVideoSegment(activeVideoId, id)
+      } else {
+        legacyRejectSegment(id)
+      }
+    },
+    [activeVideoId, rejectVideoSegment, legacyRejectSegment],
+  )
 
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -75,12 +95,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const [landingPoint, setLandingPoint] = useState<Point2D | null>(null)
   const [apexPoint, setApexPoint] = useState<Point2D | null>(null)
   const [originPoint, setOriginPoint] = useState<Point2D | null>(null)
-  const [reviewStep, setReviewStep] = useState<'marking_landing' | 'generating' | 'reviewing'>('marking_landing')
+  const [reviewStep, setReviewStep] = useState<'marking_landing' | 'generating' | 'reviewing'>(
+    'marking_landing',
+  )
   const [trajectory, setTrajectory] = useState<TrajectoryData | null>(null)
   const [tracerConfig, setTracerConfig] = useState<TracerConfig>({
     height: 'medium',
     shape: 'straight',
-    flightTime: 3.0
+    flightTime: 3.0,
   })
   const [tracerStyle, setTracerStyle] = useState<TracerStyle>(DEFAULT_TRACER_STYLE)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
@@ -96,7 +118,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   // Export state
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 })
-  const [exportPhase, setExportPhase] = useState<{ phase: string; progress: number }>({ phase: '', progress: 0 })
+  const [exportPhase, setExportPhase] = useState<{ phase: string; progress: number }>({
+    phase: '',
+    progress: 0,
+  })
   const [exportComplete, setExportComplete] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportResolution, setExportResolution] = useState<ExportResolution>('1080p')
@@ -111,7 +136,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   // Feedback submission error state (non-blocking)
   const [feedbackError, setFeedbackError] = useState<string | null>(null)
   const feedbackErrorTimerRef = useRef<number | null>(null)
-
 
   // Auto-loop state
   const [autoLoopEnabled, setAutoLoopEnabled] = useState(true)
@@ -148,7 +172,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   const tracerModifiedRef = useRef(false)
 
   // Filter to shots needing review (confidence < 0.7 and not yet approved/rejected)
-  const shotsNeedingReview = segments.filter(s => s.confidence < 0.7 && s.approved === 'pending')
+  const shotsNeedingReview = segments.filter((s) => s.confidence < 0.7 && s.approved === 'pending')
   const currentShot = shotsNeedingReview[currentIndex]
   const totalShots = shotsNeedingReview.length
 
@@ -187,19 +211,25 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     // Function to start playback after seek
     const startPlayback = () => {
       lastSeekTimeRef.current = Date.now()
-      video.play().then(() => {
-        setIsPlaying(true)
-      }).catch(() => {
-        // Autoplay with audio blocked - retry muted
-        video.muted = true
-        setIsMuted(true)
-        video.play().then(() => {
+      video
+        .play()
+        .then(() => {
           setIsPlaying(true)
-        }).catch(() => {
-          // Even muted autoplay blocked - user must click to play
-          setIsPlaying(false)
         })
-      })
+        .catch(() => {
+          // Autoplay with audio blocked - retry muted
+          video.muted = true
+          setIsMuted(true)
+          video
+            .play()
+            .then(() => {
+              setIsPlaying(true)
+            })
+            .catch(() => {
+              // Even muted autoplay blocked - user must click to play
+              setIsPlaying(false)
+            })
+        })
     }
 
     // If already near target time, play immediately (seeked won't fire)
@@ -232,7 +262,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (video.readyState >= 3 && autoplayedShotIdRef.current !== currentShot.id) {
       handleVideoCanPlay()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on currentShot.id only to avoid re-running on every currentShot property change
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on currentShot.id only to avoid re-running on every currentShot property change
   }, [currentShot?.id, handleVideoCanPlay])
 
   // Track video time for trajectory animation and auto-loop
@@ -247,7 +277,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       // Skip if we just seeked (within 500ms) to avoid race condition with initial autoplay
       const clipEndInVideo = currentShot.clipEnd - currentShot.startTime
       const timeSinceSeek = Date.now() - lastSeekTimeRef.current
-      if (video.currentTime >= clipEndInVideo && !video.paused && autoLoopEnabled && timeSinceSeek > 500) {
+      if (
+        video.currentTime >= clipEndInVideo &&
+        !video.paused &&
+        autoLoopEnabled &&
+        timeSinceSeek > 500
+      ) {
         video.pause()
         setIsPlaying(false)
 
@@ -312,12 +347,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (currentShot) {
       initialClipTimingRef.current = {
         clipStart: currentShot.clipStart,
-        clipEnd: currentShot.clipEnd
+        clipEnd: currentShot.clipEnd,
       }
       // Store original strike time for scrubber indicator
       originalStrikeTimeRef.current = currentShot.strikeTime
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on currentShot.id only to reset state per-shot without reacting to every property
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on currentShot.id only to reset state per-shot without reacting to every property
   }, [currentShot?.id])
 
   // Reclamp pan offset when zoom level decreases to prevent showing empty space
@@ -327,7 +362,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (!container) return
     const maxPanX = (container.clientWidth * (zoomLevel - 1)) / (2 * zoomLevel)
     const maxPanY = (container.clientHeight * (zoomLevel - 1)) / (2 * zoomLevel)
-    setPanOffset(prev => ({
+    setPanOffset((prev) => ({
       x: Math.max(-maxPanX, Math.min(maxPanX, prev.x)),
       y: Math.max(-maxPanY, Math.min(maxPanY, prev.y)),
     }))
@@ -361,7 +396,8 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           message = 'A network error occurred while loading the video.'
           break
         case MediaError.MEDIA_ERR_DECODE:
-          message = 'This video format cannot be decoded. It may use an unsupported codec like HEVC.'
+          message =
+            'This video format cannot be decoded. It may use an unsupported codec like HEVC.'
           break
         case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
           message = 'This video format is not supported. Try re-exporting as H.264.'
@@ -372,47 +408,58 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
   }, [])
 
   // Handle canvas click for marking points
-  const handleCanvasClick = useCallback((x: number, y: number) => {
-    if (isMarkingApex) {
-      setApexPoint({ x, y })
-      setIsMarkingApex(false)
-      setHasUnsavedChanges(true)
-      tracerModifiedRef.current = true
-    } else if (isMarkingOrigin) {
-      setOriginPoint({ x, y })
-      setIsMarkingOrigin(false)
-      setHasUnsavedChanges(true)
-      tracerModifiedRef.current = true
-    } else if (isMarkingLanding) {
-      setLandingPoint({ x, y })
-      setIsMarkingLanding(false)
-      setHasUnsavedChanges(true)
-      tracerModifiedRef.current = true
-      if (currentShot) {
-        updateSegment(currentShot.id, { landingPoint: { x, y } })
+  const handleCanvasClick = useCallback(
+    (x: number, y: number) => {
+      if (isMarkingApex) {
+        setApexPoint({ x, y })
+        setIsMarkingApex(false)
+        setHasUnsavedChanges(true)
+        tracerModifiedRef.current = true
+      } else if (isMarkingOrigin) {
+        setOriginPoint({ x, y })
+        setIsMarkingOrigin(false)
+        setHasUnsavedChanges(true)
+        tracerModifiedRef.current = true
+      } else if (isMarkingLanding) {
+        setLandingPoint({ x, y })
+        setIsMarkingLanding(false)
+        setHasUnsavedChanges(true)
+        tracerModifiedRef.current = true
+        if (currentShot) {
+          updateSegment(currentShot.id, { landingPoint: { x, y } })
+        }
+      } else if (reviewStep === 'marking_landing') {
+        setLandingPoint({ x, y })
+        // Start trajectory animation from when the ball is struck in the video segment
+        const strikeOffset = currentShot ? currentShot.strikeTime - currentShot.startTime : 0
+        const traj = generateTrajectory({ x, y }, tracerConfig, undefined, undefined, strikeOffset)
+        setTrajectory(traj)
+        setReviewStep('reviewing')
+        // Store initial tracer params for feedback comparison
+        initialTracerParamsRef.current = {
+          originX: 0.5, // Default origin
+          originY: 0.85,
+          landingX: x,
+          landingY: y,
+          shape: tracerConfig.shape,
+          height: tracerConfig.height,
+          flightTime: tracerConfig.flightTime,
+        }
+        if (currentShot) {
+          updateSegment(currentShot.id, { landingPoint: { x, y }, trajectory: traj })
+        }
       }
-    } else if (reviewStep === 'marking_landing') {
-      setLandingPoint({ x, y })
-      // Start trajectory animation from when the ball is struck in the video segment
-      const strikeOffset = currentShot ? currentShot.strikeTime - currentShot.startTime : 0
-      const traj = generateTrajectory({ x, y }, tracerConfig, undefined, undefined, strikeOffset)
-      setTrajectory(traj)
-      setReviewStep('reviewing')
-      // Store initial tracer params for feedback comparison
-      initialTracerParamsRef.current = {
-        originX: 0.5,  // Default origin
-        originY: 0.85,
-        landingX: x,
-        landingY: y,
-        shape: tracerConfig.shape,
-        height: tracerConfig.height,
-        flightTime: tracerConfig.flightTime
-      }
-      if (currentShot) {
-        updateSegment(currentShot.id, { landingPoint: { x, y }, trajectory: traj })
-      }
-    }
-  }, [reviewStep, tracerConfig, isMarkingApex, isMarkingOrigin, isMarkingLanding, currentShot, updateSegment])
+    },
+    [
+      reviewStep,
+      tracerConfig,
+      isMarkingApex,
+      isMarkingOrigin,
+      isMarkingLanding,
+      currentShot,
+      updateSegment,
+    ],
+  )
 
   // TracerConfigPanel handlers
   const handleConfigChange = useCallback((config: TracerConfig) => {
@@ -435,12 +482,20 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
       // Start trajectory animation from when the ball is struck in the video segment
       const strikeOffset = currentShot ? currentShot.strikeTime - currentShot.startTime : 0
-      const traj = generateTrajectory(landingPoint, tracerConfig, originPoint || undefined, apexPoint || undefined, strikeOffset)
+      const traj = generateTrajectory(
+        landingPoint,
+        tracerConfig,
+        originPoint || undefined,
+        apexPoint || undefined,
+        strikeOffset,
+      )
 
       // Ensure minimum time has passed for visible feedback
       const elapsed = Date.now() - startTime
       if (elapsed < TRAJECTORY_GENERATION_MIN_DELAY_MS) {
-        await new Promise(resolve => setTimeout(resolve, TRAJECTORY_GENERATION_MIN_DELAY_MS - elapsed))
+        await new Promise((resolve) =>
+          setTimeout(resolve, TRAJECTORY_GENERATION_MIN_DELAY_MS - elapsed),
+        )
       }
 
       setTrajectory(traj)
@@ -494,7 +549,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     const store = useProcessingStore.getState()
     const activeVid = store.activeVideoId ? store.videos.get(store.activeVideoId) : undefined
     const currentSegments = activeVid?.segments ?? store.segments
-    const approved = currentSegments.filter(s => s.approved === 'approved')
+    const approved = currentSegments.filter((s) => s.approved === 'approved')
 
     if (approved.length === 0) {
       alert('No approved shots to export')
@@ -502,7 +557,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     }
 
     if (!isVideoFrameCallbackSupported()) {
-      alert('requestVideoFrameCallback is not supported in this browser. Please use Chrome 83+, Edge 83+, or Safari 15.4+.')
+      alert(
+        'requestVideoFrameCallback is not supported in this browser. Please use Chrome 83+, Edge 83+, or Safari 15.4+.',
+      )
       return
     }
 
@@ -573,7 +630,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
 
-        await new Promise(r => setTimeout(r, 500))
+        await new Promise((r) => setTimeout(r, 500))
       }
 
       if (!abortController.signal.aborted) {
@@ -618,51 +675,66 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     // Submit feedback asynchronously (non-blocking — shot is approved regardless)
     const initialTiming = initialClipTimingRef.current
-    const shotFeedbackPromise = Promise.resolve(submitShotFeedback({
-      shotIndex: currentIndex,
-      feedbackType: 'TRUE_POSITIVE',
-      confidence: currentShot.confidence,
-      clipStart: initialTiming?.clipStart,
-      clipEnd: initialTiming?.clipEnd,
-      userAdjustedStart: currentShot.clipStart !== initialTiming?.clipStart ? currentShot.clipStart : undefined,
-      userAdjustedEnd: currentShot.clipEnd !== initialTiming?.clipEnd ? currentShot.clipEnd : undefined,
-    }))
+    const shotFeedbackPromise = Promise.resolve(
+      submitShotFeedback({
+        shotIndex: currentIndex,
+        feedbackType: 'TRUE_POSITIVE',
+        confidence: currentShot.confidence,
+        clipStart: initialTiming?.clipStart,
+        clipEnd: initialTiming?.clipEnd,
+        userAdjustedStart:
+          currentShot.clipStart !== initialTiming?.clipStart ? currentShot.clipStart : undefined,
+        userAdjustedEnd:
+          currentShot.clipEnd !== initialTiming?.clipEnd ? currentShot.clipEnd : undefined,
+      }),
+    )
 
     // Submit tracer feedback if user set a landing point
     let tracerFeedbackPromise
     if (landingPoint && trajectory) {
       const feedbackType = tracerModifiedRef.current ? 'CONFIGURED' : 'AUTO_ACCEPTED'
-      tracerFeedbackPromise = Promise.resolve(submitTracerFeedback({
-        shotIndex: currentIndex,
-        feedbackType,
-        autoParams: initialTracerParamsRef.current || undefined,
-        finalParams: {
-          originX: originPoint?.x ?? 0.5,
-          originY: originPoint?.y ?? 0.85,
-          landingX: landingPoint.x,
-          landingY: landingPoint.y,
-          apexX: apexPoint?.x,
-          apexY: apexPoint?.y,
-          shape: tracerConfig.shape,
-          height: tracerConfig.height,
-          flightTime: tracerConfig.flightTime,
-        },
-        tracerStyle: tracerStyle,
-      }))
+      tracerFeedbackPromise = Promise.resolve(
+        submitTracerFeedback({
+          shotIndex: currentIndex,
+          feedbackType,
+          autoParams: initialTracerParamsRef.current || undefined,
+          finalParams: {
+            originX: originPoint?.x ?? 0.5,
+            originY: originPoint?.y ?? 0.85,
+            landingX: landingPoint.x,
+            landingY: landingPoint.y,
+            apexX: apexPoint?.x,
+            apexY: apexPoint?.y,
+            shape: tracerConfig.shape,
+            height: tracerConfig.height,
+            flightTime: tracerConfig.flightTime,
+          },
+          tracerStyle: tracerStyle,
+        }),
+      )
     } else {
       // User approved without setting up tracer - skip feedback
-      tracerFeedbackPromise = Promise.resolve(submitTracerFeedback({
-        shotIndex: currentIndex,
-        feedbackType: 'SKIP',
-        finalParams: {},
-      }))
+      tracerFeedbackPromise = Promise.resolve(
+        submitTracerFeedback({
+          shotIndex: currentIndex,
+          feedbackType: 'SKIP',
+          finalParams: {},
+        }),
+      )
     }
 
     // Check feedback results and show error if any failed
     Promise.all([shotFeedbackPromise, tracerFeedbackPromise]).then(([shotResult, tracerResult]) => {
-      const failedResult = shotResult?.success === false ? shotResult : tracerResult?.success === false ? tracerResult : null
+      const failedResult =
+        shotResult?.success === false
+          ? shotResult
+          : tracerResult?.success === false
+            ? tracerResult
+            : null
       if (failedResult) {
-        showFeedbackError(failedResult.error || "Feedback couldn't be saved — check your connection")
+        showFeedbackError(
+          failedResult.error || "Feedback couldn't be saved — check your connection",
+        )
       }
     })
 
@@ -674,20 +746,35 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     }
     // When last shot is approved, component will naturally show review-complete UI
     // User can then click the export button when ready
-  }, [currentShot, currentIndex, shotsNeedingReview.length, approveSegment, landingPoint, trajectory, originPoint, apexPoint, tracerConfig, tracerStyle, reviewStep, showFeedbackError])
+  }, [
+    currentShot,
+    currentIndex,
+    shotsNeedingReview.length,
+    approveSegment,
+    landingPoint,
+    trajectory,
+    originPoint,
+    apexPoint,
+    tracerConfig,
+    tracerStyle,
+    reviewStep,
+    showFeedbackError,
+  ])
 
   const handleReject = useCallback(() => {
     if (!currentShot) return
 
     // Submit shot feedback asynchronously (non-blocking — shot is rejected regardless)
     const initialTiming = initialClipTimingRef.current
-    Promise.resolve(submitShotFeedback({
-      shotIndex: currentIndex,
-      feedbackType: 'FALSE_POSITIVE',
-      confidence: currentShot.confidence,
-      clipStart: initialTiming?.clipStart,
-      clipEnd: initialTiming?.clipEnd,
-    })).then((result) => {
+    Promise.resolve(
+      submitShotFeedback({
+        shotIndex: currentIndex,
+        feedbackType: 'FALSE_POSITIVE',
+        confidence: currentShot.confidence,
+        clipStart: initialTiming?.clipStart,
+        clipEnd: initialTiming?.clipEnd,
+      }),
+    ).then((result) => {
       if (result && !result.success) {
         showFeedbackError(result.error || "Feedback couldn't be saved — check your connection")
       }
@@ -701,7 +788,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     // When last shot is rejected, component will naturally show review-complete UI
     // User can then click the export button when ready (if any shots were approved)
   }, [currentShot, currentIndex, shotsNeedingReview.length, rejectSegment, showFeedbackError])
-
 
   const togglePlayPause = useCallback(() => {
     if (!videoRef.current) return
@@ -717,7 +803,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (!videoRef.current) return
     videoRef.current.pause()
     setIsPlaying(false)
-    if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
+    if (loopTimeoutRef.current) {
+      clearTimeout(loopTimeoutRef.current)
+      loopTimeoutRef.current = null
+    }
     const fps = videoFpsRef.current
     const frameDuration = 1 / fps
     const nextFrame = Math.floor(videoRef.current.currentTime / frameDuration + 0.01) + 1
@@ -730,7 +819,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (!videoRef.current) return
     videoRef.current.pause()
     setIsPlaying(false)
-    if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
+    if (loopTimeoutRef.current) {
+      clearTimeout(loopTimeoutRef.current)
+      loopTimeoutRef.current = null
+    }
     const fps = videoFpsRef.current
     const frameDuration = 1 / fps
     const prevFrame = Math.ceil(videoRef.current.currentTime / frameDuration - 0.01) - 1
@@ -743,7 +835,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (!videoRef.current || !currentShot) return
     videoRef.current.pause()
     setIsPlaying(false)
-    if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
+    if (loopTimeoutRef.current) {
+      clearTimeout(loopTimeoutRef.current)
+      loopTimeoutRef.current = null
+    }
     const clipStartInVideo = currentShot.clipStart - currentShot.startTime
     videoRef.current.currentTime = clipStartInVideo
     setCurrentTime(clipStartInVideo)
@@ -753,53 +848,66 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     if (!videoRef.current || !currentShot) return
     videoRef.current.pause()
     setIsPlaying(false)
-    if (loopTimeoutRef.current) { clearTimeout(loopTimeoutRef.current); loopTimeoutRef.current = null }
+    if (loopTimeoutRef.current) {
+      clearTimeout(loopTimeoutRef.current)
+      loopTimeoutRef.current = null
+    }
     const clipEndInVideo = currentShot.clipEnd - currentShot.startTime
     videoRef.current.currentTime = clipEndInVideo
     setCurrentTime(clipEndInVideo)
   }, [currentShot])
 
   // Pan handlers for zoomed video
-  const handlePanStart = useCallback((e: React.PointerEvent) => {
-    if (zoomLevel <= 1) return
-    if (reviewStep === 'marking_landing' || isMarkingApex || isMarkingOrigin || isMarkingLanding) return
+  const handlePanStart = useCallback(
+    (e: React.PointerEvent) => {
+      if (zoomLevel <= 1) return
+      if (reviewStep === 'marking_landing' || isMarkingApex || isMarkingOrigin || isMarkingLanding)
+        return
 
-    setIsPanning(true)
-    panStartRef.current = { x: e.clientX - panOffset.x, y: e.clientY - panOffset.y }
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    e.preventDefault()
-  }, [zoomLevel, panOffset, reviewStep, isMarkingApex, isMarkingOrigin, isMarkingLanding])
+      setIsPanning(true)
+      panStartRef.current = { x: e.clientX - panOffset.x, y: e.clientY - panOffset.y }
+      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+      e.preventDefault()
+    },
+    [zoomLevel, panOffset, reviewStep, isMarkingApex, isMarkingOrigin, isMarkingLanding],
+  )
 
-  const handlePanMove = useCallback((e: React.PointerEvent) => {
-    if (!isPanning) return
+  const handlePanMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isPanning) return
 
-    const rawX = e.clientX - panStartRef.current.x
-    const rawY = e.clientY - panStartRef.current.y
+      const rawX = e.clientX - panStartRef.current.x
+      const rawY = e.clientY - panStartRef.current.y
 
-    // Clamp pan so video edges stay visible
-    // Since transform uses translate AFTER scale, max offset = (Z-1)*containerSize/(2*Z)
-    const container = e.currentTarget as HTMLElement
-    const maxPanX = (container.clientWidth * (zoomLevel - 1)) / (2 * zoomLevel)
-    const maxPanY = (container.clientHeight * (zoomLevel - 1)) / (2 * zoomLevel)
+      // Clamp pan so video edges stay visible
+      // Since transform uses translate AFTER scale, max offset = (Z-1)*containerSize/(2*Z)
+      const container = e.currentTarget as HTMLElement
+      const maxPanX = (container.clientWidth * (zoomLevel - 1)) / (2 * zoomLevel)
+      const maxPanY = (container.clientHeight * (zoomLevel - 1)) / (2 * zoomLevel)
 
-    setPanOffset({
-      x: Math.max(-maxPanX, Math.min(maxPanX, rawX)),
-      y: Math.max(-maxPanY, Math.min(maxPanY, rawY)),
-    })
-  }, [isPanning, zoomLevel])
+      setPanOffset({
+        x: Math.max(-maxPanX, Math.min(maxPanX, rawX)),
+        y: Math.max(-maxPanY, Math.min(maxPanY, rawY)),
+      })
+    },
+    [isPanning, zoomLevel],
+  )
 
   const handlePanEnd = useCallback(() => {
     setIsPanning(false)
   }, [])
 
-  const handleTrimUpdate = useCallback((newStart: number, newEnd: number) => {
-    if (currentShot) {
-      updateSegment(currentShot.id, {
-        clipStart: newStart,
-        clipEnd: newEnd,
-      })
-    }
-  }, [currentShot, updateSegment])
+  const handleTrimUpdate = useCallback(
+    (newStart: number, newEnd: number) => {
+      if (currentShot) {
+        updateSegment(currentShot.id, {
+          clipStart: newStart,
+          clipEnd: newEnd,
+        })
+      }
+    },
+    [currentShot, updateSegment],
+  )
 
   // Keyboard shortcuts for clip review
   useEffect(() => {
@@ -886,11 +994,11 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         case '=':
         case '+':
           e.preventDefault()
-          setZoomLevel(prev => Math.min(4, prev + 0.5))
+          setZoomLevel((prev) => Math.min(4, prev + 0.5))
           break
         case '-':
           e.preventDefault()
-          setZoomLevel(prev => {
+          setZoomLevel((prev) => {
             const next = Math.max(1, prev - 0.5)
             if (next === 1) setPanOffset({ x: 0, y: 0 })
             return next
@@ -906,11 +1014,22 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- stepFrameBackward/stepFrameForward are stable callbacks; including them causes unnecessary re-binds
-  }, [togglePlayPause, handlePrevious, handleNext, handleApprove, handleReject, reviewStep, trajectory, currentShot, handleTrimUpdate, handleSetImpactTime])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stepFrameBackward/stepFrameForward are stable callbacks; including them causes unnecessary re-binds
+  }, [
+    togglePlayPause,
+    handlePrevious,
+    handleNext,
+    handleApprove,
+    handleReject,
+    reviewStep,
+    trajectory,
+    currentShot,
+    handleTrimUpdate,
+    handleSetImpactTime,
+  ])
 
   if (!currentShot) {
-    const approvedCount = segments.filter(s => s.approved === 'approved').length
+    const approvedCount = segments.filter((s) => s.approved === 'approved').length
     return (
       <div className="clip-review-complete">
         <div className="review-complete-icon">✓</div>
@@ -951,7 +1070,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           <div className="export-modal-overlay">
             <div className="export-modal">
               <div className="export-modal-header">
-                <h3>{exportError ? 'Export Failed' : exportComplete ? 'Export Complete!' : 'Exporting Clips'}</h3>
+                <h3>
+                  {exportError
+                    ? 'Export Failed'
+                    : exportComplete
+                      ? 'Export Complete!'
+                      : 'Exporting Clips'}
+                </h3>
               </div>
               <div className="export-modal-content">
                 {exportError ? (
@@ -959,19 +1084,30 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                     <div className="export-error-icon">!</div>
                     <p className="export-error-message">{exportError}</p>
                     {isTimeoutError && (
-                      <p className="export-error-hint">Try a shorter clip or lower resolution (720p).</p>
+                      <p className="export-error-hint">
+                        Try a shorter clip or lower resolution (720p).
+                      </p>
                     )}
                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                       {isTimeoutError && (
                         <button
-                          onClick={() => { setShowExportModal(false); setExportError(null); setIsTimeoutError(false); handleExport() }}
+                          onClick={() => {
+                            setShowExportModal(false)
+                            setExportError(null)
+                            setIsTimeoutError(false)
+                            handleExport()
+                          }}
                           className="btn-primary"
                         >
                           Retry
                         </button>
                       )}
                       <button
-                        onClick={() => { setShowExportModal(false); setExportError(null); setIsTimeoutError(false) }}
+                        onClick={() => {
+                          setShowExportModal(false)
+                          setExportError(null)
+                          setIsTimeoutError(false)
+                        }}
                         className="btn-secondary"
                       >
                         Close
@@ -983,16 +1119,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                     <div className="export-progress-bar">
                       <div
                         className={`export-progress-fill${exportPhase.progress === -1 ? ' indeterminate' : ''}`}
-                        style={{ width: exportPhase.progress === -1 ? '100%' : `${exportPhase.progress}%` }}
+                        style={{
+                          width: exportPhase.progress === -1 ? '100%' : `${exportPhase.progress}%`,
+                        }}
                       />
                     </div>
                     <p className="export-status">
                       Clip {exportProgress.current} of {exportProgress.total}
-                      {exportPhase.phase && (
-                        exportPhase.progress === -1
+                      {exportPhase.phase &&
+                        (exportPhase.progress === -1
                           ? ` — ${exportPhase.phase}...`
-                          : ` — ${exportPhase.phase} ${exportPhase.progress}%`
-                      )}
+                          : ` — ${exportPhase.phase} ${exportPhase.progress}%`)}
                     </p>
                     {exportTimeEstimate !== null && exportTimeEstimate > 0 && (
                       <p className="export-time-estimate">~{exportTimeEstimate}s remaining</p>
@@ -1031,7 +1168,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
             </div>
           </div>
         )}
-
       </div>
     )
   }
@@ -1041,7 +1177,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       {/* Review header with shot counter */}
       <div className="review-header">
         <span className="review-title">Review Shots</span>
-        <span className="review-progress">{currentIndex + 1} of {totalShots}</span>
+        <span className="review-progress">
+          {currentIndex + 1} of {totalShots}
+        </span>
       </div>
 
       {/* Non-blocking feedback error banner */}
@@ -1111,9 +1249,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <div
           className="video-zoom-content"
           style={{
-            transform: zoomLevel > 1
-              ? `scale(${zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)`
-              : undefined,
+            transform:
+              zoomLevel > 1
+                ? `scale(${zoomLevel}) translate(${panOffset.x}px, ${panOffset.y}px)`
+                : undefined,
           }}
         >
           {videoError ? (
@@ -1123,8 +1262,8 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                 <h3>Video Cannot Play</h3>
                 <p>{videoError}</p>
                 <p className="video-error-hint">
-                  The video may use HEVC/H.265 encoding which browsers cannot play natively.
-                  Try processing a different video or re-export the original as H.264.
+                  The video may use HEVC/H.265 encoding which browsers cannot play natively. Try
+                  processing a different video or re-export the original as H.264.
                 </p>
                 <button onClick={handleReject} className="btn-secondary">
                   Skip This Clip
@@ -1163,13 +1302,23 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       </div>
 
       {zoomLevel > 1 && (
-        <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--color-text-secondary)', margin: '2px 0' }}>
+        <div
+          style={{
+            textAlign: 'center',
+            fontSize: '0.75rem',
+            color: 'var(--color-text-secondary)',
+            margin: '2px 0',
+          }}
+        >
           {zoomLevel.toFixed(1)}x zoom — drag to pan, press 0 to reset
         </div>
       )}
 
       {/* Video transport controls - below video */}
-      <div className="video-transport-controls" style={{ display: 'flex', justifyContent: 'center', gap: '4px', margin: '8px 0' }}>
+      <div
+        className="video-transport-controls"
+        style={{ display: 'flex', justifyContent: 'center', gap: '4px', margin: '8px 0' }}
+      >
         <button
           onClick={skipToStart}
           className="btn-transport"
@@ -1269,7 +1418,9 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       <div className="confidence-info">
         <span
           className="confidence-badge"
-          data-level={currentShot.confidence < 0.4 ? 'low' : currentShot.confidence < 0.7 ? 'medium' : 'high'}
+          data-level={
+            currentShot.confidence < 0.4 ? 'low' : currentShot.confidence < 0.7 ? 'medium' : 'high'
+          }
           aria-label={`${(currentShot.confidence * 100).toFixed(0)}% confidence, ${currentShot.confidence < 0.4 ? 'low' : currentShot.confidence < 0.7 ? 'medium' : 'high'}`}
         >
           {(currentShot.confidence * 100).toFixed(0)}% confidence
@@ -1280,15 +1431,38 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       </div>
 
       <div className="keyboard-hints">
-        <span><kbd>Space</kbd> Play/Pause</span>
-        <span><kbd>←</kbd><kbd>→</kbd> Frame step</span>
-        <span><kbd>Shift+←</kbd><kbd>→</kbd> 1 sec</span>
-        <span><kbd>↑</kbd><kbd>↓</kbd> Prev/Next shot</span>
-        <span><kbd>[</kbd><kbd>]</kbd> Set in/out</span>
-        <span><kbd>Enter</kbd> Approve</span>
-        <span><kbd>Esc</kbd> Reject</span>
-        <span><kbd>+</kbd><kbd>-</kbd> Zoom</span>
-        <span><kbd>0</kbd> Reset zoom</span>
+        <span>
+          <kbd>Space</kbd> Play/Pause
+        </span>
+        <span>
+          <kbd>←</kbd>
+          <kbd>→</kbd> Frame step
+        </span>
+        <span>
+          <kbd>Shift+←</kbd>
+          <kbd>→</kbd> 1 sec
+        </span>
+        <span>
+          <kbd>↑</kbd>
+          <kbd>↓</kbd> Prev/Next shot
+        </span>
+        <span>
+          <kbd>[</kbd>
+          <kbd>]</kbd> Set in/out
+        </span>
+        <span>
+          <kbd>Enter</kbd> Approve
+        </span>
+        <span>
+          <kbd>Esc</kbd> Reject
+        </span>
+        <span>
+          <kbd>+</kbd>
+          <kbd>-</kbd> Zoom
+        </span>
+        <span>
+          <kbd>0</kbd> Reset zoom
+        </span>
       </div>
 
       {/* Export Modal */}
@@ -1296,7 +1470,13 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <div className="export-modal-overlay">
           <div className="export-modal">
             <div className="export-modal-header">
-              <h3>{exportError ? 'Export Failed' : exportComplete ? 'Export Complete!' : 'Exporting Clips'}</h3>
+              <h3>
+                {exportError
+                  ? 'Export Failed'
+                  : exportComplete
+                    ? 'Export Complete!'
+                    : 'Exporting Clips'}
+              </h3>
             </div>
             <div className="export-modal-content">
               {exportError ? (
@@ -1304,19 +1484,30 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                   <div className="export-error-icon">!</div>
                   <p className="export-error-message">{exportError}</p>
                   {isTimeoutError && (
-                    <p className="export-error-hint">Try a shorter clip or lower resolution (720p).</p>
+                    <p className="export-error-hint">
+                      Try a shorter clip or lower resolution (720p).
+                    </p>
                   )}
                   <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                     {isTimeoutError && (
                       <button
-                        onClick={() => { setShowExportModal(false); setExportError(null); setIsTimeoutError(false); handleExport() }}
+                        onClick={() => {
+                          setShowExportModal(false)
+                          setExportError(null)
+                          setIsTimeoutError(false)
+                          handleExport()
+                        }}
                         className="btn-primary"
                       >
                         Retry
                       </button>
                     )}
                     <button
-                      onClick={() => { setShowExportModal(false); setExportError(null); setIsTimeoutError(false) }}
+                      onClick={() => {
+                        setShowExportModal(false)
+                        setExportError(null)
+                        setIsTimeoutError(false)
+                      }}
                       className="btn-secondary"
                     >
                       Close
@@ -1328,16 +1519,17 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                   <div className="export-progress-bar">
                     <div
                       className={`export-progress-fill${exportPhase.progress === -1 ? ' indeterminate' : ''}`}
-                      style={{ width: exportPhase.progress === -1 ? '100%' : `${exportPhase.progress}%` }}
+                      style={{
+                        width: exportPhase.progress === -1 ? '100%' : `${exportPhase.progress}%`,
+                      }}
                     />
                   </div>
                   <p className="export-status">
                     Clip {exportProgress.current} of {exportProgress.total}
-                    {exportPhase.phase && (
-                      exportPhase.progress === -1
+                    {exportPhase.phase &&
+                      (exportPhase.progress === -1
                         ? ` — ${exportPhase.phase}...`
-                        : ` — ${exportPhase.phase} ${exportPhase.progress}%`
-                    )}
+                        : ` — ${exportPhase.phase} ${exportPhase.progress}%`)}
                   </p>
                   {exportTimeEstimate !== null && exportTimeEstimate > 0 && (
                     <p className="export-time-estimate">~{exportTimeEstimate}s remaining</p>
@@ -1376,7 +1568,6 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           </div>
         </div>
       )}
-
     </div>
   )
 }

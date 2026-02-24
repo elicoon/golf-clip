@@ -2,8 +2,8 @@ import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile } from '@ffmpeg/util'
 
 interface TrajectoryPoint {
-  x: number  // 0-1 normalized
-  y: number  // 0-1 normalized
+  x: number // 0-1 normalized
+  y: number // 0-1 normalized
   timestamp: number
 }
 
@@ -18,10 +18,7 @@ interface ExportOptions {
   tracerWidth?: number
 }
 
-export async function exportClipWithTracer(
-  ffmpeg: FFmpeg,
-  options: ExportOptions
-): Promise<Blob> {
+export async function exportClipWithTracer(ffmpeg: FFmpeg, options: ExportOptions): Promise<Blob> {
   const {
     videoBlob,
     trajectory,
@@ -46,15 +43,26 @@ export async function exportClipWithTracer(
 
     // Build FFmpeg filter for trajectory line
     // This is simplified - a full implementation would use canvas compositing
-    const filterComplex = buildTrajectoryFilter(trajectory, tracerColor, tracerWidth, videoWidth, videoHeight)
+    const filterComplex = buildTrajectoryFilter(
+      trajectory,
+      tracerColor,
+      tracerWidth,
+      videoWidth,
+      videoHeight,
+    )
 
     // Export with overlay
     const exitCode = await ffmpeg.exec([
-      '-i', inputName,
-      '-ss', startTime.toString(),
-      '-t', duration.toString(),
-      '-vf', filterComplex,
-      '-c:a', 'copy',
+      '-i',
+      inputName,
+      '-ss',
+      startTime.toString(),
+      '-t',
+      duration.toString(),
+      '-vf',
+      filterComplex,
+      '-c:a',
+      'copy',
       outputName,
     ])
 
@@ -71,8 +79,16 @@ export async function exportClipWithTracer(
     return new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' })
   } finally {
     // Cleanup even on error
-    try { await ffmpeg.deleteFile(inputName) } catch { /* ignore */ }
-    try { await ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
+    try {
+      await ffmpeg.deleteFile(inputName)
+    } catch {
+      /* ignore */
+    }
+    try {
+      await ffmpeg.deleteFile(outputName)
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -81,7 +97,7 @@ function buildTrajectoryFilter(
   color: string,
   width: number,
   videoWidth: number,
-  videoHeight: number
+  videoHeight: number,
 ): string {
   // For MVP: draw circles at key points
   // Full implementation would interpolate and draw smooth curves
@@ -96,7 +112,7 @@ function buildTrajectoryFilter(
     // Draw line segment (using drawbox as approximation)
     // FFmpeg's drawtext filter is limited; canvas compositing is better
     drawCommands.push(
-      `drawbox=x=${Math.floor(p1.x * videoWidth)}:y=${Math.floor(p1.y * videoHeight)}:w=${width}:h=${width}:color=${color}:t=fill`
+      `drawbox=x=${Math.floor(p1.x * videoWidth)}:y=${Math.floor(p1.y * videoHeight)}:w=${width}:h=${width}:color=${color}:t=fill`,
     )
   }
 
@@ -110,7 +126,7 @@ export async function exportWithCanvasCompositing(
   _videoBlob: Blob,
   _trajectoryCanvas: HTMLCanvasElement,
   _startTime: number,
-  _endTime: number
+  _endTime: number,
 ): Promise<Blob> {
   // This approach renders frame-by-frame with canvas overlay
   // More complex but produces better quality tracers

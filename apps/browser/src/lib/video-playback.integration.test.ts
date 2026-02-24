@@ -10,7 +10,6 @@ import {
   createMockVideoBlob,
   createMockVideoElement,
   assertVideoNotBlack,
-
   createMockSegment,
   mockFFmpegLogOutput,
 } from '../test/video-test-utils'
@@ -189,9 +188,7 @@ describe('Video Playback Integration', () => {
       // Detection logic
       const logsLower = hevcLog.toLowerCase()
       const isHevc =
-        logsLower.includes('hevc') ||
-        logsLower.includes('h265') ||
-        logsLower.includes('hvc1')
+        logsLower.includes('hevc') || logsLower.includes('h265') || logsLower.includes('hvc1')
 
       expect(isHevc).toBe(true)
     })
@@ -201,9 +198,7 @@ describe('Video Playback Integration', () => {
 
       const logsLower = h264Log.toLowerCase()
       const isHevc =
-        logsLower.includes('hevc') ||
-        logsLower.includes('h265') ||
-        logsLower.includes('hvc1')
+        logsLower.includes('hevc') || logsLower.includes('h265') || logsLower.includes('hvc1')
 
       expect(isHevc).toBe(false)
     })
@@ -212,11 +207,9 @@ describe('Video Playback Integration', () => {
   describe('Complete Playback Flow', () => {
     it('should handle video from upload to playback', async () => {
       // Step 1: User uploads video
-      const uploadedFile = new File(
-        [createMockVideoBlob('h264')],
-        'golf-round.mp4',
-        { type: 'video/mp4' }
-      )
+      const uploadedFile = new File([createMockVideoBlob('h264')], 'golf-round.mp4', {
+        type: 'video/mp4',
+      })
 
       expect(uploadedFile.name).toBe('golf-round.mp4')
       expect(uploadedFile.type).toBe('video/mp4')
@@ -243,11 +236,9 @@ describe('Video Playback Integration', () => {
 
     it('should handle error flow gracefully', async () => {
       // Step 1: User uploads problematic video
-      const _uploadedFile = new File(
-        [createMockVideoBlob('hevc')],
-        'iphone-video.mov',
-        { type: 'video/quicktime' }
-      )
+      const _uploadedFile = new File([createMockVideoBlob('hevc')], 'iphone-video.mov', {
+        type: 'video/quicktime',
+      })
 
       // Step 2: Codec detection identifies HEVC
       const _codecInfo = { codec: 'hevc', isHevc: true, isPlayable: false }
