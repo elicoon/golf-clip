@@ -1,12 +1,13 @@
 ### Fix 6 ESLint `no-explicit-any` Errors in clip-exporter.test.ts
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** high
 - **Type:** bug-fix
 - **Scope:** small
 - **Planned completion:** none
+- **Actual completion:** 2026-02-24
 - **Blockers:** none
-- **Notes:** `apps/browser/src/lib/clip-exporter.test.ts` has 6 `@typescript-eslint/no-explicit-any` errors on lines 24, 56, 79, 102, 126, 152. All are `mockFfmpeg as any` casts. These block clean lint runs and will cause pre-commit hook failures when staging changes to this file. Fix by creating a typed mock interface or using `as unknown as FfmpegClient` pattern.
+- **Notes:** Fixed in commit 25146f5 — replaced `as any` with typed casts in clip-exporter tests.
 - **Added:** 2026-02-24
 - **Updated:** 2026-02-24
 

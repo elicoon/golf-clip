@@ -1,12 +1,13 @@
 ### Run Lighthouse Performance Audit on Production Site and Document Baseline
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** research
 - **Scope:** small
 - **Planned completion:** none
+- **Actual completion:** 2026-02-24
 - **Blockers:** none
-- **Notes:** The production site (golfclip.elicoon.com) has no performance baseline documented. As a SaaS candidate, understanding Core Web Vitals, bundle size, and load performance is critical before adding features (PWA, OG tags, etc.). A Lighthouse audit will identify concrete optimization opportunities and establish a measurable baseline. Results should go in `docs/research/` (directory does not yet exist).
+- **Notes:** Completed in commit 2abde3c — Lighthouse audit baseline documented for golfclip.elicoon.com.
 - **Added:** 2026-02-24
 - **Updated:** 2026-02-24
 

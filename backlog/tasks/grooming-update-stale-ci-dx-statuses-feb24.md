@@ -1,12 +1,13 @@
 ### Update 3 Stale CI/DX Backlog Items to Reflect Completed Work
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** grooming
 - **Scope:** small
 - **Planned completion:** none
+- **Actual completion:** 2026-02-24
 - **Blockers:** none
-- **Notes:** Three backlog items are marked "not started" but have completed work: (1) `ci-add-pre-commit-hooks-husky-lint-staged.md` — done, commits 7e17c13 and 41c7cd0 on feat/pre-commit-hooks branch, PR #27 open. (2) `refactor-add-prettier-formatting-with-ci-check.md` — done, commit 4c7a390, PR #25 open. (3) `test-add-accessibility-checks-to-e2e-suite.md` — done, commits f6613f6 and 2a159fe on current branch. Stale statuses mislead the handler and strategist about available work.
+- **Notes:** Completed in commit 5b5c718 — marked 4 completed backlog items as done (ci-add-pre-commit-hooks, refactor-add-prettier-formatting, test-add-accessibility-checks, plus related items).
 - **Added:** 2026-02-24
 - **Updated:** 2026-02-24
 
