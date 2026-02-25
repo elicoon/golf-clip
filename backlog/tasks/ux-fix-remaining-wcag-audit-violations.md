@@ -1,14 +1,15 @@
 ### Fix 3 WCAG Violations: Color Contrast, Heading Order, and Dropzone Accessible Name
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** bug-fix
 - **Scope:** small
 - **Planned completion:** none
+- **Actual completion:** 2026-02-25
 - **Blockers:** none
-- **Notes:** Lighthouse accessibility audit (2026-02-25, score 94) identified 3 remaining WCAG violations after the initial contrast fix in bc2828c. (1) Four text elements use #666666 on dark backgrounds (#0f0f0f and #1a1a1a) producing contrast ratios of 3.03–3.33:1, below the 4.5:1 AA requirement — walkthrough step descriptions and about box disclaimer. (2) Heading hierarchy skips from H1 to H3 in the walkthrough section with no intervening H2, breaking the document outline for screen readers. (3) Dropzone has aria-label="Drop zone for video files" but visible text says "Drop your golf video here...", causing a name mismatch for voice control users. Fixing all three would bring the accessibility score from 94 to ~100.
+- **Notes:** Completed in commit 79263f6 — resolved all 3 WCAG violations (color contrast, heading order, dropzone accessible name). Lighthouse accessibility audit (2026-02-25, score 94) identified 3 remaining WCAG violations after the initial contrast fix in bc2828c. (1) Four text elements use #666666 on dark backgrounds (#0f0f0f and #1a1a1a) producing contrast ratios of 3.03–3.33:1, below the 4.5:1 AA requirement — walkthrough step descriptions and about box disclaimer. (2) Heading hierarchy skips from H1 to H3 in the walkthrough section with no intervening H2, breaking the document outline for screen readers. (3) Dropzone has aria-label="Drop zone for video files" but visible text says "Drop your golf video here...", causing a name mismatch for voice control users. Fixing all three would bring the accessibility score from 94 to ~100.
 - **Added:** 2026-02-24
-- **Updated:** 2026-02-24
+- **Updated:** 2026-02-25
 
 #### Acceptance Criteria
 - [ ] All text elements meet WCAG AA contrast ratio (4.5:1 minimum) — change #666666 to #999999 or #8a8a8a on dark backgrounds
