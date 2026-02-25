@@ -3,7 +3,11 @@ import { useCallback, useState, useRef, useEffect } from 'react'
 import { useProcessingStore } from '../stores/processingStore'
 import { processVideoFile } from '../lib/streaming-processor'
 import { loadFFmpeg, detectVideoCodec, transcodeHevcToH264 } from '../lib/ffmpeg-client'
-import { HevcTranscodeModal, HevcTranscodeModalState, initialHevcTranscodeModalState } from './HevcTranscodeModal'
+import {
+  HevcTranscodeModal,
+  HevcTranscodeModalState,
+  initialHevcTranscodeModalState,
+} from './HevcTranscodeModal'
 
 const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime', 'video/x-m4v']
 const ACCEPTED_EXTENSIONS = ['.mp4', '.mov', '.m4v']
@@ -45,7 +49,7 @@ interface BackgroundProcessingActions {
 async function processFileInBackground(
   file: File,
   videoId: string,
-  storeActions?: BackgroundProcessingActions
+  storeActions?: BackgroundProcessingActions,
 ) {
   // Get store actions - use injected actions if provided (for testing), otherwise get from real store
   const actions = storeActions ?? useProcessingStore.getState()
@@ -75,9 +79,16 @@ async function processFileInBackground(
 export function VideoDropzone() {
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isCheckingCodec] = useState(false)  // Kept for legacy progress view - set via per-video state now
+  const [isCheckingCodec] = useState(false) // Kept for legacy progress view - set via per-video state now
   const [hevcWarning, setHevcWarning] = useState<HevcWarningState>(initialHevcState)
-  const { status: globalStatus, progress: globalProgress, progressMessage: globalProgressMessage, fileName: globalFileName, setStatus, videos } = useProcessingStore()
+  const {
+    status: globalStatus,
+    progress: globalProgress,
+    progressMessage: globalProgressMessage,
+    fileName: globalFileName,
+    setStatus,
+    videos,
+  } = useProcessingStore()
 
   // Bridge per-video state to progress display: find first actively processing video
   const activeProcessingVideo = (() => {
@@ -104,8 +115,8 @@ export function VideoDropzone() {
 
   const validateFile = (file: File): string | null => {
     const hasValidType = ACCEPTED_TYPES.includes(file.type)
-    const hasValidExtension = ACCEPTED_EXTENSIONS.some(ext =>
-      file.name.toLowerCase().endsWith(ext)
+    const hasValidExtension = ACCEPTED_EXTENSIONS.some((ext) =>
+      file.name.toLowerCase().endsWith(ext),
     )
 
     if (!hasValidType && !hasValidExtension) {
@@ -130,7 +141,7 @@ export function VideoDropzone() {
     transcodeAbortRef.current = new AbortController()
 
     // Update state to show transcoding progress in modal
-    setHevcWarning(prev => ({
+    setHevcWarning((prev) => ({
       ...prev,
       isTranscoding: true,
       transcodeProgress: 0,
@@ -141,17 +152,17 @@ export function VideoDropzone() {
       const h264Blob = await transcodeHevcToH264(
         file,
         (percent) => {
-          setHevcWarning(prev => ({
+          setHevcWarning((prev) => ({
             ...prev,
             transcodeProgress: percent,
           }))
         },
-        transcodeAbortRef.current.signal
+        transcodeAbortRef.current.signal,
       )
 
       // Create a File from the blob to pass to processVideoFile
       const h264File = new File([h264Blob], file.name.replace(/\.[^.]+$/, '_h264.mp4'), {
-        type: 'video/mp4'
+        type: 'video/mp4',
       })
 
       // Close modal and process the transcoded file
@@ -160,7 +171,7 @@ export function VideoDropzone() {
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         // User cancelled - reset to initial modal state
-        setHevcWarning(prev => ({
+        setHevcWarning((prev) => ({
           ...prev,
           isTranscoding: false,
           transcodeProgress: 0,
@@ -282,13 +293,6 @@ export function VideoDropzone() {
     fileInputRef.current?.click()
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      handleFileSelect()
-    }
-  }
-
   // Show checking codec state
   if (isCheckingCodec) {
     return (
@@ -316,10 +320,7 @@ export function VideoDropzone() {
               {progressMessage || 'Processing...'}
             </div>
             <div className="upload-progress-bar">
-              <div
-                className="upload-progress-fill"
-                style={{ width: `${progress}%` }}
-              />
+              <div className="upload-progress-fill" style={{ width: `${progress}%` }} />
             </div>
             <div className="upload-progress-percent">{progress}%</div>
             {fileName && <p className="dropzone-hint">{fileName}</p>}
@@ -337,10 +338,6 @@ export function VideoDropzone() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
-        role="button"
-        aria-label="Drop zone for video files"
       >
         <div className="dropzone-content">
           <div className="dropzone-icon" aria-hidden="true">
@@ -352,7 +349,9 @@ export function VideoDropzone() {
             Select File
           </button>
           <p className="dropzone-hint">Supports MP4, MOV, M4V (up to {MAX_FILE_SIZE_GB}GB)</p>
-          <p className="dropzone-hint-secondary">Processing happens in your browser - no upload required</p>
+          <p className="dropzone-hint-secondary">
+            Processing happens in your browser - no upload required
+          </p>
 
           {error && (
             <div className="dropzone-error" role="alert">
@@ -378,7 +377,11 @@ export function VideoDropzone() {
         state={hevcWarning}
         title="Unsupported Video Format"
         description="This video uses an unsupported codec and needs to be converted."
-        fileInfo={hevcWarning.show ? { codec: hevcWarning.codec, fileSizeMB: hevcWarning.fileSizeMB } : undefined}
+        fileInfo={
+          hevcWarning.show
+            ? { codec: hevcWarning.codec, fileSizeMB: hevcWarning.fileSizeMB }
+            : undefined
+        }
         showTip={true}
         cancelLabel="Upload Different Video"
         startLabel="Start Transcoding"

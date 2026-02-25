@@ -13,7 +13,9 @@ export default function App() {
 
   // Get active video state
   const activeVideo = activeVideoId ? videos.get(activeVideoId) : undefined
-  const approvedCount = (activeVideo?.segments || segments).filter(s => s.approved === 'approved').length
+  const approvedCount = (activeVideo?.segments || segments).filter(
+    (s) => s.approved === 'approved',
+  ).length
 
   const handleReviewComplete = () => {
     setView('export')
@@ -41,7 +43,6 @@ export default function App() {
   return (
     <div className="app">
       <main className="app-main">
-
         {error && (
           <div className="app-error">
             <h3>Error</h3>
@@ -63,11 +64,18 @@ export default function App() {
                     GolfClip is a vibe-coded golf video editing platform to address two pain points:
                   </p>
                   <ol>
-                    <li>Editing long videos into short, relevant clips (centered around club impact) is tedious and time consuming.</li>
-                    <li>Adding animated tracers to golf clips is challenging and time consuming.</li>
+                    <li>
+                      Editing long videos into short, relevant clips (centered around club impact)
+                      is tedious and time consuming.
+                    </li>
+                    <li>
+                      Adding animated tracers to golf clips is challenging and time consuming.
+                    </li>
                   </ol>
                   <p className="about-box-disclaimer">
-                    GolfClip is not intended as a production app. It is an experiment to test whether Claude Code can build technically complicated, compute intensive, domain specific software. No code was manually written for GolfClip.
+                    GolfClip is not intended as a production app. It is an experiment to test
+                    whether Claude Code can build technically complicated, compute intensive, domain
+                    specific software. No code was manually written for GolfClip.
                   </p>
                 </div>
                 <VideoDropzone />
@@ -76,9 +84,7 @@ export default function App() {
           </>
         )}
 
-        {view === 'review' && (
-          <ClipReview onComplete={handleReviewComplete} />
-        )}
+        {view === 'review' && <ClipReview onComplete={handleReviewComplete} />}
 
         {view === 'export' && (
           <div className="export-complete">

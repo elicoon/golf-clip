@@ -120,7 +120,7 @@ describe('trajectoryToFFmpegFilter', () => {
       { x: 0.1, y: 0.8, timestamp: 5.0 },
       { x: 0.5, y: 0.2, timestamp: 6.0 },
     ]
-    const clipStart = 5.5  // Clip starts after first point
+    const clipStart = 5.5 // Clip starts after first point
     const result = trajectoryToFFmpegFilter(trajectory, 1920, 1080, clipStart)
 
     // Timestamp should be 5.0 - 5.5 = -0.5

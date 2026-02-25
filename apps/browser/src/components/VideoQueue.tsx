@@ -36,10 +36,14 @@ function VideoQueueItem({ video, isActive, onClick }: VideoQueueItemProps) {
         <span className="queue-item-progress">{video.progress}%</span>
       )}
       {video.status === 'ready' && (
-        <span className="queue-item-count">{video.segments.length} {video.segments.length === 1 ? 'shot' : 'shots'}</span>
+        <span className="queue-item-count">
+          {video.segments.length} {video.segments.length === 1 ? 'shot' : 'shots'}
+        </span>
       )}
       {video.status === 'error' && video.error && (
-        <span className="queue-item-error-text" title={video.error}>Error</span>
+        <span className="queue-item-error-text" title={video.error}>
+          Error
+        </span>
       )}
     </button>
   )

@@ -28,7 +28,7 @@ vi.mock('../stores/processingStore', () => ({
       getState: () => ({
         segments: [],
       }),
-    }
+    },
   ),
 }))
 

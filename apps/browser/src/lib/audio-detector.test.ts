@@ -15,7 +15,7 @@ describe('AudioDetector', () => {
     const silence = new Float32Array(22050).fill(0)
 
     await expect(detectStrikes(silence, 22050)).rejects.toThrow(
-      'Essentia not loaded. Call loadEssentia() first.'
+      'Essentia not loaded. Call loadEssentia() first.',
     )
   })
 
@@ -47,21 +47,29 @@ describe('AudioDetector', () => {
     const { detectStrikes } = await import('./audio-detector')
     const emptyAudio = new Float32Array(0)
 
-    await expect(detectStrikes(emptyAudio, 22050)).rejects.toThrow(
-      'Audio data cannot be empty'
-    )
+    await expect(detectStrikes(emptyAudio, 22050)).rejects.toThrow('Audio data cannot be empty')
   })
 
   it('validates sample rate is positive', async () => {
     const { detectStrikes } = await import('./audio-detector')
     const audio = new Float32Array(1000).fill(0)
 
-    await expect(detectStrikes(audio, 0)).rejects.toThrow(
-      'Sample rate must be positive'
-    )
-    await expect(detectStrikes(audio, -44100)).rejects.toThrow(
-      'Sample rate must be positive'
-    )
+    await expect(detectStrikes(audio, 0)).rejects.toThrow('Sample rate must be positive')
+    await expect(detectStrikes(audio, -44100)).rejects.toThrow('Sample rate must be positive')
+  })
+})
+
+describe('unloadEssentia', () => {
+  it('is safe to call when Essentia is not loaded', async () => {
+    // Validates the defensive contract: calling unloadEssentia() when nothing
+    // is loaded must not throw. Loading Essentia requires WASM in a browser,
+    // so we can only verify the no-op path in unit tests.
+    vi.resetModules()
+    const { unloadEssentia, isEssentiaLoaded } = await import('./audio-detector')
+
+    expect(isEssentiaLoaded()).toBe(false)
+    unloadEssentia() // should not throw
+    expect(isEssentiaLoaded()).toBe(false)
   })
 })
 
@@ -69,6 +77,19 @@ describe('DetectionConfig defaults', () => {
   it('should have minStrikeInterval of 25 seconds for golf', async () => {
     const { DEFAULT_CONFIG } = await import('./audio-detector')
     expect(DEFAULT_CONFIG.minStrikeInterval).toBeGreaterThanOrEqual(15)
+  })
+
+  it('has frequency range for golf strike detection (1000-8000 Hz)', async () => {
+    const { DEFAULT_CONFIG } = await import('./audio-detector')
+    expect(DEFAULT_CONFIG.frequencyLow).toBe(1000)
+    expect(DEFAULT_CONFIG.frequencyHigh).toBe(8000)
+    expect(DEFAULT_CONFIG.frequencyHigh).toBeGreaterThan(DEFAULT_CONFIG.frequencyLow)
+  })
+
+  it('has sensitivity in 0-1 range', async () => {
+    const { DEFAULT_CONFIG } = await import('./audio-detector')
+    expect(DEFAULT_CONFIG.sensitivity).toBeGreaterThanOrEqual(0)
+    expect(DEFAULT_CONFIG.sensitivity).toBeLessThanOrEqual(1)
   })
 })
 

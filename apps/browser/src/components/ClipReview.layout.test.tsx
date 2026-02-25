@@ -70,10 +70,9 @@ const mockApproveSegment = vi.fn()
 const mockRejectSegment = vi.fn()
 const mockUseProcessingStore = vi.fn()
 vi.mock('../stores/processingStore', () => ({
-  useProcessingStore: Object.assign(
-    (...args: unknown[]) => mockUseProcessingStore(...args),
-    { getState: () => mockUseProcessingStore() }
-  ),
+  useProcessingStore: Object.assign((...args: unknown[]) => mockUseProcessingStore(...args), {
+    getState: () => mockUseProcessingStore(),
+  }),
 }))
 
 // Mock feedback service
@@ -89,7 +88,10 @@ vi.mock('../lib/video-frame-pipeline-v4', () => ({
   })),
   isVideoFrameCallbackSupported: vi.fn().mockReturnValue(true),
   ExportTimeoutError: class ExportTimeoutError extends Error {
-    constructor(message: string) { super(message); this.name = 'ExportTimeoutError' }
+    constructor(message: string) {
+      super(message)
+      this.name = 'ExportTimeoutError'
+    }
   },
 }))
 
@@ -112,7 +114,7 @@ function createMultipleMockSegments(count: number) {
       confidence: 0.5, // Below 0.7 threshold, needs review
       approved: 'pending',
       objectUrl: `blob:http://localhost/mock-video-${i + 1}`,
-    })
+    }),
   )
 }
 
@@ -151,9 +153,9 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
 
       // Get all children of clip-review to check order
       const children = Array.from(clipReview!.children)
-      const reviewActionsIndex = children.findIndex(el => el.classList.contains('review-actions'))
-      const scrubberIndex = children.findIndex(el =>
-        el.classList.contains('scrubber') || el.classList.contains('scrubber-container')
+      const reviewActionsIndex = children.findIndex((el) => el.classList.contains('review-actions'))
+      const scrubberIndex = children.findIndex(
+        (el) => el.classList.contains('scrubber') || el.classList.contains('scrubber-container'),
       )
 
       // review-actions should come AFTER scrubber (below timeline)
@@ -170,12 +172,16 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
 
       const children = Array.from(clipReview!.children)
 
-      const scrubberIndex = children.findIndex(el =>
-        el.classList.contains('scrubber') || el.classList.contains('scrubber-container')
+      const scrubberIndex = children.findIndex(
+        (el) => el.classList.contains('scrubber') || el.classList.contains('scrubber-container'),
       )
-      const reviewActionsIndex = children.findIndex(el => el.classList.contains('review-actions'))
-      const videoContainerIndex = children.findIndex(el => el.classList.contains('video-container'))
-      const transportIndex = children.findIndex(el => el.className.includes('video-transport-controls'))
+      const reviewActionsIndex = children.findIndex((el) => el.classList.contains('review-actions'))
+      const videoContainerIndex = children.findIndex((el) =>
+        el.classList.contains('video-container'),
+      )
+      const transportIndex = children.findIndex((el) =>
+        el.className.includes('video-transport-controls'),
+      )
 
       // Expected order: video-container -> transport -> scrubber -> review-actions
       expect(videoContainerIndex).toBeLessThan(transportIndex)
@@ -240,12 +246,13 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
       // Transport controls should have playback buttons (play/pause, frame step)
       // but NOT Previous/Next shot buttons
       if (transportControls) {
-        const buttonTexts = Array.from(transportControls.querySelectorAll('button'))
-          .map(b => b.textContent?.toLowerCase() || '')
+        const buttonTexts = Array.from(transportControls.querySelectorAll('button')).map(
+          (b) => b.textContent?.toLowerCase() || '',
+        )
 
         // Should NOT contain "previous" or "next"
-        expect(buttonTexts.some(t => t.includes('previous'))).toBe(false)
-        expect(buttonTexts.some(t => t.includes('next'))).toBe(false)
+        expect(buttonTexts.some((t) => t.includes('previous'))).toBe(false)
+        expect(buttonTexts.some((t) => t.includes('next'))).toBe(false)
       }
     })
 
@@ -254,7 +261,7 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
 
       // Check ALL buttons in the component
       const allButtons = screen.getAllByRole('button')
-      const buttonTexts = allButtons.map(b => b.textContent?.toLowerCase() || '')
+      const buttonTexts = allButtons.map((b) => b.textContent?.toLowerCase() || '')
 
       // None should contain "prev", "previous", or "next"
       for (const text of buttonTexts) {
@@ -434,7 +441,7 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
       expect(clipReview).not.toBeNull()
 
       const children = Array.from(clipReview!.children)
-      const classNames = children.map(el => el.className)
+      const classNames = children.map((el) => el.className)
 
       // Expected structure (in order):
       // 1. review-header
@@ -445,11 +452,11 @@ describe('ClipReview Layout - Button Positioning Bug Fix', () => {
       // 6. review-actions (BELOW scrubber)
       // ... other elements below
 
-      const headerIndex = classNames.findIndex(c => c.includes('review-header'))
-      const reviewActionsIndex = classNames.findIndex(c => c.includes('review-actions'))
-      const videoContainerIndex = classNames.findIndex(c => c.includes('video-container'))
-      const transportIndex = classNames.findIndex(c => c.includes('video-transport-controls'))
-      const scrubberIndex = classNames.findIndex(c => c.includes('scrubber-container'))
+      const headerIndex = classNames.findIndex((c) => c.includes('review-header'))
+      const reviewActionsIndex = classNames.findIndex((c) => c.includes('review-actions'))
+      const videoContainerIndex = classNames.findIndex((c) => c.includes('video-container'))
+      const transportIndex = classNames.findIndex((c) => c.includes('video-transport-controls'))
+      const scrubberIndex = classNames.findIndex((c) => c.includes('scrubber-container'))
 
       // All should exist
       expect(headerIndex).toBeGreaterThanOrEqual(0)
@@ -571,8 +578,9 @@ describe('ClipReview Layout - Single Shot vs Multiple Shots', () => {
     })
 
     const { container: singleContainer } = render(<ClipReview onComplete={vi.fn()} />)
-    const singleStructure = Array.from(singleContainer.querySelector('.clip-review')?.children || [])
-      .map(el => el.className)
+    const singleStructure = Array.from(
+      singleContainer.querySelector('.clip-review')?.children || [],
+    ).map((el) => el.className)
 
     cleanup()
 
@@ -585,8 +593,9 @@ describe('ClipReview Layout - Single Shot vs Multiple Shots', () => {
     })
 
     const { container: multiContainer } = render(<ClipReview onComplete={vi.fn()} />)
-    const multiStructure = Array.from(multiContainer.querySelector('.clip-review')?.children || [])
-      .map(el => el.className)
+    const multiStructure = Array.from(
+      multiContainer.querySelector('.clip-review')?.children || [],
+    ).map((el) => el.className)
 
     // Structure should be identical (same elements in same order)
     expect(singleStructure.length).toBe(multiStructure.length)

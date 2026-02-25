@@ -63,7 +63,7 @@ function createMockCtx(): CanvasRenderingContext2D {
 function makePoints(startTime: number, flightTime: number, count: number = 10) {
   return Array.from({ length: count }, (_, i) => ({
     timestamp: startTime + (i / (count - 1)) * flightTime,
-    x: i / (count - 1),       // left to right
+    x: i / (count - 1), // left to right
     y: 0.8 - 0.6 * Math.sin((i / (count - 1)) * Math.PI), // arc shape
     confidence: 1,
     interpolated: false,

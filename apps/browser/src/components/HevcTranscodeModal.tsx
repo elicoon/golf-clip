@@ -128,9 +128,8 @@ export function HevcTranscodeModal({
                     {state.transcodeStartTime &&
                       formatRemainingTime(
                         state.transcodeProgress,
-                        Date.now() - state.transcodeStartTime
-                      )
-                    }
+                        Date.now() - state.transcodeStartTime,
+                      )}
                   </span>
                 </div>
                 <p className="hevc-modal-hint" style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>

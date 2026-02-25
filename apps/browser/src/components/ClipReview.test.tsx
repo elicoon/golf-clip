@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, within } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
 import * as matchers from '@testing-library/jest-dom/matchers'
 import {
   createMockVideoElement,
@@ -80,7 +80,10 @@ vi.mock('../lib/video-frame-pipeline-v4', () => ({
   })),
   isVideoFrameCallbackSupported: vi.fn().mockReturnValue(true),
   ExportTimeoutError: class ExportTimeoutError extends Error {
-    constructor(message: string) { super(message); this.name = 'ExportTimeoutError' }
+    constructor(message: string) {
+      super(message)
+      this.name = 'ExportTimeoutError'
+    }
   },
 }))
 
@@ -348,7 +351,7 @@ describe('Video Loading Lifecycle', () => {
     // 4: HAVE_ENOUGH_DATA
 
     const states = [0, 1, 2, 3, 4]
-    const stateNames = [
+    const _stateNames = [
       'HAVE_NOTHING',
       'HAVE_METADATA',
       'HAVE_CURRENT_DATA',
@@ -370,7 +373,6 @@ describe('Video Loading Lifecycle', () => {
     ;[0, 1, 2].forEach((state) => {
       expect(state >= minPlayableState).toBe(false)
     })
-
     ;[3, 4].forEach((state) => {
       expect(state >= minPlayableState).toBe(true)
     })
@@ -423,10 +425,11 @@ describe('ClipReview Navigation Controls - Redundancy Bug', () => {
       // Find all buttons that function as play/pause controls
       // This includes buttons with Play/Pause text OR the play/pause emoji symbols
       const allButtons = screen.getAllByRole('button')
-      const playPauseButtons = allButtons.filter(button => {
+      const playPauseButtons = allButtons.filter((button) => {
         const text = button.textContent || ''
         // Check for text labels (case insensitive)
-        const hasPlayPauseText = text.toLowerCase().includes('play') || text.toLowerCase().includes('pause')
+        const hasPlayPauseText =
+          text.toLowerCase().includes('play') || text.toLowerCase().includes('pause')
         // Check for emoji symbols (▶ = play, ⏸ = pause)
         const hasPlayPauseEmoji = text.includes('\u25B6') || text.includes('\u23F8')
         return hasPlayPauseText || hasPlayPauseEmoji
@@ -502,9 +505,9 @@ describe('ClipReview Navigation Controls - Redundancy Bug', () => {
 
       // Get all children of clip-review to check order
       const children = Array.from(clipReview!.children)
-      const reviewActionsIndex = children.findIndex(el => el.classList.contains('review-actions'))
-      const scrubberIndex = children.findIndex(el =>
-        el.classList.contains('scrubber') || el.classList.contains('scrubber-container')
+      const reviewActionsIndex = children.findIndex((el) => el.classList.contains('review-actions'))
+      const scrubberIndex = children.findIndex(
+        (el) => el.classList.contains('scrubber') || el.classList.contains('scrubber-container'),
       )
 
       // review-actions should be AFTER scrubber (below timeline)
@@ -653,8 +656,8 @@ describe('Export Format Bug - Filename/MIME Type Mismatch', () => {
       // After fix: all segments export as .mp4 since FFmpeg extracts MP4 containers
       const testCases = [
         { blobType: 'video/mp4', expectedExt: '.mp4' },
-        { blobType: 'video/webm', expectedExt: '.mp4' },  // Simplified fix: all exports as .mp4
-        { blobType: 'video/quicktime', expectedExt: '.mp4' },  // Simplified fix: all exports as .mp4
+        { blobType: 'video/webm', expectedExt: '.mp4' }, // Simplified fix: all exports as .mp4
+        { blobType: 'video/quicktime', expectedExt: '.mp4' }, // Simplified fix: all exports as .mp4
       ]
 
       for (const { blobType, expectedExt } of testCases) {
@@ -760,12 +763,17 @@ describe('Export Download Behavior', () => {
   function exportRawSegment(
     segment: { objectUrl: string; blob: Blob },
     index: number,
-    triggerDownload: (url: string, filename: string) => void
+    triggerDownload: (url: string, filename: string) => void,
   ) {
     // FIXED: Use blob type to determine extension
-    const extension = segment.blob.type === 'video/mp4' ? '.mp4' :
-                      segment.blob.type === 'video/webm' ? '.webm' :
-                      segment.blob.type === 'video/quicktime' ? '.mov' : '.mp4'
+    const extension =
+      segment.blob.type === 'video/mp4'
+        ? '.mp4'
+        : segment.blob.type === 'video/webm'
+          ? '.webm'
+          : segment.blob.type === 'video/quicktime'
+            ? '.mov'
+            : '.mp4'
     const filename = `shot_${index + 1}${extension}`
 
     triggerDownload(segment.objectUrl, filename)
@@ -777,7 +785,7 @@ describe('Export Download Behavior', () => {
   function exportRawSegmentBroken(
     segment: { objectUrl: string; blob: Blob },
     index: number,
-    triggerDownload: (url: string, filename: string) => void
+    triggerDownload: (url: string, filename: string) => void,
   ) {
     // Current BROKEN code - always uses .webm regardless of blob type
     const filename = `shot_${index + 1}.webm`
@@ -898,9 +906,14 @@ describe('Segment Blob MIME Type Preservation', () => {
 
     for (const { type, expectedExt } of testCases) {
       const blob = new Blob(['content'], { type })
-      const extension = blob.type === 'video/mp4' ? '.mp4' :
-                        blob.type === 'video/webm' ? '.webm' :
-                        blob.type === 'video/quicktime' ? '.mov' : '.mp4'
+      const extension =
+        blob.type === 'video/mp4'
+          ? '.mp4'
+          : blob.type === 'video/webm'
+            ? '.webm'
+            : blob.type === 'video/quicktime'
+              ? '.mov'
+              : '.mp4'
 
       expect(extension).toBe(expectedExt)
     }
@@ -956,7 +969,6 @@ describe('Export Format UI Indicator', () => {
     expect(withoutTrajectoryMp4.expectedFormat).toBe('mp4')
     expect(withoutTrajectoryWebm.expectedFormat).toBe('webm')
   })
-
 })
 
 /**
@@ -973,9 +985,9 @@ describe('Export Format Error Messages', () => {
     }
 
     // All error messages should mention format or codec
-    Object.values(errorMessages).forEach(message => {
-      const mentionsFormat = message.toLowerCase().includes('format') ||
-                            message.toLowerCase().includes('codec')
+    Object.values(errorMessages).forEach((message) => {
+      const mentionsFormat =
+        message.toLowerCase().includes('format') || message.toLowerCase().includes('codec')
       expect(mentionsFormat).toBe(true)
     })
   })

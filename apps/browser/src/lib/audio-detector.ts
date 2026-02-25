@@ -19,7 +19,7 @@ interface EssentiaModule {
     hopSize?: number,
     ratioThreshold?: number,
     sampleRate?: number,
-    threshold?: number
+    threshold?: number,
   ): { onsets: unknown }
   SpectralCentroidTime(array: unknown, sampleRate?: number): { centroid: number }
   Flatness(array: unknown): { flatness: number }
@@ -27,7 +27,7 @@ interface EssentiaModule {
     signal: unknown,
     bandwidth?: number,
     cutoffFrequency?: number,
-    sampleRate?: number
+    sampleRate?: number,
   ): { signal: unknown }
   RMS(array: unknown): { rms: number }
 }
@@ -45,10 +45,10 @@ export interface StrikeDetection {
 }
 
 export interface DetectionConfig {
-  frequencyLow: number       // Hz - lower bound of bandpass
-  frequencyHigh: number      // Hz - upper bound of bandpass
-  minStrikeInterval: number  // Seconds between strikes
-  sensitivity: number        // 0-1, higher = more detections
+  frequencyLow: number // Hz - lower bound of bandpass
+  frequencyHigh: number // Hz - upper bound of bandpass
+  minStrikeInterval: number // Seconds between strikes
+  sensitivity: number // 0-1, higher = more detections
 }
 
 export const DEFAULT_CONFIG: DetectionConfig = {
@@ -110,7 +110,7 @@ export function unloadEssentia(): void {
 export async function detectStrikes(
   audioData: Float32Array,
   sampleRate: number,
-  config: Partial<DetectionConfig> = {}
+  config: Partial<DetectionConfig> = {},
 ): Promise<StrikeDetection[]> {
   // Validation
   if (audioData.length === 0) {
@@ -120,7 +120,9 @@ export async function detectStrikes(
     throw new Error('Sample rate must be positive')
   }
   if (sampleRate !== 44100) {
-    console.warn(`[AudioDetector] Warning: Sample rate is ${sampleRate}Hz. Essentia.js works best with 44100Hz.`)
+    console.warn(
+      `[AudioDetector] Warning: Sample rate is ${sampleRate}Hz. Essentia.js works best with 44100Hz.`,
+    )
   }
   if (!essentia || !loaded) {
     throw new Error('Essentia not loaded. Call loadEssentia() first.')
@@ -136,12 +138,7 @@ export async function detectStrikes(
   const bandwidth = cfg.frequencyHigh - cfg.frequencyLow
   const centerFrequency = (cfg.frequencyLow + cfg.frequencyHigh) / 2
 
-  const filtered = essentia.BandPass(
-    audioVector,
-    bandwidth,
-    centerFrequency,
-    sampleRate
-  )
+  const filtered = essentia.BandPass(audioVector, bandwidth, centerFrequency, sampleRate)
 
   // Use SuperFluxExtractor for onset detection
   // This algorithm is optimized for percussive transients
@@ -154,12 +151,12 @@ export async function detectStrikes(
   // Call SuperFluxExtractor with filtered signal
   const onsetResult = essentia.SuperFluxExtractor(
     filtered.signal,
-    20,            // combine: 20ms double onset threshold
+    20, // combine: 20ms double onset threshold
     frameSize,
     hopSize,
-    16,            // ratioThreshold (default)
+    16, // ratioThreshold (default)
     sampleRate,
-    threshold
+    threshold,
   )
 
   // SuperFluxExtractor returns onsets as an Essentia vector, convert to array
@@ -208,7 +205,9 @@ export async function detectStrikes(
 
     // Calculate spectral features with error handling
     // Some Essentia algorithms can fail on edge cases
-    let centroid = 3500, flatness = 0.3, rms = 0.1 // defaults
+    let centroid = 3500,
+      flatness = 0.3,
+      rms = 0.1 // defaults
     try {
       const centroidResult = essentia.SpectralCentroidTime(windowVector, sampleRate)
       centroid = centroidResult.centroid
@@ -269,7 +268,7 @@ function calculateDecayRatio(
   audioData: Float32Array,
   onsetSample: number,
   sampleRate: number,
-  essentia: EssentiaModule
+  essentia: EssentiaModule,
 ): number {
   // Measure energy in a window around the onset (peak window: 0-25ms after onset)
   const peakWindowMs = 25
@@ -298,7 +297,8 @@ function calculateDecayRatio(
   const decayWindow = audioData.slice(decayStart, decayEnd)
 
   // Calculate RMS for each window
-  let peakRms = 0.1, decayRms = 0.05 // defaults
+  let peakRms = 0.1,
+    decayRms = 0.05 // defaults
   try {
     const peakVector = essentia.arrayToVector(peakWindow)
     const peakResult = essentia.RMS(peakVector)
@@ -337,7 +337,7 @@ function calculateConfidence(
   centroid: number,
   flatness: number,
   rms: number,
-  decayRatio: number
+  decayRatio: number,
 ): number {
   // Centroid score: golf strikes typically have centroid around 3500 Hz
   // Score decreases as centroid deviates from target

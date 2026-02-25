@@ -61,11 +61,7 @@ describe('SegmentExtractor', () => {
 
   describe('extractSegment', () => {
     it('extracts segment from file', async () => {
-      const mockFile = new File(
-        [new ArrayBuffer(1000)],
-        'test.mp4',
-        { type: 'video/mp4' }
-      )
+      const mockFile = new File([new ArrayBuffer(1000)], 'test.mp4', { type: 'video/mp4' })
 
       const segment = await extractSegment(mockFile, 0, 10, 60)
 
@@ -82,7 +78,7 @@ describe('SegmentExtractor', () => {
         mockFile,
         30, // start at 30s
         35, // end at 35s
-        120 // 2 minute video
+        120, // 2 minute video
       )
 
       expect(segment).toBeInstanceOf(Blob)
@@ -94,7 +90,7 @@ describe('SegmentExtractor', () => {
       const mockFile = new File(
         [new ArrayBuffer(5_000_000)], // 5MB
         'test.mp4',
-        { type: 'video/mp4' }
+        { type: 'video/mp4' },
       )
 
       // Request tiny segment

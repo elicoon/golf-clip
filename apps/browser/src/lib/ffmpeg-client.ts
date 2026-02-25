@@ -25,7 +25,7 @@ export async function loadFFmpeg(): Promise<void> {
 export async function extractAudioFromSegment(
   videoBlob: Blob,
   startTime?: number,
-  duration?: number
+  duration?: number,
 ): Promise<Float32Array> {
   if (!ffmpeg || !loaded) {
     throw new Error('FFmpeg not loaded. Call loadFFmpeg() first.')
@@ -51,11 +51,14 @@ export async function extractAudioFromSegment(
     // Extract audio as WAV (PCM for analysis)
     // NOTE: Essentia.js SuperFluxExtractor requires 44100Hz sample rate
     args.push(
-      '-vn',           // No video
-      '-acodec', 'pcm_s16le',
-      '-ar', '44100',  // Sample rate - Essentia.js requires 44100Hz
-      '-ac', '1',      // Mono
-      outputName
+      '-vn', // No video
+      '-acodec',
+      'pcm_s16le',
+      '-ar',
+      '44100', // Sample rate - Essentia.js requires 44100Hz
+      '-ac',
+      '1', // Mono
+      outputName,
     )
 
     // Capture FFmpeg log output to detect specific failure reasons
@@ -80,12 +83,10 @@ export async function extractAudioFromSegment(
         /Stream map.*does not match any stream/i,
         /Output file.*does not contain any stream/i,
       ]
-      const isNoAudio = noAudioPatterns.some(p => p.test(logText))
+      const isNoAudio = noAudioPatterns.some((p) => p.test(logText))
       if (isNoAudio) {
         console.warn('[ffmpeg-client] No audio track detected. FFmpeg logs:', logText)
-        throw new Error(
-          'This video has no audio track. GolfClip needs audio to detect golf shots.'
-        )
+        throw new Error('This video has no audio track. GolfClip needs audio to detect golf shots.')
       }
       throw new Error(`FFmpeg failed with exit code ${exitCode}`)
     }
@@ -107,8 +108,16 @@ export async function extractAudioFromSegment(
     return floatArray
   } finally {
     // Cleanup even on error
-    try { await ffmpeg.deleteFile(inputName) } catch { /* ignore cleanup errors */ }
-    try { await ffmpeg.deleteFile(outputName) } catch { /* ignore cleanup errors */ }
+    try {
+      await ffmpeg.deleteFile(inputName)
+    } catch {
+      /* ignore cleanup errors */
+    }
+    try {
+      await ffmpeg.deleteFile(outputName)
+    } catch {
+      /* ignore cleanup errors */
+    }
   }
 }
 
@@ -172,8 +181,11 @@ export async function detectVideoCodec(file: File): Promise<{
       const error = video.error
 
       // MEDIA_ERR_SRC_NOT_SUPPORTED or MEDIA_ERR_DECODE usually means codec issue
-      if (error && (error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
-                    error.code === MediaError.MEDIA_ERR_DECODE)) {
+      if (
+        error &&
+        (error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
+          error.code === MediaError.MEDIA_ERR_DECODE)
+      ) {
         cleanup()
         resolve({ codec: 'hevc', isHevc: true, isPlayable: false })
       } else {
@@ -217,7 +229,7 @@ export async function detectVideoCodec(file: File): Promise<{
 export async function transcodeHevcToH264(
   videoBlob: Blob,
   onProgress?: (percent: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<Blob> {
   if (!ffmpeg || !loaded) {
     throw new Error('FFmpeg not loaded. Call loadFFmpeg() first.')
@@ -269,16 +281,24 @@ export async function transcodeHevcToH264(
     }
 
     const exitCode = await ffmpeg.exec([
-      '-i', inputName,
-      '-c:v', 'libx264',
-      '-preset', 'ultrafast',
-      '-crf', '23',
-      '-c:a', 'aac',
-      '-b:a', '192k',
-      '-pix_fmt', 'yuv420p',
-      '-movflags', '+faststart',
+      '-i',
+      inputName,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-crf',
+      '23',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      '+faststart',
       '-y',
-      outputName
+      outputName,
     ])
 
     // Check abort after exec
@@ -304,8 +324,16 @@ export async function transcodeHevcToH264(
     if (abortHandler && signal) {
       signal.removeEventListener('abort', abortHandler)
     }
-    try { await ffmpeg.deleteFile(inputName) } catch { /* ignore */ }
-    try { await ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
+    try {
+      await ffmpeg.deleteFile(inputName)
+    } catch {
+      /* ignore */
+    }
+    try {
+      await ffmpeg.deleteFile(outputName)
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -355,11 +383,15 @@ export async function muxAudioIntoClip(
       segmentSize: (sourceSegmentBlob.size / 1024 / 1024).toFixed(1) + 'MB',
     })
     const extractExitCode = await ffmpeg.exec([
-      '-i', sourceFile,
-      '-ss', clipStartInSegment.toString(),
-      '-t', duration.toString(),
-      '-vn',           // No video
-      '-acodec', 'copy', // Stream copy (no re-encode)
+      '-i',
+      sourceFile,
+      '-ss',
+      clipStartInSegment.toString(),
+      '-t',
+      duration.toString(),
+      '-vn', // No video
+      '-acodec',
+      'copy', // Stream copy (no re-encode)
       audioFile,
     ])
 
@@ -384,10 +416,14 @@ export async function muxAudioIntoClip(
 
     // Step 2: Mux video + audio together
     const muxExitCode = await ffmpeg.exec([
-      '-i', videoFile,
-      '-i', audioFile,
-      '-c', 'copy',         // Stream copy both
-      '-movflags', '+faststart',
+      '-i',
+      videoFile,
+      '-i',
+      audioFile,
+      '-c',
+      'copy', // Stream copy both
+      '-movflags',
+      '+faststart',
       outputFile,
     ])
 
@@ -402,16 +438,34 @@ export async function muxAudioIntoClip(
       return videoOnlyBlob
     }
 
-    console.log('[muxAudio] Audio muxed successfully',
-      { videoSize: videoOnlyBlob.size, muxedSize: data.length })
+    console.log('[muxAudio] Audio muxed successfully', {
+      videoSize: videoOnlyBlob.size,
+      muxedSize: data.length,
+    })
 
     return new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' })
   } finally {
     // Cleanup all temp files
-    try { await ffmpeg.deleteFile(videoFile) } catch { /* ignore */ }
-    try { await ffmpeg.deleteFile(sourceFile) } catch { /* ignore */ }
-    try { await ffmpeg.deleteFile(audioFile) } catch { /* ignore */ }
-    try { await ffmpeg.deleteFile(outputFile) } catch { /* ignore */ }
+    try {
+      await ffmpeg.deleteFile(videoFile)
+    } catch {
+      /* ignore */
+    }
+    try {
+      await ffmpeg.deleteFile(sourceFile)
+    } catch {
+      /* ignore */
+    }
+    try {
+      await ffmpeg.deleteFile(audioFile)
+    } catch {
+      /* ignore */
+    }
+    try {
+      await ffmpeg.deleteFile(outputFile)
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -438,7 +492,7 @@ export function getFFmpegInstance(): FFmpeg {
 export async function extractVideoSegment(
   videoBlob: Blob,
   startTime: number,
-  duration: number
+  duration: number,
 ): Promise<Blob> {
   if (!ffmpeg || !loaded) {
     throw new Error('FFmpeg not loaded. Call loadFFmpeg() first.')
@@ -454,12 +508,17 @@ export async function extractVideoSegment(
     // -c copy uses stream copy (no re-encoding) for speed
     // -avoid_negative_ts make_zero fixes timestamp issues from seeking
     const exitCode = await ffmpeg.exec([
-      '-ss', startTime.toString(),
-      '-i', inputName,
-      '-t', duration.toString(),
-      '-c', 'copy',
-      '-avoid_negative_ts', 'make_zero',
-      outputName
+      '-ss',
+      startTime.toString(),
+      '-i',
+      inputName,
+      '-t',
+      duration.toString(),
+      '-c',
+      'copy',
+      '-avoid_negative_ts',
+      'make_zero',
+      outputName,
     ])
 
     if (exitCode !== 0) {
@@ -474,18 +533,26 @@ export async function extractVideoSegment(
 
     return new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' })
   } finally {
-    try { await ffmpeg.deleteFile(inputName) } catch { /* ignore */ }
-    try { await ffmpeg.deleteFile(outputName) } catch { /* ignore */ }
+    try {
+      await ffmpeg.deleteFile(inputName)
+    } catch {
+      /* ignore */
+    }
+    try {
+      await ffmpeg.deleteFile(outputName)
+    } catch {
+      /* ignore */
+    }
   }
 }
 
 // Transcoding time estimates (based on benchmarks)
 // WASM FFmpeg with ultrafast preset - conservative estimates
 export const TRANSCODE_ESTIMATE = {
-  RATIO_4K_60FPS: 4,   // 4K 60fps: ~4 min per min of video
-  RATIO_4K_30FPS: 3,   // 4K 30fps: ~3 min per min of video
-  RATIO_1080P: 2,      // 1080p: ~2 min per min of video
-  RATIO_DEFAULT: 3,    // Default fallback
+  RATIO_4K_60FPS: 4, // 4K 60fps: ~4 min per min of video
+  RATIO_4K_30FPS: 3, // 4K 30fps: ~3 min per min of video
+  RATIO_1080P: 2, // 1080p: ~2 min per min of video
+  RATIO_DEFAULT: 3, // Default fallback
 }
 
 export const SUPPORTED_CODECS = ['H.264', 'VP8', 'VP9']

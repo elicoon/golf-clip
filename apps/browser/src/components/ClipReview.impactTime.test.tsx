@@ -6,7 +6,7 @@
  * @vitest-environment jsdom
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 describe('ClipReview Impact Time Handler', () => {
   describe('handleSetImpactTime logic', () => {
@@ -24,7 +24,8 @@ describe('ClipReview Impact Time Handler', () => {
 
       // Act - simulate handler logic
       const globalImpactTime = currentShot.startTime + videoCurrentTime // 15.0
-      const isWithinBounds = globalImpactTime >= currentShot.clipStart && globalImpactTime <= currentShot.clipEnd
+      const isWithinBounds =
+        globalImpactTime >= currentShot.clipStart && globalImpactTime <= currentShot.clipEnd
 
       if (isWithinBounds) {
         updateSegment(currentShot.id, { strikeTime: globalImpactTime })
@@ -48,7 +49,8 @@ describe('ClipReview Impact Time Handler', () => {
 
       // Act
       const globalImpactTime = currentShot.startTime + videoCurrentTime // 11.0
-      const isWithinBounds = globalImpactTime >= currentShot.clipStart && globalImpactTime <= currentShot.clipEnd
+      const isWithinBounds =
+        globalImpactTime >= currentShot.clipStart && globalImpactTime <= currentShot.clipEnd
 
       if (isWithinBounds) {
         updateSegment(currentShot.id, { strikeTime: globalImpactTime })
@@ -72,7 +74,8 @@ describe('ClipReview Impact Time Handler', () => {
 
       // Act
       const globalImpactTime = currentShot.startTime + videoCurrentTime // 25.0
-      const isWithinBounds = globalImpactTime >= currentShot.clipStart && globalImpactTime <= currentShot.clipEnd
+      const isWithinBounds =
+        globalImpactTime >= currentShot.clipStart && globalImpactTime <= currentShot.clipEnd
 
       if (isWithinBounds) {
         updateSegment(currentShot.id, { strikeTime: globalImpactTime })
@@ -96,7 +99,8 @@ describe('ClipReview Impact Time Handler', () => {
 
       // Act
       const globalImpactTime = currentShot.startTime + videoCurrentTime // 12.0
-      const isWithinBounds = globalImpactTime >= currentShot.clipStart && globalImpactTime <= currentShot.clipEnd
+      const isWithinBounds =
+        globalImpactTime >= currentShot.clipStart && globalImpactTime <= currentShot.clipEnd
 
       if (isWithinBounds) {
         updateSegment(currentShot.id, { strikeTime: globalImpactTime })
@@ -120,7 +124,8 @@ describe('ClipReview Impact Time Handler', () => {
 
       // Act
       const globalImpactTime = currentShot.startTime + videoCurrentTime // 20.0
-      const isWithinBounds = globalImpactTime >= currentShot.clipStart && globalImpactTime <= currentShot.clipEnd
+      const isWithinBounds =
+        globalImpactTime >= currentShot.clipStart && globalImpactTime <= currentShot.clipEnd
 
       if (isWithinBounds) {
         updateSegment(currentShot.id, { strikeTime: globalImpactTime })
