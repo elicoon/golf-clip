@@ -1,6 +1,6 @@
 ### Rename codec-detector.test.ts to Match ffmpeg-client.ts Source Module
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** refactor
 - **Scope:** small
@@ -11,8 +11,8 @@
 - **Updated:** 2026-02-24
 
 #### Acceptance Criteria
-- [ ] No test file references a non-existent source module (`codec-detector.ts` no longer appears as a test filename)
-- [ ] All codec detection tests still pass after rename/move
+- [x] No test file references a non-existent source module (`codec-detector.ts` no longer appears as a test filename)
+- [x] All codec detection tests still pass after rename/move
 
 #### Next steps
 1. Check if `ffmpeg-client.test.ts` already exists — if so, merge codec detection tests into it
