@@ -1,10 +1,11 @@
 ### Write Unit Tests for Uncovered lib/ Modules to Raise Thresholds to 60%
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** test-coverage
 - **Scope:** medium
 - **Planned completion:** none
+- **Actual completion:** 2026-02-24
 - **Blockers:** none
 - **Notes:** Current CI-enforced thresholds are 51% statements, 65% branches, 44% functions, 51% lines. The functions threshold at 44% indicates several modules have exported functions with no test coverage. Raising thresholds to 60% across the board (targeting functions especially) tightens the quality ratchet and reduces risk of shipping untested code paths. Focus on `lib/` modules which contain the core processing logic.
 - **Added:** 2026-02-24
