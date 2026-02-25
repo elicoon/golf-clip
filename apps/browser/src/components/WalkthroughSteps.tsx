@@ -27,7 +27,7 @@ export function WalkthroughSteps() {
             <rect x="42" y="58" width="36" height="8" rx="4" fill="currentColor" opacity="0.2" />
           </svg>
         </div>
-        <h3>Upload Video</h3>
+        <h2>Upload Video</h2>
         <p>Drop your golf video or select a file</p>
       </div>
 
@@ -67,7 +67,7 @@ export function WalkthroughSteps() {
             <circle cx="90" cy="50" r="3" fill="#4ade80" />
           </svg>
         </div>
-        <h3>Mark Tracers</h3>
+        <h2>Mark Tracers</h2>
         <p>Click landing points and review shot tracers</p>
       </div>
 
@@ -106,7 +106,7 @@ export function WalkthroughSteps() {
             />
           </svg>
         </div>
-        <h3>Export Clips</h3>
+        <h2>Export Clips</h2>
         <p>Download clips with tracers burned in</p>
       </div>
     </div>
