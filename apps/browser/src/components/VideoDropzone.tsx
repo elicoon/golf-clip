@@ -293,13 +293,6 @@ export function VideoDropzone() {
     fileInputRef.current?.click()
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      handleFileSelect()
-    }
-  }
-
   // Show checking codec state
   if (isCheckingCodec) {
     return (
@@ -345,10 +338,6 @@ export function VideoDropzone() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onKeyDown={handleKeyDown}
-        tabIndex={0}
-        role="button"
-        aria-label="Drop zone for video files"
       >
         <div className="dropzone-content">
           <div className="dropzone-icon" aria-hidden="true">
