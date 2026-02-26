@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Weekly grouped minor/patch updates for npm dependencies in apps/browser
+  - package-ecosystem: "npm"
+    directory: "/apps/browser"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Daily security updates (Dependabot opens these automatically regardless of schedule)
+  - package-ecosystem: "npm"
+    directory: "/apps/browser"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 10
