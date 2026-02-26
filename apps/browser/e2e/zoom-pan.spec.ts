@@ -44,6 +44,9 @@ test.describe('Zoom & Pan Controls', () => {
   })
 
   test('drag-to-pan works when zoomed', async ({ app, page }) => {
+    // Panning is disabled in marking_landing state — mark landing first
+    await app.markLandingAndWaitForReview()
+
     // Zoom in
     await app.pressKey('+')
     await page.waitForTimeout(200)
