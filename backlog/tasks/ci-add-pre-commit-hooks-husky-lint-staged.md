@@ -1,10 +1,11 @@
 ### Add Pre-commit Hooks with Husky and lint-staged
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** refactor
 - **Scope:** small
 - **Planned completion:** none
+- **Actual completion:** 2026-02-24
 - **Blockers:** none
 - **Notes:** ESLint and Prettier are configured but only enforced in CI. A developer can commit unformatted or lint-failing code and only discover it when the PR pipeline fails. Adding husky + lint-staged enforces checks at commit time, catching issues immediately and reducing CI feedback loops. This is the natural completion of the code quality toolchain established in the recent ESLint/Prettier work.
 - **Added:** 2026-02-24

@@ -1,10 +1,11 @@
 ### Add Prettier Auto-Formatting with CI Format Check
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** low
 - **Type:** refactor
 - **Scope:** small
 - **Planned completion:** none
+- **Actual completion:** 2026-02-24
 - **Blockers:** none
 - **Notes:** ESLint is now enforced in CI for logic/pattern rules, but no code formatter exists. Prettier standardizes whitespace, quotes, semicolons, and line length across the codebase. Adding a CI format-check prevents style drift without requiring developers to think about formatting. Combined with ESLint, this completes the code quality toolchain.
 - **Added:** 2026-02-24

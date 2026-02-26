@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { FFmpeg } from '@ffmpeg/ffmpeg'
 import { describe, it, expect, vi } from 'vitest'
 import { exportClipWithTracer, exportWithCanvasCompositing } from './clip-exporter'
 
@@ -21,7 +22,7 @@ describe('exportClipWithTracer', () => {
       deleteFile: mockDeleteFile,
     }
 
-    const result = await exportClipWithTracer(mockFfmpeg as any, {
+    const result = await exportClipWithTracer(mockFfmpeg as unknown as FFmpeg, {
       videoBlob: new Blob(['test'], { type: 'video/mp4' }),
       trajectory: [
         { x: 0.1, y: 0.2, timestamp: 0 },
@@ -53,7 +54,7 @@ describe('exportClipWithTracer', () => {
       deleteFile: vi.fn().mockResolvedValue(undefined),
     }
 
-    await exportClipWithTracer(mockFfmpeg as any, {
+    await exportClipWithTracer(mockFfmpeg as unknown as FFmpeg, {
       videoBlob: new Blob(['test'], { type: 'video/mp4' }),
       trajectory: [{ x: 0.5, y: 0.5, timestamp: 0 }],
       startTime: 0,
@@ -76,7 +77,7 @@ describe('exportClipWithTracer', () => {
     }
 
     await expect(
-      exportClipWithTracer(mockFfmpeg as any, {
+      exportClipWithTracer(mockFfmpeg as unknown as FFmpeg, {
         videoBlob: new Blob(['test'], { type: 'video/mp4' }),
         trajectory: [
           { x: 0.1, y: 0.2, timestamp: 0 },
@@ -99,7 +100,7 @@ describe('exportClipWithTracer', () => {
     }
 
     await expect(
-      exportClipWithTracer(mockFfmpeg as any, {
+      exportClipWithTracer(mockFfmpeg as unknown as FFmpeg, {
         videoBlob: new Blob(['test'], { type: 'video/mp4' }),
         trajectory: [
           { x: 0.1, y: 0.2, timestamp: 0 },
@@ -123,7 +124,7 @@ describe('exportClipWithTracer', () => {
     }
 
     await expect(
-      exportClipWithTracer(mockFfmpeg as any, {
+      exportClipWithTracer(mockFfmpeg as unknown as FFmpeg, {
         videoBlob: new Blob(['test'], { type: 'video/mp4' }),
         trajectory: [
           { x: 0.1, y: 0.2, timestamp: 0 },
@@ -149,7 +150,7 @@ describe('exportClipWithTracer', () => {
       deleteFile: vi.fn().mockResolvedValue(undefined),
     }
 
-    await exportClipWithTracer(mockFfmpeg as any, {
+    await exportClipWithTracer(mockFfmpeg as unknown as FFmpeg, {
       videoBlob: new Blob(['test'], { type: 'video/mp4' }),
       trajectory: [
         { x: 0.1, y: 0.2, timestamp: 0 },

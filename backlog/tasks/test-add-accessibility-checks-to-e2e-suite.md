@@ -1,10 +1,11 @@
 ### Add axe-core Accessibility Checks to Playwright E2E Suite
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** test-coverage
 - **Scope:** small
 - **Planned completion:** none
+- **Actual completion:** 2026-02-24
 - **Blockers:** none
 - **Notes:** GolfClip is a public SaaS at golfclip.elicoon.com with no automated accessibility testing. Components use some aria attributes but there is no baseline audit. The Playwright E2E infrastructure is already in CI, so adding @axe-core/playwright requires minimal setup and gives immediate visibility into WCAG violations. This establishes an a11y quality gate that prevents regressions as new UI features ship.
 - **Added:** 2026-02-24
