@@ -20,6 +20,7 @@ test.describe('Layout Redesign', () => {
     test.beforeEach(async ({ app }) => {
       await app.goto()
       await app.uploadAndWaitForReview()
+      await app.markLandingAndWaitForReview()
     })
 
     test('trajectory config panel renders in review', async ({ page }) => {

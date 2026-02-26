@@ -104,12 +104,22 @@ export class AppFixture {
   /** Get the current zoom transform scale value */
   async getZoomScale(): Promise<number> {
     const transform = await this.page.locator('.video-zoom-content').evaluate(
-      el => getComputedStyle(el).transform
+      // Read inline style first — avoids reading mid-CSS-transition computed values
+      el => (el as HTMLElement).style.transform || getComputedStyle(el).transform
     )
-    // transform is like "matrix(2, 0, 0, 2, 0, 0)" — extract scale
-    if (transform === 'none') return 1
-    const match = transform.match(/matrix\(([^,]+)/)
-    return match ? parseFloat(match[1]) : 1
+    if (!transform || transform === 'none') return 1
+    // Inline style: "scale(1.5) translate(0px, 0px)" or "scale(1.5)"
+    const scaleMatch = transform.match(/scale\(([^)]+)\)/)
+    if (scaleMatch) return parseFloat(scaleMatch[1])
+    // Computed style fallback: "matrix(2, 0, 0, 2, 0, 0)"
+    const matrixMatch = transform.match(/matrix\(([^,]+)/)
+    return matrixMatch ? parseFloat(matrixMatch[1]) : 1
+  }
+
+  /** Click video to mark landing point and wait for review state */
+  async markLandingAndWaitForReview() {
+    await this.clickOnVideo(0.7, 0.6)
+    await this.page.waitForSelector('.step-badge.complete', { timeout: 10_000 })
   }
 
   /** Check if an element is visible */
