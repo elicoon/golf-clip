@@ -10,8 +10,8 @@ import { TracerStyle } from '../types/tracer'
 
 export interface TrajectoryPointInput {
   timestamp: number
-  x: number  // normalized 0-1
-  y: number  // normalized 0-1
+  x: number // normalized 0-1
+  y: number // normalized 0-1
   confidence?: number
   interpolated?: boolean
 }
@@ -26,9 +26,9 @@ export interface ContentBounds {
 export interface DrawTracerLineOptions {
   ctx: CanvasRenderingContext2D
   points: TrajectoryPointInput[]
-  currentTime: number     // blob-relative current time
-  width: number           // canvas pixel width
-  height: number          // canvas pixel height
+  currentTime: number // blob-relative current time
+  width: number // canvas pixel width
+  height: number // canvas pixel height
   style: TracerStyle
   /** Optional content bounds for letterboxing (defaults to full canvas) */
   contentBounds?: ContentBounds
@@ -84,9 +84,8 @@ export function drawTracerLine(options: DrawTracerLineOptions): DrawTracerLineRe
   const timeRange = lastTime - firstTime
 
   // Calculate time ratio (0-1 through the trajectory)
-  const timeRatio = timeRange > 0
-    ? Math.max(0, Math.min(1, (currentTime - firstTime) / timeRange))
-    : 0
+  const timeRatio =
+    timeRange > 0 ? Math.max(0, Math.min(1, (currentTime - firstTime) / timeRange)) : 0
 
   if (timeRatio <= 0) return { progress: 0 }
 

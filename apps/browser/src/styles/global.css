@@ -7,7 +7,7 @@
   --color-bg-elevated: #333333;
   --color-text: #ffffff;
   --color-text-secondary: #a0a0a0;
-  --color-text-muted: #666666;
+  --color-text-muted: #9e9e9e;
   --color-primary: #4ade80;
   --color-primary-hover: #22c55e;
   --color-primary-dim: rgba(74, 222, 128, 0.15);
@@ -40,8 +40,9 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Oxygen,
-    Ubuntu, Cantarell, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Oxygen, Ubuntu,
+    Cantarell, sans-serif;
   background-color: var(--color-bg);
   color: var(--color-text);
   line-height: 1.5;
@@ -353,7 +354,7 @@ button:disabled {
   height: auto;
 }
 
-.walkthrough-step h3 {
+.walkthrough-step h2 {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--color-text);
@@ -991,17 +992,17 @@ button:disabled {
   border-radius: var(--border-radius-sm);
 }
 
-.confidence-badge[data-level="low"] {
+.confidence-badge[data-level='low'] {
   background-color: var(--color-danger-dim);
   color: var(--color-danger);
 }
 
-.confidence-badge[data-level="medium"] {
+.confidence-badge[data-level='medium'] {
   background-color: var(--color-warning-dim);
   color: var(--color-warning);
 }
 
-.confidence-badge[data-level="high"] {
+.confidence-badge[data-level='high'] {
   background-color: var(--color-primary-dim);
   color: var(--color-primary);
 }
@@ -1071,7 +1072,7 @@ button:disabled {
   background-color: transparent;
   color: var(--color-danger);
   border: 1px solid var(--color-danger);
-  margin-top: 0;  /* Override btn-danger margin */
+  margin-top: 0; /* Override btn-danger margin */
 }
 
 .btn-no-shot:hover:not(:disabled) {
@@ -1303,7 +1304,12 @@ kbd {
 .scrubber-hover-thumbnail-placeholder {
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, var(--color-bg-tertiary) 25%, var(--color-bg-elevated) 50%, var(--color-bg-tertiary) 75%);
+  background: linear-gradient(
+    135deg,
+    var(--color-bg-tertiary) 25%,
+    var(--color-bg-elevated) 50%,
+    var(--color-bg-tertiary) 75%
+  );
   background-size: 200% 200%;
   animation: shimmer 1.5s infinite;
 }
@@ -1865,7 +1871,7 @@ kbd {
   background-color: var(--color-bg-elevated);
 }
 
-.clip-download-item input[type="checkbox"] {
+.clip-download-item input[type='checkbox'] {
   width: 18px;
   height: 18px;
   accent-color: var(--color-primary);
@@ -3081,7 +3087,7 @@ kbd {
 }
 
 .suggestion-item::before {
-  content: "";
+  content: '';
   position: absolute;
   left: 0;
   top: 50%;
@@ -3334,19 +3340,19 @@ kbd {
   color: var(--color-text);
 }
 
-.marker-toggle input[type="checkbox"] {
+.marker-toggle input[type='checkbox'] {
   width: 16px;
   height: 16px;
   accent-color: var(--color-primary);
   cursor: pointer;
 }
 
-.marker-toggle input[type="checkbox"]:disabled {
+.marker-toggle input[type='checkbox']:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.marker-toggle input[type="checkbox"]:disabled + span {
+.marker-toggle input[type='checkbox']:disabled + span {
   opacity: 0.5;
 }
 
@@ -3647,8 +3653,13 @@ kbd {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* Confirm Dialog */

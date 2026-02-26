@@ -19,7 +19,7 @@ export function trajectoryToFFmpegFilter(
   trajectory: TrajectoryPoint[],
   width: number,
   height: number,
-  clipStart: number
+  clipStart: number,
 ): string {
   if (trajectory.length < 2) {
     return ''
@@ -57,7 +57,7 @@ export function trajectoryToFFmpegFilter(
     // Use gte(t,T) so box appears at time T and stays visible
     // Color: red, t=fill means filled box
     filters.push(
-      `drawbox=x=${minX}:y=${minY}:w=${boxW}:h=${boxH}:color=red:t=fill:enable='gte(t\\,${t.toFixed(3)})'`
+      `drawbox=x=${minX}:y=${minY}:w=${boxW}:h=${boxH}:color=red:t=fill:enable='gte(t\\,${t.toFixed(3)})'`,
     )
   }
 

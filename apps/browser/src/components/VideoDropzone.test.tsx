@@ -35,7 +35,7 @@ vi.mock('../lib/ffmpeg-client', () => ({
   estimateTranscodeTime: vi.fn().mockReturnValue({
     minMinutes: 2,
     maxMinutes: 4,
-    formatted: '2-4 minutes'
+    formatted: '2-4 minutes',
   }),
   formatRemainingTime: vi.fn().mockReturnValue('2 min remaining'),
   SUPPORTED_CODECS: ['H.264', 'VP8', 'VP9'],
@@ -59,10 +59,9 @@ vi.mock('../stores/processingStore', () => {
     setVideoError: mockSetVideoError,
   }
 
-  const mockUseProcessingStore = Object.assign(
-    () => mockStoreState,
-    { getState: () => mockStoreState }
-  )
+  const mockUseProcessingStore = Object.assign(() => mockStoreState, {
+    getState: () => mockStoreState,
+  })
 
   return {
     useProcessingStore: mockUseProcessingStore,
@@ -133,7 +132,7 @@ describe('VideoDropzone', () => {
       await waitFor(() => {
         expect(mockSetVideoError).toHaveBeenCalledWith(
           expect.any(String),
-          'HEVC codec detected - needs transcoding'
+          'HEVC codec detected - needs transcoding',
         )
       })
     })

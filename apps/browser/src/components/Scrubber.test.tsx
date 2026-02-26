@@ -20,10 +20,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, act } from '@testing-library/react'
+import { render, cleanup, act } from '@testing-library/react'
 import * as matchers from '@testing-library/jest-dom/matchers'
 import { Scrubber } from './Scrubber'
-import { createRef, RefObject } from 'react'
+import { RefObject } from 'react'
 
 // Extend Vitest's expect with jest-dom matchers
 expect.extend(matchers)
@@ -54,7 +54,7 @@ function createMockVideoRef(options: MockVideoRefOptions): RefObject<HTMLVideoEl
       _currentTime = value
       // Dispatch timeupdate event
       if (listeners['timeupdate']) {
-        listeners['timeupdate'].forEach(fn => fn(new Event('timeupdate')))
+        listeners['timeupdate'].forEach((fn) => fn(new Event('timeupdate')))
       }
     },
     addEventListener: vi.fn((event: string, handler: (e: Event) => void) => {
@@ -74,13 +74,13 @@ function createMockVideoRef(options: MockVideoRefOptions): RefObject<HTMLVideoEl
     // Helper to simulate loaded metadata
     dispatchLoadedMetadata: () => {
       if (listeners['loadedmetadata']) {
-        listeners['loadedmetadata'].forEach(fn => fn(new Event('loadedmetadata')))
+        listeners['loadedmetadata'].forEach((fn) => fn(new Event('loadedmetadata')))
       }
     },
     // Helper to simulate time update
     dispatchTimeUpdate: () => {
       if (listeners['timeupdate']) {
-        listeners['timeupdate'].forEach(fn => fn(new Event('timeupdate')))
+        listeners['timeupdate'].forEach((fn) => fn(new Event('timeupdate')))
       }
     },
   } as unknown as HTMLVideoElement & {
@@ -136,12 +136,14 @@ describe('Scrubber Coordinate System', () => {
           startTime={globalClipStart}
           endTime={globalClipEnd}
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
 
       // Trigger metadata load to set duration
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       // Find the playhead element
@@ -216,17 +218,19 @@ describe('Scrubber Coordinate System', () => {
           startTime={0} // Blob-relative start
           endTime={10} // Blob-relative end
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       // NOTE: The Scrubber initializes currentTime from startTime prop,
       // so we need to dispatch a timeupdate event to sync with video.currentTime
       act(() => {
-        (videoRef.current as unknown as { dispatchTimeUpdate: () => void }).dispatchTimeUpdate()
+        ;(videoRef.current as unknown as { dispatchTimeUpdate: () => void }).dispatchTimeUpdate()
       })
 
       const playhead = document.querySelector('.scrubber-playhead')
@@ -251,21 +255,18 @@ describe('Scrubber Coordinate System', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={0}
-          endTime={10}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={0} endTime={10} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       // Simulate video playback - move to 2.5s
       act(() => {
-        (videoRef.current as unknown as { currentTime: number }).currentTime = 2.5
+        ;(videoRef.current as unknown as { currentTime: number }).currentTime = 2.5
       })
 
       const playhead = document.querySelector('.scrubber-playhead')
@@ -297,11 +298,13 @@ describe('Scrubber Coordinate System', () => {
           startTime={2} // Trim start at 2s into blob
           endTime={8} // Trim end at 8s into blob
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       const startHandle = document.querySelector('.scrubber-handle-start')
@@ -345,11 +348,13 @@ describe('Scrubber Coordinate System', () => {
           startTime={45} // Global time
           endTime={55} // Global time
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       const startHandle = document.querySelector('.scrubber-handle-start')
@@ -399,11 +404,13 @@ describe('Scrubber Coordinate System', () => {
           startTime={0} // At very start
           endTime={5}
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       // windowStart = max(0, 0-5) = 0 (can't go negative)
@@ -431,11 +438,13 @@ describe('Scrubber Coordinate System', () => {
           startTime={5}
           endTime={10} // At very end
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       // windowStart = max(0, 5-5) = 0
@@ -457,26 +466,23 @@ describe('Scrubber Coordinate System', () => {
 
       const onTimeUpdate = vi.fn()
 
-      render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={2}
-          endTime={8}
-          onTimeUpdate={onTimeUpdate}
-        />
-      )
+      render(<Scrubber videoRef={videoRef} startTime={2} endTime={8} onTimeUpdate={onTimeUpdate} />)
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       // Find time labels
-      const labels = document.querySelectorAll('.scrubber-label-start, .scrubber-label-end, .scrubber-label-current')
+      const labels = document.querySelectorAll(
+        '.scrubber-label-start, .scrubber-label-end, .scrubber-label-current',
+      )
       expect(labels.length).toBe(3)
 
       // Check that we have reasonable time displays (should be low numbers for blob-relative)
       // If using global times (bug), we'd see times like "0:40" instead of "0:00"
-      const labelTexts = Array.from(labels).map(l => l.textContent)
+      const labelTexts = Array.from(labels).map((l) => l.textContent)
 
       // windowStart should be 0 (max(0, 2-5)), so first label should show 0:00.xx
       expect(labelTexts[0]).toMatch(/^0:0[0-5]/)
@@ -496,17 +502,12 @@ describe('Scrubber Coordinate System', () => {
 
       const onTimeUpdate = vi.fn()
 
-      render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={2}
-          endTime={8}
-          onTimeUpdate={onTimeUpdate}
-        />
-      )
+      render(<Scrubber videoRef={videoRef} startTime={2} endTime={8} onTimeUpdate={onTimeUpdate} />)
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       // The scrubber should show a selection region between start and end handles
@@ -576,11 +577,13 @@ describe('Scrubber Coordinate System', () => {
           startTime={blobRelativeClipStart}
           endTime={blobRelativeClipEnd}
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       // With blob-relative times:
@@ -627,11 +630,13 @@ describe('Scrubber Coordinate System', () => {
           startTime={45} // GLOBAL TIME - BUG!
           endTime={55} // GLOBAL TIME - BUG!
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       // With global times (BUG):
@@ -684,7 +689,7 @@ describe('Scrubber Coordinate System', () => {
           endTime={10}
           onTimeUpdate={onTimeUpdate}
           disabled={true}
-        />
+        />,
       )
 
       const container = document.querySelector('.scrubber-container')
@@ -701,17 +706,12 @@ describe('Scrubber Coordinate System', () => {
 
       const onTimeUpdate = vi.fn()
 
-      render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={2}
-          endTime={8}
-          onTimeUpdate={onTimeUpdate}
-        />
-      )
+      render(<Scrubber videoRef={videoRef} startTime={2} endTime={8} onTimeUpdate={onTimeUpdate} />)
 
       act(() => {
-        (videoRef.current as unknown as { dispatchLoadedMetadata: () => void }).dispatchLoadedMetadata()
+        ;(
+          videoRef.current as unknown as { dispatchLoadedMetadata: () => void }
+        ).dispatchLoadedMetadata()
       })
 
       // Find clip duration display
@@ -730,14 +730,7 @@ describe('Scrubber Coordinate System', () => {
 
       const onTimeUpdate = vi.fn()
 
-      render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={2}
-          endTime={8}
-          onTimeUpdate={onTimeUpdate}
-        />
-      )
+      render(<Scrubber videoRef={videoRef} startTime={2} endTime={8} onTimeUpdate={onTimeUpdate} />)
 
       const clipInfo = document.querySelector('.scrubber-clip-duration')
 

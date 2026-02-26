@@ -18,7 +18,7 @@ interface TrajectoryEditorProps {
     frame_width: number
     frame_height: number
   } | null
-  currentTime: number  // Still passed for compatibility, but we read video.currentTime directly for 60fps
+  currentTime: number // Still passed for compatibility, but we read video.currentTime directly for 60fps
   onTrajectoryUpdate?: (points: TrajectoryPoint[]) => void
   disabled?: boolean
   showTracer?: boolean
@@ -188,12 +188,17 @@ export function TrajectoryEditor({
     if (!canvas || !ctx || !video || !showTracer || !canvasSize.width || !canvasSize.height) return
 
     let animationFrameId: number
-    let completionTimestamp: number | null = null  // Track REAL time (performance.now) when trajectory completed
-    const HOLD_DURATION_MS = 1500  // Milliseconds to hold the complete trajectory visible
+    let completionTimestamp: number | null = null // Track REAL time (performance.now) when trajectory completed
+    const HOLD_DURATION_MS = 1500 // Milliseconds to hold the complete trajectory visible
 
     // Helper to convert normalized coords (0-1) to canvas coords
     // Uses video content bounds to account for object-fit: contain letterboxing
-    const bounds = videoContentBounds || { offsetX: 0, offsetY: 0, width: canvasSize.width, height: canvasSize.height }
+    const bounds = videoContentBounds || {
+      offsetX: 0,
+      offsetY: 0,
+      width: canvasSize.width,
+      height: canvasSize.height,
+    }
 
     // Clamped version that ensures coordinates stay within video bounds (used by markers)
     const clampedToCanvas = (x: number, y: number) => ({
@@ -305,9 +310,8 @@ export function TrajectoryEditor({
       const lastPointTime = localPoints[localPoints.length - 1].timestamp
       const timeRange = lastPointTime - firstPointTime
 
-      const timeRatio = timeRange > 0
-        ? Math.max(0, Math.min(1, (videoTime - firstPointTime) / timeRange))
-        : 0
+      const timeRatio =
+        timeRange > 0 ? Math.max(0, Math.min(1, (videoTime - firstPointTime) / timeRange)) : 0
 
       // Handle trajectory completion hold - keep full line visible for HOLD_DURATION after completion
       // Use real time (performance.now) so hold works even if video loops
@@ -363,7 +367,18 @@ export function TrajectoryEditor({
     return () => {
       cancelAnimationFrame(animationFrameId)
     }
-  }, [localPoints, canvasSize, videoContentBounds, showTracer, disabled, trajectory?.apex_point, landingPoint, apexPoint, originPoint, videoRef])
+  }, [
+    localPoints,
+    canvasSize,
+    videoContentBounds,
+    showTracer,
+    disabled,
+    trajectory?.apex_point,
+    landingPoint,
+    apexPoint,
+    originPoint,
+    videoRef,
+  ])
 
   // Suppress unused parameter warnings - kept for API compatibility
   void currentTime
@@ -389,43 +404,58 @@ export function TrajectoryEditor({
     // Hover effect disabled - nothing to clear
   }, [])
 
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    if (disabled || !canvasRef.current || !onCanvasClick) return
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (disabled || !canvasRef.current || !onCanvasClick) return
 
-    const canvas = canvasRef.current
-    const rect = canvas.getBoundingClientRect()
+      const canvas = canvasRef.current
+      const rect = canvas.getBoundingClientRect()
 
-    // Get click position relative to canvas (in screen/scaled coordinates)
-    const clickX = e.clientX - rect.left
-    const clickY = e.clientY - rect.top
+      // Get click position relative to canvas (in screen/scaled coordinates)
+      const clickX = e.clientX - rect.left
+      const clickY = e.clientY - rect.top
 
-    // Compute video content bounds fresh from the current (possibly CSS-scaled) rect.
-    // This avoids using stale cached bounds when zoom transforms are active.
-    const video = videoRef.current
-    let bounds: { offsetX: number; offsetY: number; width: number; height: number }
-    if (video && video.videoWidth && video.videoHeight) {
-      const videoRatio = video.videoWidth / video.videoHeight
-      const containerRatio = rect.width / rect.height
-      if (videoRatio > containerRatio) {
-        const contentHeight = rect.width / videoRatio
-        bounds = { offsetX: 0, offsetY: (rect.height - contentHeight) / 2, width: rect.width, height: contentHeight }
+      // Compute video content bounds fresh from the current (possibly CSS-scaled) rect.
+      // This avoids using stale cached bounds when zoom transforms are active.
+      const video = videoRef.current
+      let bounds: { offsetX: number; offsetY: number; width: number; height: number }
+      if (video && video.videoWidth && video.videoHeight) {
+        const videoRatio = video.videoWidth / video.videoHeight
+        const containerRatio = rect.width / rect.height
+        if (videoRatio > containerRatio) {
+          const contentHeight = rect.width / videoRatio
+          bounds = {
+            offsetX: 0,
+            offsetY: (rect.height - contentHeight) / 2,
+            width: rect.width,
+            height: contentHeight,
+          }
+        } else {
+          const contentWidth = rect.height * videoRatio
+          bounds = {
+            offsetX: (rect.width - contentWidth) / 2,
+            offsetY: 0,
+            width: contentWidth,
+            height: rect.height,
+          }
+        }
       } else {
-        const contentWidth = rect.height * videoRatio
-        bounds = { offsetX: (rect.width - contentWidth) / 2, offsetY: 0, width: contentWidth, height: rect.height }
+        // Fallback: use cached bounds or full rect when video dimensions unknown
+        bounds = videoContentBounds || {
+          offsetX: 0,
+          offsetY: 0,
+          width: rect.width,
+          height: rect.height,
+        }
       }
-    } else {
-      // Fallback: use cached bounds or full rect when video dimensions unknown
-      bounds = videoContentBounds || { offsetX: 0, offsetY: 0, width: rect.width, height: rect.height }
-    }
 
-    const x = (clickX - bounds.offsetX) / bounds.width
-    const y = (clickY - bounds.offsetY) / bounds.height
+      const x = (clickX - bounds.offsetX) / bounds.width
+      const y = (clickY - bounds.offsetY) / bounds.height
 
-    onCanvasClick(
-      Math.max(0, Math.min(1, x)),
-      Math.max(0, Math.min(1, y))
-    )
-  }, [disabled, onCanvasClick, videoRef, videoContentBounds])
+      onCanvasClick(Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y)))
+    },
+    [disabled, onCanvasClick, videoRef, videoContentBounds],
+  )
 
   if (!showTracer) return null
 
@@ -433,19 +463,19 @@ export function TrajectoryEditor({
   const getCursor = () => {
     // Origin marking takes priority when active
     if (isMarkingOrigin) {
-      return svgToCursor(originCursorSvg, 16, 16)  // Hotspot at center of circle
+      return svgToCursor(originCursorSvg, 16, 16) // Hotspot at center of circle
     }
     // Apex marking takes priority when active
     if (isMarkingApex) {
-      return svgToCursor(apexCursorSvg, 16, 16)  // Hotspot at center of diamond
+      return svgToCursor(apexCursorSvg, 16, 16) // Hotspot at center of diamond
     }
     // Landing re-marking mode
     if (isMarkingLanding) {
-      return svgToCursor(landingCursorSvg, 16, 28)  // Hotspot at arrow tip
+      return svgToCursor(landingCursorSvg, 16, 28) // Hotspot at arrow tip
     }
     switch (markingStep) {
       case 'marking_landing':
-        return svgToCursor(landingCursorSvg, 16, 28)  // Hotspot at arrow tip
+        return svgToCursor(landingCursorSvg, 16, 28) // Hotspot at arrow tip
       default:
         return 'default'
     }

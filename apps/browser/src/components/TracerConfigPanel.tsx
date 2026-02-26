@@ -59,14 +59,14 @@ export function TracerConfigPanel({
     (height: HeightOption) => {
       onChange({ ...config, height })
     },
-    [config, onChange]
+    [config, onChange],
   )
 
   const handleShapeChange = useCallback(
     (shape: ShapeOption) => {
       onChange({ ...config, shape })
     },
-    [config, onChange]
+    [config, onChange],
   )
 
   const handleFlightTimeChange = useCallback(
@@ -74,7 +74,7 @@ export function TracerConfigPanel({
       const flightTime = parseFloat(e.target.value)
       onChange({ ...config, flightTime })
     },
-    [config, onChange]
+    [config, onChange],
   )
 
   const heightOptions: { value: HeightOption; label: string }[] = [
@@ -167,9 +167,7 @@ export function TracerConfigPanel({
                     'Generate'
                   )}
                 </button>
-                {generateStatus && (
-                  <p className="generate-status">{generateStatus}</p>
-                )}
+                {generateStatus && <p className="generate-status">{generateStatus}</p>}
               </div>
             </div>
 
@@ -202,7 +200,9 @@ export function TracerConfigPanel({
                     disabled={isGenerating}
                     title={`Current: ${formatTime(impactTime ?? 0)} - Click to set to current video position`}
                   >
-                    {impactTimeAdjusted ? `Adjusted: ${formatTime(impactTime ?? 0)}` : 'Set to Playhead'}
+                    {impactTimeAdjusted
+                      ? `Adjusted: ${formatTime(impactTime ?? 0)}`
+                      : 'Set to Playhead'}
                   </button>
                   <span className="optional-hint">(if auto wrong)</span>
                 </div>
@@ -218,7 +218,11 @@ export function TracerConfigPanel({
                   className={`btn-option btn-origin ${originMarked ? 'marked' : ''}`}
                   onClick={onMarkOrigin}
                   disabled={isGenerating}
-                  title={originMarked ? 'Click to re-mark where ball starts' : 'Click to mark where ball starts on video'}
+                  title={
+                    originMarked
+                      ? 'Click to re-mark where ball starts'
+                      : 'Click to mark where ball starts on video'
+                  }
                 >
                   {originMarked ? 'Re-mark Origin' : 'Mark on Video'}
                 </button>
@@ -233,9 +237,17 @@ export function TracerConfigPanel({
                     className={`btn-option btn-landing ${landingMarked ? 'marked' : ''}`}
                     onClick={onMarkLanding}
                     disabled={isGenerating || isMarkingLanding}
-                    title={landingMarked ? 'Click to re-mark where ball landed' : 'Click to mark where ball landed on video'}
+                    title={
+                      landingMarked
+                        ? 'Click to re-mark where ball landed'
+                        : 'Click to mark where ball landed on video'
+                    }
                   >
-                    {isMarkingLanding ? 'Click on video...' : landingMarked ? 'Re-mark Landing' : 'Mark on Video'}
+                    {isMarkingLanding
+                      ? 'Click on video...'
+                      : landingMarked
+                        ? 'Re-mark Landing'
+                        : 'Mark on Video'}
                   </button>
                 </div>
               )}
@@ -247,7 +259,9 @@ export function TracerConfigPanel({
                   className={`btn-option btn-apex ${apexMarked ? 'marked' : ''}`}
                   onClick={onMarkApex}
                   disabled={isGenerating}
-                  title={apexMarked ? 'Click to re-mark apex point' : 'Click to mark apex point on video'}
+                  title={
+                    apexMarked ? 'Click to re-mark apex point' : 'Click to mark apex point on video'
+                  }
                 >
                   {apexMarked ? 'Re-mark Apex' : 'Mark on Video'}
                 </button>
@@ -255,7 +269,6 @@ export function TracerConfigPanel({
               </div>
             </div>
           </div>
-
         </div>
       )}
     </div>

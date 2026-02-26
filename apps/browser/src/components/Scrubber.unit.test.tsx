@@ -60,7 +60,7 @@ function createMockVideoRef(options: MockVideoRefOptions): RefObject<MockVideoEl
     set currentTime(value: number) {
       _currentTime = value
       if (listeners['timeupdate']) {
-        listeners['timeupdate'].forEach(fn => fn(new Event('timeupdate')))
+        listeners['timeupdate'].forEach((fn) => fn(new Event('timeupdate')))
       }
     },
     addEventListener: vi.fn((event: string, handler: (e: Event) => void) => {
@@ -80,18 +80,18 @@ function createMockVideoRef(options: MockVideoRefOptions): RefObject<MockVideoEl
     dispatchLoadedMetadata: () => {
       _duration = duration
       if (listeners['loadedmetadata']) {
-        listeners['loadedmetadata'].forEach(fn => fn(new Event('loadedmetadata')))
+        listeners['loadedmetadata'].forEach((fn) => fn(new Event('loadedmetadata')))
       }
     },
     dispatchTimeUpdate: () => {
       if (listeners['timeupdate']) {
-        listeners['timeupdate'].forEach(fn => fn(new Event('timeupdate')))
+        listeners['timeupdate'].forEach((fn) => fn(new Event('timeupdate')))
       }
     },
     setCurrentTime: (time: number) => {
       _currentTime = time
       if (listeners['timeupdate']) {
-        listeners['timeupdate'].forEach(fn => fn(new Event('timeupdate')))
+        listeners['timeupdate'].forEach((fn) => fn(new Event('timeupdate')))
       }
     },
   } as unknown as MockVideoElement
@@ -151,12 +151,7 @@ describe('BUG 1: Inverted Time Window Calculation', () => {
       // Inverted times - invalid but should not crash
       expect(() => {
         render(
-          <Scrubber
-            videoRef={videoRef}
-            startTime={10}
-            endTime={5}
-            onTimeUpdate={onTimeUpdate}
-          />
+          <Scrubber videoRef={videoRef} startTime={10} endTime={5} onTimeUpdate={onTimeUpdate} />,
         )
       }).not.toThrow()
     })
@@ -166,12 +161,7 @@ describe('BUG 1: Inverted Time Window Calculation', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={10}
-          endTime={5}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={10} endTime={5} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -210,14 +200,7 @@ describe('BUG 1: Inverted Time Window Calculation', () => {
       const videoRef = createMockVideoRef({ duration: 10, durationNotLoaded: true })
       const onTimeUpdate = vi.fn()
 
-      render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={2}
-          endTime={8}
-          onTimeUpdate={onTimeUpdate}
-        />
-      )
+      render(<Scrubber videoRef={videoRef} startTime={2} endTime={8} onTimeUpdate={onTimeUpdate} />)
 
       // Before loadedmetadata, duration is NaN
       const playhead = document.querySelector('.scrubber-playhead')
@@ -242,12 +225,7 @@ describe('BUG 1: Inverted Time Window Calculation', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={0}
-          endTime={0.5}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={0} endTime={0.5} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -307,7 +285,7 @@ describe('BUG 2: Division by Zero Prevention', () => {
           startTime={5}
           endTime={5} // Same as start - zero duration
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
 
       act(() => {
@@ -338,12 +316,7 @@ describe('BUG 2: Division by Zero Prevention', () => {
 
       // Very small difference
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={5}
-          endTime={5.001}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={5} endTime={5.001} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -362,14 +335,7 @@ describe('BUG 2: Division by Zero Prevention', () => {
       const videoRef = createMockVideoRef({ duration: 10 })
       const onTimeUpdate = vi.fn()
 
-      render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={5}
-          endTime={5}
-          onTimeUpdate={onTimeUpdate}
-        />
-      )
+      render(<Scrubber videoRef={videoRef} startTime={5} endTime={5} onTimeUpdate={onTimeUpdate} />)
 
       act(() => {
         videoRef.current!.dispatchLoadedMetadata()
@@ -389,14 +355,7 @@ describe('BUG 2: Division by Zero Prevention', () => {
       const videoRef = createMockVideoRef({ duration: 10, currentTime: 0 })
       const onTimeUpdate = vi.fn()
 
-      render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={2}
-          endTime={8}
-          onTimeUpdate={onTimeUpdate}
-        />
-      )
+      render(<Scrubber videoRef={videoRef} startTime={2} endTime={8} onTimeUpdate={onTimeUpdate} />)
 
       act(() => {
         videoRef.current!.dispatchLoadedMetadata()
@@ -424,12 +383,7 @@ describe('BUG 2: Division by Zero Prevention', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={5}
-          endTime={15}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={5} endTime={15} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -466,12 +420,7 @@ describe('BUG 3: Playhead Video Playback Tracking', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={0}
-          endTime={10}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={0} endTime={10} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -502,12 +451,7 @@ describe('BUG 3: Playhead Video Playback Tracking', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={0}
-          endTime={10}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={0} endTime={10} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -543,22 +487,17 @@ describe('BUG 3: Playhead Video Playback Tracking', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={0}
-          endTime={10}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={0} endTime={10} onTimeUpdate={onTimeUpdate} />,
       )
 
       // Check that addEventListener was called for both events
       expect(videoRef.current!.addEventListener).toHaveBeenCalledWith(
         'loadedmetadata',
-        expect.any(Function)
+        expect.any(Function),
       )
       expect(videoRef.current!.addEventListener).toHaveBeenCalledWith(
         'timeupdate',
-        expect.any(Function)
+        expect.any(Function),
       )
     })
 
@@ -567,12 +506,7 @@ describe('BUG 3: Playhead Video Playback Tracking', () => {
       const onTimeUpdate = vi.fn()
 
       const { unmount } = render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={0}
-          endTime={10}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={0} endTime={10} onTimeUpdate={onTimeUpdate} />,
       )
 
       unmount()
@@ -580,11 +514,11 @@ describe('BUG 3: Playhead Video Playback Tracking', () => {
       // Check that removeEventListener was called for both events
       expect(videoRef.current!.removeEventListener).toHaveBeenCalledWith(
         'loadedmetadata',
-        expect.any(Function)
+        expect.any(Function),
       )
       expect(videoRef.current!.removeEventListener).toHaveBeenCalledWith(
         'timeupdate',
-        expect.any(Function)
+        expect.any(Function),
       )
     })
   })
@@ -595,12 +529,7 @@ describe('BUG 3: Playhead Video Playback Tracking', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={5}
-          endTime={15}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={5} endTime={15} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -622,12 +551,7 @@ describe('BUG 3: Playhead Video Playback Tracking', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={5}
-          endTime={15}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={5} endTime={15} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -670,14 +594,7 @@ describe('Combined Edge Cases', () => {
     const onTimeUpdate = vi.fn()
 
     expect(() => {
-      render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={0}
-          endTime={0}
-          onTimeUpdate={onTimeUpdate}
-        />
-      )
+      render(<Scrubber videoRef={videoRef} startTime={0} endTime={0} onTimeUpdate={onTimeUpdate} />)
     }).not.toThrow()
 
     // All elements should render without NaN positions
@@ -702,12 +619,7 @@ describe('Combined Edge Cases', () => {
     // Negative times are invalid but shouldn't crash
     expect(() => {
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={-5}
-          endTime={5}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={-5} endTime={5} onTimeUpdate={onTimeUpdate} />,
       )
     }).not.toThrow()
   })
@@ -723,7 +635,7 @@ describe('Combined Edge Cases', () => {
           startTime={400000}
           endTime={600000}
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
     }).not.toThrow()
 
@@ -752,7 +664,7 @@ describe('Combined Edge Cases', () => {
           startTime={0}
           endTime={Infinity}
           onTimeUpdate={onTimeUpdate}
-        />
+        />,
       )
     }).not.toThrow()
   })
@@ -785,12 +697,7 @@ describe('Window Calculation Verification', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={20}
-          endTime={30}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={20} endTime={30} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -809,12 +716,7 @@ describe('Window Calculation Verification', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={2}
-          endTime={10}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={2} endTime={10} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -831,12 +733,7 @@ describe('Window Calculation Verification', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={10}
-          endTime={18}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={10} endTime={18} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -857,14 +754,7 @@ describe('Window Calculation Verification', () => {
       // rawWindowEnd = min(10, 5+5) = 10
       // windowEnd = max(10, 0+1) = 10
       // This works, but let's test when rawWindowEnd < windowStart + 1
-      render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={5}
-          endTime={5}
-          onTimeUpdate={onTimeUpdate}
-        />
-      )
+      render(<Scrubber videoRef={videoRef} startTime={5} endTime={5} onTimeUpdate={onTimeUpdate} />)
 
       act(() => {
         videoRef.current!.dispatchLoadedMetadata()
@@ -885,12 +775,7 @@ describe('Window Calculation Verification', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={25}
-          endTime={75}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={25} endTime={75} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -909,12 +794,7 @@ describe('Window Calculation Verification', () => {
       const onTimeUpdate = vi.fn()
 
       render(
-        <Scrubber
-          videoRef={videoRef}
-          startTime={25}
-          endTime={75}
-          onTimeUpdate={onTimeUpdate}
-        />
+        <Scrubber videoRef={videoRef} startTime={25} endTime={75} onTimeUpdate={onTimeUpdate} />,
       )
 
       act(() => {
@@ -954,7 +834,7 @@ describe('Disabled State Edge Cases', () => {
         endTime={8}
         onTimeUpdate={onTimeUpdate}
         disabled={true}
-      />
+      />,
     )
 
     act(() => {
@@ -982,7 +862,7 @@ describe('Disabled State Edge Cases', () => {
         endTime={10}
         onTimeUpdate={onTimeUpdate}
         disabled={true}
-      />
+      />,
     )
 
     const container = document.querySelector('.scrubber-container')

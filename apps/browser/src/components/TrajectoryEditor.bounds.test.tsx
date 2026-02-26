@@ -75,7 +75,7 @@ function createMockVideoRef(
   containerWidth = 800,
   containerHeight = 450,
   videoWidth = 1920,
-  videoHeight = 1080
+  videoHeight = 1080,
 ) {
   const video = {
     getBoundingClientRect: () => ({
@@ -174,7 +174,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
         landingPoint={{ x: 0.8, y: 0.75 }}
         apexPoint={{ x: 0.6, y: 0.3 }}
         originPoint={{ x: 0.5, y: 0.85 }}
-      />
+      />,
     )
 
     act(() => {
@@ -183,7 +183,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       }
     })
 
-    const outOfBoundsCoords = capturedCoordinates.filter(coord => {
+    const outOfBoundsCoords = capturedCoordinates.filter((coord) => {
       const tolerance = 10
       return (
         coord.x < -tolerance ||
@@ -196,17 +196,19 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
     expect(outOfBoundsCoords).toHaveLength(0)
 
     if (capturedCoordinates.length > 0) {
-      const maxX = Math.max(...capturedCoordinates.map(c => c.x))
-      const maxY = Math.max(...capturedCoordinates.map(c => c.y))
-      const minX = Math.min(...capturedCoordinates.map(c => c.x))
-      const minY = Math.min(...capturedCoordinates.map(c => c.y))
+      const maxX = Math.max(...capturedCoordinates.map((c) => c.x))
+      const maxY = Math.max(...capturedCoordinates.map((c) => c.y))
+      const minX = Math.min(...capturedCoordinates.map((c) => c.x))
+      const minY = Math.min(...capturedCoordinates.map((c) => c.y))
 
       expect(maxX).toBeLessThanOrEqual(containerWidth + 10)
       expect(maxY).toBeLessThanOrEqual(containerHeight + 10)
       expect(minX).toBeGreaterThanOrEqual(-10)
       expect(minY).toBeGreaterThanOrEqual(-10)
 
-      console.log(`Coordinate ranges: X [${minX.toFixed(0)}, ${maxX.toFixed(0)}], Y [${minY.toFixed(0)}, ${maxY.toFixed(0)}]`)
+      console.log(
+        `Coordinate ranges: X [${minX.toFixed(0)}, ${maxX.toFixed(0)}], Y [${minY.toFixed(0)}, ${maxY.toFixed(0)}]`,
+      )
       console.log(`Container bounds: [0, ${containerWidth}] x [0, ${containerHeight}]`)
     }
 
@@ -244,7 +246,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
           currentTime={1.5}
           showTracer={true}
           landingPoint={{ x: 0.8, y: 0.75 }}
-        />
+        />,
       )
 
       act(() => {
@@ -269,8 +271,8 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       }
 
       // If coordinates are at 2x scale, they would be > 800 for x
-      const coordsAt2xScale = capturedCoordinates.filter(c =>
-        c.x > containerWidth || c.y > containerHeight
+      const coordsAt2xScale = capturedCoordinates.filter(
+        (c) => c.x > containerWidth || c.y > containerHeight,
       )
 
       // This test should FAIL if the bug exists (coordinates at 2x scale)
@@ -299,7 +301,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
           currentTime={1.5}
           showTracer={true}
           landingPoint={{ x: 0.8, y: 0.75 }}
-        />
+        />,
       )
 
       act(() => {
@@ -309,8 +311,8 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       })
 
       // Coordinates should NOT be at 3x scale
-      const coordsAt3xScale = capturedCoordinates.filter(c =>
-        c.x > containerWidth + 50 || c.y > containerHeight + 50
+      const coordsAt3xScale = capturedCoordinates.filter(
+        (c) => c.x > containerWidth + 50 || c.y > containerHeight + 50,
       )
 
       expect(coordsAt3xScale.length).toBe(0)
@@ -332,7 +334,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
           currentTime={1.5}
           showTracer={true}
           landingPoint={{ x: 0.8, y: 0.75 }}
-        />
+        />,
       )
 
       const canvas = container.querySelector('canvas')
@@ -366,7 +368,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
           trajectory={createMockTrajectory()}
           currentTime={1.5}
           showTracer={true}
-        />
+        />,
       )
 
       const canvas = container.querySelector('canvas')
@@ -375,7 +377,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       if (canvas) {
         // z-index should be set to layer canvas above video
         const zIndex = parseInt(canvas.style.zIndex || '0', 10)
-        expect(zIndex).toBeGreaterThan(0)  // Should have explicit z-index
+        expect(zIndex).toBeGreaterThan(0) // Should have explicit z-index
 
         // The component sets z-index: 10 (line 607)
         expect(zIndex).toBe(10)
@@ -399,7 +401,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
           currentTime={1.5}
           showTracer={true}
           landingPoint={{ x: 0.8, y: 0.75 }}
-        />
+        />,
       )
 
       act(() => {
@@ -412,7 +414,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
 
       // Should either not draw, or draw valid coordinates
       if (capturedCoordinates.length > 0) {
-        const allAtZero = capturedCoordinates.every(c => c.x === 0 && c.y === 0)
+        const allAtZero = capturedCoordinates.every((c) => c.x === 0 && c.y === 0)
         expect(allAtZero).toBe(false)
       }
 
@@ -430,7 +432,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
           currentTime={1.5}
           showTracer={true}
           landingPoint={{ x: 0.8, y: 0.75 }}
-        />
+        />,
       )
 
       act(() => {
@@ -463,7 +465,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
           landingPoint={{ x: 0.8, y: 0.75 }}
           apexPoint={{ x: 0.6, y: 0.3 }}
           originPoint={{ x: 0.5, y: 0.85 }}
-        />
+        />,
       )
 
       act(() => {
@@ -498,7 +500,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
           currentTime={1.5}
           showTracer={true}
           landingPoint={{ x: 0.8, y: 0.75 }}
-        />
+        />,
       )
 
       act(() => {
@@ -543,7 +545,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       expect(toCanvas(1, 1)).toEqual({ x: 700, y: 450 })
       expect(toCanvas(0.5, 0.5)).toEqual({ x: 400, y: 225 })
 
-      const testPoints = [0, 0.25, 0.5, 0.75, 1].map(x => toCanvas(x, 0.5))
+      const testPoints = [0, 0.25, 0.5, 0.75, 1].map((x) => toCanvas(x, 0.5))
       for (const point of testPoints) {
         expect(point.x).toBeGreaterThanOrEqual(100)
         expect(point.x).toBeLessThanOrEqual(700)
@@ -596,7 +598,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
         apex_point: {
           timestamp: 1,
           x: 0.6,
-          y: -0.15,  // BUG: Negative Y coordinate - will render ABOVE the video!
+          y: -0.15, // BUG: Negative Y coordinate - will render ABOVE the video!
           confidence: 0.9,
           interpolated: true,
         },
@@ -608,9 +610,9 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
         <TrajectoryEditor
           videoRef={videoRef}
           trajectory={buggyTrajectory}
-          currentTime={1}  // At apex time
+          currentTime={1} // At apex time
           showTracer={true}
-        />
+        />,
       )
 
       act(() => {
@@ -620,7 +622,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       })
 
       // Find coordinates that are out of bounds
-      const outOfBoundsCoords = capturedCoordinates.filter(coord => {
+      const outOfBoundsCoords = capturedCoordinates.filter((coord) => {
         return coord.x < 0 || coord.x > containerWidth || coord.y < 0 || coord.y > containerHeight
       })
 
@@ -650,8 +652,8 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
           trajectory={null}
           currentTime={0}
           showTracer={true}
-          originPoint={{ x: 1.2, y: 0.5 }}  // BUG: x > 1 - outside video!
-        />
+          originPoint={{ x: 1.2, y: 0.5 }} // BUG: x > 1 - outside video!
+        />,
       )
 
       act(() => {
@@ -661,7 +663,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       })
 
       // Origin at x=1.2 would render at 1.2 * 800 = 960, outside the 800px container
-      const outOfBoundsCoords = capturedCoordinates.filter(coord => {
+      const outOfBoundsCoords = capturedCoordinates.filter((coord) => {
         return coord.x > containerWidth + 20 || coord.y > containerHeight + 20
       })
 
@@ -686,7 +688,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       const extremeTrajectory = {
         points: [
           { timestamp: 0, x: 0.1, y: 0.9, confidence: 1, interpolated: false },
-          { timestamp: 0.5, x: 0.5, y: -0.2, confidence: 0.9, interpolated: true },  // Way above frame!
+          { timestamp: 0.5, x: 0.5, y: -0.2, confidence: 0.9, interpolated: true }, // Way above frame!
           { timestamp: 1, x: 0.9, y: 0.9, confidence: 0.9, interpolated: true },
         ],
         apex_point: { timestamp: 0.5, x: 0.5, y: -0.2, confidence: 0.9, interpolated: true },
@@ -700,7 +702,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
           trajectory={extremeTrajectory}
           currentTime={0.5}
           showTracer={true}
-        />
+        />,
       )
 
       act(() => {
@@ -710,7 +712,7 @@ describe('TrajectoryEditor Bounds Bug Verification', () => {
       })
 
       // Any coordinate at y=-0.2 would render at y = -0.2 * 450 = -90 (above the container)
-      const coordsBelowZero = capturedCoordinates.filter(coord => coord.y < 0)
+      const coordsBelowZero = capturedCoordinates.filter((coord) => coord.y < 0)
 
       if (coordsBelowZero.length > 0) {
         console.log('BUG DETECTED: Trajectory renders above video (negative Y coordinates)')

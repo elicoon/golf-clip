@@ -25,7 +25,7 @@
 .export-options-loading {
   text-align: center;
   padding: 40px;
-  color: #888;
+  color: #999;
 }
 
 .export-options-grid {
@@ -89,7 +89,7 @@
 
 .export-option-badge.unavailable {
   background: rgba(255, 255, 255, 0.1);
-  color: #888;
+  color: #aaa;
 }
 
 .export-option-description {
@@ -128,7 +128,7 @@
 
 .export-options-details {
   font-size: 0.8rem;
-  color: #888;
+  color: #999;
 }
 
 .export-options-details summary {
@@ -155,7 +155,7 @@
 }
 
 .detail-label {
-  color: #888;
+  color: #999;
 }
 
 .detail-value {

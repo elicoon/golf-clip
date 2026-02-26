@@ -63,8 +63,10 @@ export interface ExportConfigV4 {
  * Check if requestVideoFrameCallback is supported
  */
 export function isVideoFrameCallbackSupported(): boolean {
-  return typeof HTMLVideoElement !== 'undefined' &&
+  return (
+    typeof HTMLVideoElement !== 'undefined' &&
     'requestVideoFrameCallback' in HTMLVideoElement.prototype
+  )
 }
 
 /**
@@ -86,7 +88,9 @@ export class VideoFramePipelineV4 {
     } = config
 
     if (!isVideoFrameCallbackSupported()) {
-      throw new Error('requestVideoFrameCallback is not supported in this browser. Use V3 pipeline instead.')
+      throw new Error(
+        'requestVideoFrameCallback is not supported in this browser. Use V3 pipeline instead.',
+      )
     }
 
     // Check if already aborted
@@ -117,7 +121,7 @@ export class VideoFramePipelineV4 {
       const elapsed = performance.now() - pipelineStartMs
       if (elapsed > timeoutMs) {
         throw new ExportTimeoutError(
-          `Export timed out after ${Math.round(elapsed / 1000)}s. Try a shorter clip or lower resolution.`
+          `Export timed out after ${Math.round(elapsed / 1000)}s. Try a shorter clip or lower resolution.`,
         )
       }
     }
@@ -163,7 +167,11 @@ export class VideoFramePipelineV4 {
         video.onloadedmetadata = () => resolve()
         video.onerror = () => reject(new Error('Failed to load video'))
         // Also reject on abort during metadata loading
-        abortSignal?.addEventListener('abort', () => reject(new DOMException('Export cancelled', 'AbortError')), { once: true })
+        abortSignal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('Export cancelled', 'AbortError')),
+          { once: true },
+        )
       })
 
       const sourceWidth = video.videoWidth
@@ -185,14 +193,28 @@ export class VideoFramePipelineV4 {
         }
       }
 
-      console.log('[PipelineV4] Resolution:', sourceWidth, 'x', sourceHeight, '->', width, 'x', height)
+      console.log(
+        '[PipelineV4] Resolution:',
+        sourceWidth,
+        'x',
+        sourceHeight,
+        '->',
+        width,
+        'x',
+        height,
+      )
 
       // Estimate fps from video (default to 30 if not available)
       // We'll use the actual frame timestamps from requestVideoFrameCallback
       const estimatedFps = 30
       const estimatedTotalFrames = Math.ceil(duration * estimatedFps)
 
-      console.log('[PipelineV4] Video loaded:', { width, height, estimatedFps, estimatedTotalFrames })
+      console.log('[PipelineV4] Video loaded:', {
+        width,
+        height,
+        estimatedFps,
+        estimatedTotalFrames,
+      })
 
       // Create canvas for compositing
       const canvas = document.createElement('canvas')
@@ -249,7 +271,12 @@ export class VideoFramePipelineV4 {
         bitrateMode: 'variable',
       })
 
-      onProgress?.({ phase: 'encoding', progress: 0, currentFrame: 0, totalFrames: estimatedTotalFrames })
+      onProgress?.({
+        phase: 'encoding',
+        progress: 0,
+        currentFrame: 0,
+        totalFrames: estimatedTotalFrames,
+      })
 
       // Phase 4: Seek to start time
       checkAborted()
@@ -296,11 +323,17 @@ export class VideoFramePipelineV4 {
           stallTimer = setTimeout(() => {
             if (!isCapturing) return
             isCapturing = false
-            console.error('[PipelineV4] Stall detected — no frame callback for', stallTimeoutMs, 'ms')
-            reject(new ExportTimeoutError(
-              `Export stalled — no video frames received for ${Math.round(stallTimeoutMs / 1000)}s. ` +
-              'The browser may be throttling. Try keeping this tab focused, or use a shorter clip or lower resolution.'
-            ))
+            console.error(
+              '[PipelineV4] Stall detected — no frame callback for',
+              stallTimeoutMs,
+              'ms',
+            )
+            reject(
+              new ExportTimeoutError(
+                `Export stalled — no video frames received for ${Math.round(stallTimeoutMs / 1000)}s. ` +
+                  'The browser may be throttling. Try keeping this tab focused, or use a shorter clip or lower resolution.',
+              ),
+            )
           }, stallTimeoutMs)
         }
 
@@ -314,7 +347,10 @@ export class VideoFramePipelineV4 {
         }
         abortSignal?.addEventListener('abort', onAbort, { once: true })
 
-        const captureFrame = async (now: DOMHighResTimeStamp, metadata: VideoFrameCallbackMetadata) => {
+        const captureFrame = async (
+          now: DOMHighResTimeStamp,
+          metadata: VideoFrameCallbackMetadata,
+        ) => {
           if (!isCapturing) return
 
           // Reset stall detection
@@ -348,9 +384,10 @@ export class VideoFramePipelineV4 {
             if (stallTimer !== null) clearTimeout(stallTimer)
             abortSignal?.removeEventListener('abort', onAbort)
             // DIAGNOSTIC: Log capture statistics
-            const avgInterval = callbackIntervals.length > 0
-              ? callbackIntervals.reduce((a, b) => a + b, 0) / callbackIntervals.length
-              : 0
+            const avgInterval =
+              callbackIntervals.length > 0
+                ? callbackIntervals.reduce((a, b) => a + b, 0) / callbackIntervals.length
+                : 0
             const maxInterval = callbackIntervals.length > 0 ? Math.max(...callbackIntervals) : 0
             const minInterval = callbackIntervals.length > 0 ? Math.min(...callbackIntervals) : 0
             console.log('[PipelineV4] DIAGNOSTIC - Callback stats:', {
@@ -400,9 +437,17 @@ export class VideoFramePipelineV4 {
             // Track actual first frame time for audio sync (may differ from startTime due to keyframe seeking)
             if (capturedBitmaps.length === 0) {
               actualCaptureStartTime = currentVideoTime
-              console.log('[PipelineV4] First bitmap captured:', bitmap.width, 'x', bitmap.height,
-                'at video time:', currentVideoTime.toFixed(3) + 's',
-                '(requested:', startTime.toFixed(3) + 's, drift:', ((currentVideoTime - startTime) * 1000).toFixed(1) + 'ms)')
+              console.log(
+                '[PipelineV4] First bitmap captured:',
+                bitmap.width,
+                'x',
+                bitmap.height,
+                'at video time:',
+                currentVideoTime.toFixed(3) + 's',
+                '(requested:',
+                startTime.toFixed(3) + 's, drift:',
+                ((currentVideoTime - startTime) * 1000).toFixed(1) + 'ms)',
+              )
             }
 
             capturedBitmaps.push({ bitmap, timeUs: relativeTimeUs })
@@ -500,7 +545,14 @@ export class VideoFramePipelineV4 {
         // Correct: relativeTime + startTime gives absolute video time matching trajectory timestamps
         const relativeTime = timeUs / 1_000_000
         const trajectoryTime = relativeTime + startTime
-        drawTracerLine({ ctx, points: trajectory, currentTime: trajectoryTime, width, height, style: tracerStyle })
+        drawTracerLine({
+          ctx,
+          points: trajectory,
+          currentTime: trajectoryTime,
+          width,
+          height,
+          style: tracerStyle,
+        })
 
         // Create VideoFrame and encode
         const frame = new VideoFrame(canvas, {
@@ -550,16 +602,33 @@ export class VideoFramePipelineV4 {
       const elapsedMs = performance.now() - pipelineStartMs
       const actualFps = capturedBitmaps.length / duration
       console.log('[PipelineV4] Export complete in', (elapsedMs / 1000).toFixed(1), 'seconds')
-      console.log('[PipelineV4] Captured', capturedBitmaps.length, 'frames at', actualFps.toFixed(1), 'fps effective')
-      console.log('[PipelineV4] Export speed:', (duration / (elapsedMs / 1000)).toFixed(2) + 'x realtime')
-      console.log('[PipelineV4] Actual capture start:', actualCaptureStartTime.toFixed(3) + 's',
-        '(requested:', startTime.toFixed(3) + 's)')
+      console.log(
+        '[PipelineV4] Captured',
+        capturedBitmaps.length,
+        'frames at',
+        actualFps.toFixed(1),
+        'fps effective',
+      )
+      console.log(
+        '[PipelineV4] Export speed:',
+        (duration / (elapsedMs / 1000)).toFixed(2) + 'x realtime',
+      )
+      console.log(
+        '[PipelineV4] Actual capture start:',
+        actualCaptureStartTime.toFixed(3) + 's',
+        '(requested:',
+        startTime.toFixed(3) + 's)',
+      )
 
       return { blob: resultBlob, actualStartTime: actualCaptureStartTime }
     } catch (error) {
       // Close any captured bitmaps to free GPU memory on error/abort
       for (const { bitmap } of capturedBitmaps) {
-        try { bitmap.close() } catch { /* already closed */ }
+        try {
+          bitmap.close()
+        } catch {
+          /* already closed */
+        }
       }
       // Always clean up video element on error
       cleanup()

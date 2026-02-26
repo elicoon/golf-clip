@@ -18,76 +18,178 @@ export function createMockVideoBlob(codec: 'h264' | 'hevc' | 'vp9' | 'invalid'):
     case 'h264':
       // MP4 with H.264 - ftyp box followed by avc1 reference
       // Minimal MP4 header structure
-      return new Blob([
-        new Uint8Array([
-          // ftyp box (file type)
-          0x00, 0x00, 0x00, 0x14, // box size (20 bytes)
-          0x66, 0x74, 0x79, 0x70, // 'ftyp'
-          0x69, 0x73, 0x6f, 0x6d, // 'isom' brand
-          0x00, 0x00, 0x02, 0x00, // minor version
-          0x69, 0x73, 0x6f, 0x6d, // compatible brand 'isom'
-          // moov box marker with avc1
-          0x00, 0x00, 0x00, 0x20, // size
-          0x6d, 0x6f, 0x6f, 0x76, // 'moov'
-          // Include 'avc1' marker for H.264 detection
-          0x61, 0x76, 0x63, 0x31, // 'avc1'
-          // Padding
-          0x00, 0x00, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00,
-        ])
-      ], { type: 'video/mp4' })
+      return new Blob(
+        [
+          new Uint8Array([
+            // ftyp box (file type)
+            0x00,
+            0x00,
+            0x00,
+            0x14, // box size (20 bytes)
+            0x66,
+            0x74,
+            0x79,
+            0x70, // 'ftyp'
+            0x69,
+            0x73,
+            0x6f,
+            0x6d, // 'isom' brand
+            0x00,
+            0x00,
+            0x02,
+            0x00, // minor version
+            0x69,
+            0x73,
+            0x6f,
+            0x6d, // compatible brand 'isom'
+            // moov box marker with avc1
+            0x00,
+            0x00,
+            0x00,
+            0x20, // size
+            0x6d,
+            0x6f,
+            0x6f,
+            0x76, // 'moov'
+            // Include 'avc1' marker for H.264 detection
+            0x61,
+            0x76,
+            0x63,
+            0x31, // 'avc1'
+            // Padding
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+          ]),
+        ],
+        { type: 'video/mp4' },
+      )
 
     case 'hevc':
       // MP4 with HEVC/H.265 - ftyp box followed by hvc1 reference
-      return new Blob([
-        new Uint8Array([
-          // ftyp box
-          0x00, 0x00, 0x00, 0x14,
-          0x66, 0x74, 0x79, 0x70, // 'ftyp'
-          0x69, 0x73, 0x6f, 0x6d, // 'isom'
-          0x00, 0x00, 0x02, 0x00,
-          0x69, 0x73, 0x6f, 0x6d,
-          // moov with hvc1
-          0x00, 0x00, 0x00, 0x20,
-          0x6d, 0x6f, 0x6f, 0x76, // 'moov'
-          // Include 'hvc1' marker for HEVC detection
-          0x68, 0x76, 0x63, 0x31, // 'hvc1'
-          0x00, 0x00, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00,
-        ])
-      ], { type: 'video/mp4' })
+      return new Blob(
+        [
+          new Uint8Array([
+            // ftyp box
+            0x00,
+            0x00,
+            0x00,
+            0x14,
+            0x66,
+            0x74,
+            0x79,
+            0x70, // 'ftyp'
+            0x69,
+            0x73,
+            0x6f,
+            0x6d, // 'isom'
+            0x00,
+            0x00,
+            0x02,
+            0x00,
+            0x69,
+            0x73,
+            0x6f,
+            0x6d,
+            // moov with hvc1
+            0x00,
+            0x00,
+            0x00,
+            0x20,
+            0x6d,
+            0x6f,
+            0x6f,
+            0x76, // 'moov'
+            // Include 'hvc1' marker for HEVC detection
+            0x68,
+            0x76,
+            0x63,
+            0x31, // 'hvc1'
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+          ]),
+        ],
+        { type: 'video/mp4' },
+      )
 
     case 'vp9':
       // WebM with VP9
-      return new Blob([
-        new Uint8Array([
-          // WebM EBML header
-          0x1a, 0x45, 0xdf, 0xa3, // EBML signature
-          0x01, 0x00, 0x00, 0x00, // size
-          0x00, 0x00, 0x00, 0x1f,
-          0x42, 0x86, 0x81, 0x01, // EBMLVersion
-          0x42, 0xf7, 0x81, 0x01, // EBMLReadVersion
-          // VP9 codec marker
-          0x56, 0x50, 0x39, 0x30, // 'VP90'
-          0x00, 0x00, 0x00, 0x00,
-          0x00, 0x00, 0x00, 0x00,
-        ])
-      ], { type: 'video/webm' })
+      return new Blob(
+        [
+          new Uint8Array([
+            // WebM EBML header
+            0x1a,
+            0x45,
+            0xdf,
+            0xa3, // EBML signature
+            0x01,
+            0x00,
+            0x00,
+            0x00, // size
+            0x00,
+            0x00,
+            0x00,
+            0x1f,
+            0x42,
+            0x86,
+            0x81,
+            0x01, // EBMLVersion
+            0x42,
+            0xf7,
+            0x81,
+            0x01, // EBMLReadVersion
+            // VP9 codec marker
+            0x56,
+            0x50,
+            0x39,
+            0x30, // 'VP90'
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+          ]),
+        ],
+        { type: 'video/webm' },
+      )
 
     case 'invalid':
     default:
       // Random bytes that don't form a valid video container
-      return new Blob([
-        new Uint8Array([
-          0x00, 0x01, 0x02, 0x03,
-          0x04, 0x05, 0x06, 0x07,
-          0x08, 0x09, 0x0a, 0x0b,
-        ])
-      ], { type: 'video/mp4' })
+      return new Blob(
+        [new Uint8Array([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b])],
+        { type: 'video/mp4' },
+      )
   }
 }
 
@@ -145,7 +247,7 @@ export function createMockVideoElement(options: MockVideoOptions): MockVideoElem
     videoHeight: canPlay ? videoHeight : 0,
     paused: true,
     currentTime: 0,
-    error: (error && !canPlay) ? { code: 4, message: error } : null,
+    error: error && !canPlay ? { code: 4, message: error } : null,
 
     play: async () => {
       if (!canPlay) {
@@ -180,7 +282,7 @@ export function createMockVideoElement(options: MockVideoOptions): MockVideoElem
 
     dispatchEvent: (event: { type: string }) => {
       if (listeners[event.type]) {
-        listeners[event.type].forEach(handler => handler())
+        listeners[event.type].forEach((handler) => handler())
       }
     },
   }
@@ -234,7 +336,10 @@ export function assertVideoNotBlack(videoElement: VideoElementLike): boolean {
  * Useful for testing async video loading.
  * Works with both real HTMLVideoElement and MockVideoElement.
  */
-export function waitForVideoReady(video: MockVideoElement, timeoutMs = 5000): Promise<'loaded' | 'error'> {
+export function waitForVideoReady(
+  video: MockVideoElement,
+  timeoutMs = 5000,
+): Promise<'loaded' | 'error'> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error(`Video did not load within ${timeoutMs}ms`))
