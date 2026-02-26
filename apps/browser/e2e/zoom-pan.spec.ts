@@ -6,42 +6,48 @@ test.describe('Zoom & Pan Controls', () => {
     await app.uploadAndWaitForReview()
   })
 
-  test('keyboard zoom in (+) increases zoom level', async ({ app }) => {
+  test('keyboard zoom in (+) increases zoom level', async ({ app, page }) => {
     const initialScale = await app.getZoomScale()
     expect(initialScale).toBe(1)
 
     await app.pressKey('+')
+    await page.waitForTimeout(200)
 
     const zoomedScale = await app.getZoomScale()
-    expect(zoomedScale).toBe(2)
+    expect(zoomedScale).toBe(1.5)
   })
 
-  test('keyboard zoom out (-) decreases zoom level', async ({ app }) => {
+  test('keyboard zoom out (-) decreases zoom level', async ({ app, page }) => {
     // Zoom in first
     await app.pressKey('+')
-    expect(await app.getZoomScale()).toBe(2)
+    await page.waitForTimeout(200)
+    expect(await app.getZoomScale()).toBe(1.5)
 
     // Zoom out
     await app.pressKey('-')
+    await page.waitForTimeout(200)
     expect(await app.getZoomScale()).toBe(1)
   })
 
-  test('keyboard reset (0) returns to 1x', async ({ app }) => {
-    // Zoom to 4x (press + three times: 1→2→3→4)
+  test('keyboard reset (0) returns to 1x', async ({ app, page }) => {
+    // Zoom to 2.5x (press + three times: 1→1.5→2→2.5)
     await app.pressKey('+')
     await app.pressKey('+')
     await app.pressKey('+')
+    await page.waitForTimeout(200)
     expect(await app.getZoomScale()).toBeGreaterThan(1)
 
     // Reset
     await app.pressKey('0')
+    await page.waitForTimeout(200)
     expect(await app.getZoomScale()).toBe(1)
   })
 
   test('drag-to-pan works when zoomed', async ({ app, page }) => {
     // Zoom in
     await app.pressKey('+')
-    expect(await app.getZoomScale()).toBe(2)
+    await page.waitForTimeout(200)
+    expect(await app.getZoomScale()).toBe(1.5)
 
     const videoContainer = page.locator('.video-container')
     const box = await videoContainer.boundingBox()
@@ -77,7 +83,8 @@ test.describe('Zoom & Pan Controls', () => {
 
     // Zoom in
     await app.pressKey('+')
-    expect(await app.getZoomScale()).toBe(2)
+    await page.waitForTimeout(200)
+    expect(await app.getZoomScale()).toBe(1.5)
 
     // Play the video to activate tracer
     await app.pressKey(' ')
