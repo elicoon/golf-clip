@@ -1,5 +1,9 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL, fetchFile } from '@ffmpeg/util'
+import { createLogger } from './logger'
+import { useProcessingStore } from '../stores/processingStore'
+
+const log = createLogger('ffmpeg-client')
 
 let ffmpeg: FFmpeg | null = null
 let loaded = false
@@ -14,10 +18,23 @@ export async function loadFFmpeg(): Promise<void> {
   // with core 0.12.x. The core WASM binary is loaded separately from CDN.
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
 
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-  })
+  try {
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    })
+  } catch (err) {
+    ffmpeg = null
+    const message = err instanceof Error ? err.message : String(err)
+    log.error('FFmpeg WASM failed to load', { error: message })
+
+    const userMessage = message.includes('SharedArrayBuffer')
+      ? 'Video processing requires SharedArrayBuffer support. Use Chrome or Edge with cross-origin isolation enabled.'
+      : `Failed to load video processing engine. ${message}. Try refreshing the page or using Chrome/Edge.`
+
+    useProcessingStore.getState().setInitError(userMessage)
+    throw err
+  }
 
   loaded = true
 }
@@ -82,7 +99,7 @@ export async function extractAudioFromSegment(
       ]
       const isNoAudio = noAudioPatterns.some(p => p.test(logText))
       if (isNoAudio) {
-        console.warn('[ffmpeg-client] No audio track detected. FFmpeg logs:', logText)
+        log.warn('No audio track detected', { logText })
         throw new Error(
           'This video has no audio track. GolfClip needs audio to detect golf shots.'
         )
@@ -349,7 +366,7 @@ export async function muxAudioIntoClip(
     // significantly earlier, producing audio that's longer than the video.
     // Segment blobs are short (<1min) so the speed difference is negligible.
     const duration = clipEndInSegment - clipStartInSegment
-    console.log('[muxAudio] Extracting audio:', {
+    log.info('Extracting audio', {
       start: clipStartInSegment.toFixed(3),
       duration: duration.toFixed(3),
       segmentSize: (sourceSegmentBlob.size / 1024 / 1024).toFixed(1) + 'MB',
@@ -365,7 +382,7 @@ export async function muxAudioIntoClip(
 
     if (extractExitCode !== 0) {
       // No audio track or extraction failed — return video-only
-      console.log('[muxAudio] No audio track found or extraction failed, returning video-only')
+      log.info('No audio track found or extraction failed, returning video-only')
       return videoOnlyBlob
     }
 
@@ -374,11 +391,11 @@ export async function muxAudioIntoClip(
     try {
       audioData = await ffmpeg.readFile(audioFile)
     } catch {
-      console.log('[muxAudio] Audio file not created, returning video-only')
+      log.info('Audio file not created, returning video-only')
       return videoOnlyBlob
     }
     if (!(audioData instanceof Uint8Array) || audioData.length < 100) {
-      console.log('[muxAudio] Audio file empty or too small, returning video-only')
+      log.info('Audio file empty or too small, returning video-only')
       return videoOnlyBlob
     }
 
@@ -392,18 +409,17 @@ export async function muxAudioIntoClip(
     ])
 
     if (muxExitCode !== 0) {
-      console.warn('[muxAudio] Muxing failed, returning video-only')
+      log.warn('Muxing failed, returning video-only')
       return videoOnlyBlob
     }
 
     const data = await ffmpeg.readFile(outputFile)
     if (!(data instanceof Uint8Array)) {
-      console.warn('[muxAudio] Unexpected output format, returning video-only')
+      log.warn('Unexpected output format, returning video-only')
       return videoOnlyBlob
     }
 
-    console.log('[muxAudio] Audio muxed successfully',
-      { videoSize: videoOnlyBlob.size, muxedSize: data.length })
+    log.info('Audio muxed successfully', { videoSize: videoOnlyBlob.size, muxedSize: data.length })
 
     return new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' })
   } finally {

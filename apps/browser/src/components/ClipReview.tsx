@@ -5,9 +5,12 @@ import { TrajectoryEditor } from './TrajectoryEditor'
 import { TracerConfigPanel } from './TracerConfigPanel'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { submitShotFeedback, submitTracerFeedback } from '../lib/feedback-service'
-import { VideoFramePipelineV4, ExportConfigV4, ExportResolution, ExportTimeoutError, isVideoFrameCallbackSupported } from '../lib/video-frame-pipeline-v4'
+import { VideoFramePipelineV4, ExportConfigV4, ExportResolution, ExportTimeoutError, checkWebCodecsSupport } from '../lib/video-frame-pipeline-v4'
 import { loadFFmpeg, muxAudioIntoClip } from '../lib/ffmpeg-client'
 import { generateTrajectory, Point2D } from '../lib/trajectory-generator'
+import { createLogger } from '../lib/logger'
+
+const log = createLogger('ClipReview')
 
 /** Minimum delay for trajectory generation to show loading state feedback */
 const TRAJECTORY_GENERATION_MIN_DELAY_MS = 300
@@ -27,6 +30,8 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     updateVideoSegment,
     approveVideoSegment,
     rejectVideoSegment,
+    initError,
+    setInitError,
   } = useProcessingStore()
 
   // Use multi-video segments when available, fall back to legacy segments
@@ -283,6 +288,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     }
   }, [])
 
+  // Check WebCodecs support on mount — surface error before user attempts export
+  useEffect(() => {
+    const webCodecsError = checkWebCodecsSupport()
+    if (webCodecsError) {
+      setInitError(webCodecsError)
+    }
+  }, [setInitError])
+
   // Reset marking state when shot changes
   useEffect(() => {
     setLandingPoint(null)
@@ -345,7 +358,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     const video = e.currentTarget
     const error = video.error
 
-    console.error('Video playback error:', error)
+    log.error('Video playback error', { code: error?.code, message: error?.message })
 
     let message = 'This video format is not supported by your browser.'
     if (error) {
@@ -497,8 +510,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
       return
     }
 
-    if (!isVideoFrameCallbackSupported()) {
-      alert('requestVideoFrameCallback is not supported in this browser. Please use Chrome 83+, Edge 83+, or Safari 15.4+.')
+    // Defensive: mount-time check disables the button, but guard here too for safety
+    const webCodecsError = checkWebCodecsSupport()
+    if (webCodecsError) {
+      setInitError(webCodecsError)
       return
     }
 
@@ -514,7 +529,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     exportAbortRef.current = abortController
 
     try {
-      console.log('[Export] Starting real-time capture export...')
+      log.info('Starting real-time capture export')
       const pipelineV4 = new VideoFramePipelineV4()
 
       for (let i = 0; i < approved.length; i++) {
@@ -523,7 +538,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         const segment = approved[i]
         setExportProgress({ current: i + 1, total: approved.length })
 
-        console.log('[Export] Exporting segment', i + 1, 'of', approved.length)
+        log.info('Exporting segment', { current: i + 1, total: approved.length })
 
         // Get trajectory points or empty array
         const trajectoryPoints = segment.trajectory?.points ?? []
@@ -556,7 +571,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
           const clipEnd = segment.clipEnd - segment.startTime
           exportedBlob = await muxAudioIntoClip(exportedBlob, segment.blob, audioStart, clipEnd)
         } catch (audioErr) {
-          console.warn('[ExportV4] Audio mux failed, exporting without audio:', audioErr)
+          log.warn('Audio mux failed, exporting without audio', { error: String(audioErr) })
         }
 
         // Download
@@ -582,10 +597,10 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
     } catch (error) {
       // Don't show error for user-initiated cancellation
       if (error instanceof DOMException && error.name === 'AbortError') {
-        console.log('[Export] Export cancelled by user')
+        log.info('Export cancelled by user')
         return
       }
-      console.error('[Export] Export failed:', error)
+      log.error('Export failed', { error: error instanceof Error ? error.message : String(error) })
       const isTimeout = error instanceof ExportTimeoutError
       setIsTimeoutError(isTimeout)
       setExportError(error instanceof Error ? error.message : 'Export failed')
@@ -913,6 +928,12 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <p className="review-complete-summary">
           {approvedCount} {approvedCount === 1 ? 'shot' : 'shots'} approved
         </p>
+        {initError && (
+          <div className="init-error-banner" role="alert">
+            <span className="init-error-icon">&#9888;</span>
+            <p>{initError}</p>
+          </div>
+        )}
         <div className="review-complete-actions">
           {approvedCount > 0 && (
             <>
@@ -929,7 +950,7 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
                 <button
                   onClick={handleExport}
                   className="btn-primary btn-large"
-                  disabled={!isVideoFrameCallbackSupported()}
+                  disabled={!!initError}
                 >
                   Export {approvedCount} Clip{approvedCount !== 1 ? 's' : ''}
                 </button>
@@ -1038,6 +1059,14 @@ export function ClipReview({ onComplete }: ClipReviewProps) {
         <span className="review-title">Review Shots</span>
         <span className="review-progress">{currentIndex + 1} of {totalShots}</span>
       </div>
+
+      {/* Initialization error banner (FFmpeg/WebCodecs) */}
+      {initError && (
+        <div className="init-error-banner" role="alert">
+          <span className="init-error-icon">&#9888;</span>
+          <p>{initError}</p>
+        </div>
+      )}
 
       {/* Non-blocking feedback error banner */}
       {feedbackError && (

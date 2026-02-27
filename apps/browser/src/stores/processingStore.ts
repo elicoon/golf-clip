@@ -87,6 +87,9 @@ interface ProcessingState {
   status: 'idle' | 'loading' | 'processing' | 'ready' | 'error'
   error: string | null
 
+  // Initialization error (FFmpeg WASM load failure, WebCodecs unavailable, etc.)
+  initError: string | null
+
   // Progress
   progress: number // 0-100
   progressMessage: string
@@ -107,6 +110,7 @@ interface ProcessingState {
   // Legacy single-video actions
   setStatus: (status: ProcessingState['status']) => void
   setError: (error: string | null) => void
+  setInitError: (error: string | null) => void
   setProgress: (progress: number, message?: string) => void
   addStrike: (strike: StrikeDetection) => void
   addSegment: (segment: Omit<VideoSegment, 'confidence' | 'clipStart' | 'clipEnd' | 'approved'> & Partial<Pick<VideoSegment, 'confidence' | 'clipStart' | 'clipEnd' | 'approved'>>) => void
@@ -137,6 +141,7 @@ interface ProcessingState {
 export const useProcessingStore = create<ProcessingState>((set, get) => ({
   status: 'idle',
   error: null,
+  initError: null,
   progress: 0,
   progressMessage: '',
   strikes: [],
@@ -152,6 +157,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => ({
   // Legacy single-video actions
   setStatus: (status) => set({ status }),
   setError: (error) => set({ error, status: error ? 'error' : 'idle' }),
+  setInitError: (error) => set({ initError: error }),
   setProgress: (progress, message) => set({
     progress,
     progressMessage: message ?? ''
@@ -339,6 +345,7 @@ export const useProcessingStore = create<ProcessingState>((set, get) => ({
     set({
       status: 'idle',
       error: null,
+      initError: null,
       progress: 0,
       progressMessage: '',
       strikes: [],

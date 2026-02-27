@@ -20,6 +20,9 @@ import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
 import { TrajectoryPoint } from './canvas-compositor'
 import { TracerStyle, DEFAULT_TRACER_STYLE } from '../types/tracer'
 import { drawTracerLine } from './tracer-renderer'
+import { createLogger } from './logger'
+
+const log = createLogger('PipelineV4')
 
 export interface ExportProgressV4 {
   phase: 'preparing' | 'extracting' | 'encoding' | 'muxing' | 'complete'
@@ -68,6 +71,20 @@ export function isVideoFrameCallbackSupported(): boolean {
 }
 
 /**
+ * Check WebCodecs API availability.
+ * Returns null if supported, or a user-facing error message if not.
+ */
+export function checkWebCodecsSupport(): string | null {
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+    return 'Video export requires WebCodecs API support. Use Chrome 94+, Edge 94+, or Safari 16.4+. Firefox does not support WebCodecs.'
+  }
+  if (!isVideoFrameCallbackSupported()) {
+    return 'Video export requires requestVideoFrameCallback support. Use Chrome 83+, Edge 83+, or Safari 15.4+.'
+  }
+  return null
+}
+
+/**
  * V4 Export Pipeline using requestVideoFrameCallback for real-time capture
  */
 export class VideoFramePipelineV4 {
@@ -96,7 +113,7 @@ export class VideoFramePipelineV4 {
 
     const duration = endTime - startTime
 
-    console.log('[PipelineV4] Starting real-time capture export', {
+    log.info('Starting real-time capture export', {
       blobSizeMB: (videoBlob.size / (1024 * 1024)).toFixed(1),
       duration: duration.toFixed(2),
       trajectoryPoints: trajectory.length,
@@ -185,14 +202,14 @@ export class VideoFramePipelineV4 {
         }
       }
 
-      console.log('[PipelineV4] Resolution:', sourceWidth, 'x', sourceHeight, '->', width, 'x', height)
+      log.info('Resolution', { source: `${sourceWidth}x${sourceHeight}`, output: `${width}x${height}` })
 
       // Estimate fps from video (default to 30 if not available)
       // We'll use the actual frame timestamps from requestVideoFrameCallback
       const estimatedFps = 30
       const estimatedTotalFrames = Math.ceil(duration * estimatedFps)
 
-      console.log('[PipelineV4] Video loaded:', { width, height, estimatedFps, estimatedTotalFrames })
+      log.info('Video loaded', { width, height, estimatedFps, estimatedTotalFrames })
 
       // Create canvas for compositing
       const canvas = document.createElement('canvas')
@@ -224,7 +241,7 @@ export class VideoFramePipelineV4 {
           muxer.addVideoChunk(chunk, meta)
         },
         error: (e) => {
-          console.error('[PipelineV4] Encoder error:', e)
+          log.error('Encoder error', { error: String(e) })
         },
       })
 
@@ -239,7 +256,7 @@ export class VideoFramePipelineV4 {
         codecLevel = 'avc1.640033' // Level 5.1 High - up to 4096x2160
       }
 
-      console.log('[PipelineV4] Using codec:', codecLevel, 'for', width, 'x', height)
+      log.info('Using codec', { codecLevel, width, height })
 
       encoder.configure({
         codec: codecLevel,
@@ -296,7 +313,7 @@ export class VideoFramePipelineV4 {
           stallTimer = setTimeout(() => {
             if (!isCapturing) return
             isCapturing = false
-            console.error('[PipelineV4] Stall detected — no frame callback for', stallTimeoutMs, 'ms')
+            log.error('Stall detected — no frame callback', { stallTimeoutMs })
             reject(new ExportTimeoutError(
               `Export stalled — no video frames received for ${Math.round(stallTimeoutMs / 1000)}s. ` +
               'The browser may be throttling. Try keeping this tab focused, or use a shorter clip or lower resolution.'
@@ -353,7 +370,7 @@ export class VideoFramePipelineV4 {
               : 0
             const maxInterval = callbackIntervals.length > 0 ? Math.max(...callbackIntervals) : 0
             const minInterval = callbackIntervals.length > 0 ? Math.min(...callbackIntervals) : 0
-            console.log('[PipelineV4] DIAGNOSTIC - Callback stats:', {
+            log.debug('Callback stats', {
               totalCallbacks: callbackCount,
               skippedBeforeStart,
               skippedDuplicate,
@@ -400,9 +417,12 @@ export class VideoFramePipelineV4 {
             // Track actual first frame time for audio sync (may differ from startTime due to keyframe seeking)
             if (capturedBitmaps.length === 0) {
               actualCaptureStartTime = currentVideoTime
-              console.log('[PipelineV4] First bitmap captured:', bitmap.width, 'x', bitmap.height,
-                'at video time:', currentVideoTime.toFixed(3) + 's',
-                '(requested:', startTime.toFixed(3) + 's, drift:', ((currentVideoTime - startTime) * 1000).toFixed(1) + 'ms)')
+              log.info('First bitmap captured', {
+                size: `${bitmap.width}x${bitmap.height}`,
+                videoTime: currentVideoTime.toFixed(3) + 's',
+                requested: startTime.toFixed(3) + 's',
+                driftMs: ((currentVideoTime - startTime) * 1000).toFixed(1),
+              })
             }
 
             capturedBitmaps.push({ bitmap, timeUs: relativeTimeUs })
@@ -474,7 +494,7 @@ export class VideoFramePipelineV4 {
         })
       })
 
-      console.log('[PipelineV4] Captured', capturedBitmaps.length, 'frames, now encoding...')
+      log.info('Captured frames, now encoding', { frames: capturedBitmaps.length })
       video.pause()
 
       // Second pass: encode all captured frames
@@ -533,7 +553,7 @@ export class VideoFramePipelineV4 {
 
       // Finalize
       checkAborted()
-      console.log('[PipelineV4] Encoded', capturedBitmaps.length, 'frames')
+      log.info('Encoded frames', { frames: capturedBitmaps.length })
       onProgress?.({ phase: 'muxing', progress: 0 })
       await encoder.flush()
       encoder.close()
@@ -549,11 +569,14 @@ export class VideoFramePipelineV4 {
 
       const elapsedMs = performance.now() - pipelineStartMs
       const actualFps = capturedBitmaps.length / duration
-      console.log('[PipelineV4] Export complete in', (elapsedMs / 1000).toFixed(1), 'seconds')
-      console.log('[PipelineV4] Captured', capturedBitmaps.length, 'frames at', actualFps.toFixed(1), 'fps effective')
-      console.log('[PipelineV4] Export speed:', (duration / (elapsedMs / 1000)).toFixed(2) + 'x realtime')
-      console.log('[PipelineV4] Actual capture start:', actualCaptureStartTime.toFixed(3) + 's',
-        '(requested:', startTime.toFixed(3) + 's)')
+      log.info('Export complete', {
+        elapsedSeconds: (elapsedMs / 1000).toFixed(1),
+        frames: capturedBitmaps.length,
+        effectiveFps: actualFps.toFixed(1),
+        realtimeSpeed: (duration / (elapsedMs / 1000)).toFixed(2) + 'x',
+        actualCaptureStart: actualCaptureStartTime.toFixed(3) + 's',
+        requestedStart: startTime.toFixed(3) + 's',
+      })
 
       return { blob: resultBlob, actualStartTime: actualCaptureStartTime }
     } catch (error) {

@@ -17,6 +17,9 @@ import { loadFFmpeg, extractAudioFromSegment, extractVideoSegment } from './ffmp
 import { loadEssentia, detectStrikes, StrikeDetection, unloadEssentia } from './audio-detector'
 import { getVideoDuration } from './segment-extractor'
 import { useProcessingStore } from '../stores/processingStore'
+import { createLogger } from './logger'
+
+const log = createLogger('streaming-processor')
 
 const AUDIO_CHUNK_DURATION = 30 // Analyze 30 seconds at a time
 const SAMPLE_RATE = 44100  // Essentia.js SuperFluxExtractor requires 44100Hz
@@ -207,7 +210,7 @@ export async function processVideoFile(
       // Validate segment is playable in browser
       const isPlayable = await validateSegmentPlayability(segmentBlob)
       if (!isPlayable) {
-        console.warn(`[streaming-processor] Segment ${i + 1} may not be playable (codec issue). User will see error in review.`)
+        log.warn('Segment may not be playable (codec issue). User will see error in review.', { segment: i + 1 })
         // Still add the segment - the ClipReview will show an error message
         // This is better than silently failing or transcoding every segment which is slow
       }

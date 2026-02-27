@@ -1,6 +1,9 @@
 // apps/browser/src/lib/feedback-service.ts
 import { getSupabaseClient } from './supabase-client'
 import { TracerStyle } from '../types/tracer'
+import { createLogger } from './logger'
+
+const log = createLogger('feedback-service')
 
 interface ShotFeedback {
   sessionId: string
@@ -50,7 +53,7 @@ export interface FeedbackResult {
 export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId'>): Promise<FeedbackResult> {
   const client = getSupabaseClient()
   if (!client) {
-    console.warn('Supabase not configured, skipping feedback submission')
+    log.warn('Supabase not configured, skipping feedback submission')
     return { success: true }
   }
 
@@ -68,7 +71,7 @@ export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId
   })
 
   if (error) {
-    console.error('Failed to submit shot feedback:', error)
+    log.error('Failed to submit shot feedback', { error: error.message })
     return { success: false, error: "Feedback couldn't be saved — check your connection" }
   }
 
@@ -78,7 +81,7 @@ export async function submitShotFeedback(feedback: Omit<ShotFeedback, 'sessionId
 export async function submitTracerFeedback(feedback: Omit<TracerFeedback, 'sessionId'>): Promise<FeedbackResult> {
   const client = getSupabaseClient()
   if (!client) {
-    console.warn('Supabase not configured, skipping feedback submission')
+    log.warn('Supabase not configured, skipping feedback submission')
     return { success: true }
   }
 
@@ -110,7 +113,7 @@ export async function submitTracerFeedback(feedback: Omit<TracerFeedback, 'sessi
   })
 
   if (error) {
-    console.error('Failed to submit tracer feedback:', error)
+    log.error('Failed to submit tracer feedback', { error: error.message })
     return { success: false, error: "Feedback couldn't be saved — check your connection" }
   }
 
