@@ -1,10 +1,11 @@
-export default {
+module.exports = {
   ci: {
     collect: {
       url: ['http://localhost:4173'],
-      numberOfRuns: 1,
-      startServerCommand: 'npx vite preview',
+      numberOfRuns: 3,
+      startServerCommand: 'npm run preview',
       startServerReadyPattern: 'Local',
+      startServerReadyTimeout: 30000,
       settings: {
         chromeFlags: '--no-sandbox',
       },
