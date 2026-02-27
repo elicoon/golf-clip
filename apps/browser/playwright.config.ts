@@ -21,9 +21,9 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         // Use system Chrome instead of bundled Chromium for HEVC codec support
-        // Must run headed (not headless) as headless Chrome lacks hardware video decoding
+        // Run headed locally for hardware video decoding; CI has no X server so use headless
         channel: 'chrome',
-        headless: false,
+        headless: isCI,
       },
     },
     {
