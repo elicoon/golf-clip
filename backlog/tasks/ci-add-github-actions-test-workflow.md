@@ -1,6 +1,6 @@
 ### Add GitHub Actions workflow to run unit tests on pull requests
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** high
 - **Type:** test-coverage
 - **Scope:** small
@@ -8,7 +8,7 @@
 - **Blockers:** none
 - **Notes:** No CI/CD pipeline exists — 26 unit test files only run locally. PRs (e.g., #23) get merged without automated test verification. A basic workflow running `npm test` on PR and push to master would catch regressions before merge.
 - **Added:** 2026-02-22
-- **Updated:** 2026-02-22
+- **Updated:** 2026-02-27
 
 #### Acceptance Criteria
 - [ ] `.github/workflows/test.yml` exists and runs `npm test` on pull_request and push-to-master events
