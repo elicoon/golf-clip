@@ -9,7 +9,7 @@
  */
 
 import { create } from 'zustand'
-import { StrikeDetection } from '../lib/audio-detector'
+import type { StrikeDetection } from '../lib/audio-detector'
 
 /** Unique identifier for each video being processed */
 export type VideoId = string
@@ -358,3 +358,8 @@ export const useProcessingStore = create<ProcessingState>((set, get) => ({
     })
   },
 }))
+
+// Expose store for e2e test debugging
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __processingStore: typeof useProcessingStore }).__processingStore = useProcessingStore
+}

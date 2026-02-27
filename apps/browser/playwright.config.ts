@@ -4,6 +4,7 @@ const isCI = !!process.env.CI
 
 export default defineConfig({
   testDir: './e2e',
+  timeout: 120_000,
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
@@ -16,8 +17,21 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: 'chrome',
+      use: {
+        ...devices['Desktop Chrome'],
+        // Use system Chrome instead of bundled Chromium for HEVC codec support
+        // Must run headed (not headless) as headless Chrome lacks hardware video decoding
+        channel: 'chrome',
+        headless: false,
+      },
+    },
+    {
+      name: 'mobile',
+      use: {
+        ...devices['Pixel 5'],
+        // Headless mobile emulation — no HEVC video decoding needed for mobile layout tests
+      },
     },
   ],
   webServer: {

@@ -37,7 +37,9 @@ export class AppFixture {
     await this.page.waitForSelector('.dropzone', { timeout: 10_000 })
   }
 
-  /** Upload a video file to the dropzone. Uses the real test video by default. */
+  /** Upload a video file to the dropzone. Uses the real test video by default.
+   *  Bypasses Playwright's setFiles() (which base64-encodes 764MB over CDP) by
+   *  symlinking the video into Vite's public dir so the browser can fetch it directly. */
   async uploadVideo(videoPath = TEST_VIDEO_PATH) {
     if (!fs.existsSync(videoPath)) {
       throw new Error(
@@ -46,16 +48,57 @@ export class AppFixture {
       )
     }
 
-    // Use Playwright's file chooser API
-    const fileChooserPromise = this.page.waitForEvent('filechooser')
-    await this.page.locator('.dropzone .btn-primary').click()
-    const fileChooser = await fileChooserPromise
-    await fileChooser.setFiles(videoPath)
+    const fileName = path.basename(videoPath)
+    const mimeType = videoPath.endsWith('.mp4') ? 'video/mp4' : 'video/quicktime'
+
+    // Ensure test video is accessible via Vite's public dir
+    const publicDir = path.resolve(__dirname, '../public')
+    const symlinkPath = path.join(publicDir, '_test-video.mov')
+    if (!fs.existsSync(symlinkPath)) {
+      fs.symlinkSync(videoPath, symlinkPath)
+    }
+
+    // Fetch the video in-browser and use the test helper to process it directly
+    // (React's onChange doesn't fire from programmatic events on file inputs)
+    await this.page.evaluate(async ({ fileName, mimeType }) => {
+      console.log('[e2e] Starting fetch of test video...')
+      const res = await fetch('/_test-video.mov')
+      if (!res.ok) throw new Error(`Failed to fetch test video: ${res.status}`)
+      console.log('[e2e] Fetch complete, creating blob...')
+      const blob = await res.blob()
+      console.log(`[e2e] Blob created: ${blob.size} bytes, calling __testProcessFile...`)
+      const file = new File([blob], fileName, { type: mimeType })
+
+      // Use the dev-mode test helper exposed by VideoDropzone
+      const testHelper = (window as unknown as { __testProcessFile?: (file: File, videoId: string) => Promise<void> }).__testProcessFile
+      if (!testHelper) throw new Error('Test helper __testProcessFile not found. Is the app running in dev mode?')
+
+      const videoId = `test-${Date.now()}`
+      // Actually await the processing and catch errors
+      try {
+        await testHelper(file, videoId)
+        console.log('[e2e] Processing completed successfully')
+        // Log store state for debugging
+        const store = (window as unknown as { __processingStore?: { getState: () => { status: string; segments: unknown[]; videos: Map<string, { status: string; segments: unknown[]; error: string | null }> } } }).__processingStore
+        if (store) {
+          const state = store.getState()
+          const videosArr = Array.from(state.videos.values())
+          console.log('[e2e] Store state:', JSON.stringify({
+            status: state.status,
+            segmentCount: state.segments.length,
+            videoCount: state.videos.size,
+            videos: videosArr.map(v => ({ status: v.status, segments: v.segments.length, error: v.error }))
+          }))
+        }
+      } catch (err) {
+        console.error('[e2e] Processing failed:', err)
+        throw err
+      }
+    }, { fileName, mimeType })
   }
 
   /** Wait for video processing to complete and review screen to appear */
-  async waitForReviewScreen(timeout = 120_000) {
-    // Processing can take a while for large videos
+  async waitForReviewScreen(timeout = 90_000) {
     await this.page.waitForSelector('.clip-review', { timeout })
   }
 
