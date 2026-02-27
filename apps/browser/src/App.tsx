@@ -1,8 +1,10 @@
 // apps/browser/src/App.tsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { VideoDropzone } from './components/VideoDropzone'
 import { WalkthroughSteps } from './components/WalkthroughSteps'
-import { ClipReview } from './components/ClipReview'
+const ClipReview = lazy(() =>
+  import('./components/ClipReview').then((m) => ({ default: m.ClipReview })),
+)
 import { useProcessingStore } from './stores/processingStore'
 
 type AppView = 'upload' | 'review' | 'export'
@@ -77,7 +79,15 @@ export default function App() {
         )}
 
         {view === 'review' && (
-          <ClipReview onComplete={handleReviewComplete} />
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-screen">
+                <div className="loading-spinner">Loading...</div>
+              </div>
+            }
+          >
+            <ClipReview onComplete={handleReviewComplete} />
+          </Suspense>
         )}
 
         {view === 'export' && (

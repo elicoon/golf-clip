@@ -1,9 +1,29 @@
 // apps/browser/src/components/VideoDropzone.tsx
-import { useCallback, useState, useRef, useEffect } from 'react'
+import { useCallback, useState, useRef, useEffect, lazy, Suspense } from 'react'
 import { useProcessingStore } from '../stores/processingStore'
-import { processVideoFile } from '../lib/streaming-processor'
-import { loadFFmpeg, detectVideoCodec, transcodeHevcToH264 } from '../lib/ffmpeg-client'
-import { HevcTranscodeModal, HevcTranscodeModalState, initialHevcTranscodeModalState } from './HevcTranscodeModal'
+import type { HevcTranscodeModalState } from './HevcTranscodeModal'
+
+const HevcTranscodeModal = lazy(() =>
+  import('./HevcTranscodeModal').then((m) => ({ default: m.HevcTranscodeModal })),
+)
+
+// Cache dynamic import promises so concurrent processFileInBackground calls share the same module resolution
+let ffmpegClientPromise: Promise<typeof import('../lib/ffmpeg-client')> | null = null
+let streamingProcessorPromise: Promise<typeof import('../lib/streaming-processor')> | null = null
+
+function getFfmpegClient() {
+  if (!ffmpegClientPromise) {
+    ffmpegClientPromise = import('../lib/ffmpeg-client')
+  }
+  return ffmpegClientPromise
+}
+
+function getStreamingProcessor() {
+  if (!streamingProcessorPromise) {
+    streamingProcessorPromise = import('../lib/streaming-processor')
+  }
+  return streamingProcessorPromise
+}
 
 const ACCEPTED_TYPES = ['video/mp4', 'video/quicktime', 'video/x-m4v']
 const ACCEPTED_EXTENSIONS = ['.mp4', '.mov', '.m4v']
@@ -22,7 +42,14 @@ interface HevcWarningState extends HevcTranscodeModalState {
 }
 
 const initialHevcState: HevcWarningState = {
-  ...initialHevcTranscodeModalState,
+  show: false,
+  segmentIndex: 0,
+  segmentBlob: null,
+  estimatedTime: '',
+  isTranscoding: false,
+  transcodeProgress: 0,
+  transcodeStartTime: null,
+  transcodedSegmentIds: new Set(),
   file: null,
   codec: '',
   fileSizeMB: 0,
@@ -54,7 +81,8 @@ async function processFileInBackground(
   actions.addVideo(videoId, file.name)
 
   try {
-    // Check codec before processing
+    // Check codec before processing (dynamic import to keep FFmpeg out of main bundle)
+    const { loadFFmpeg, detectVideoCodec } = await getFfmpegClient()
     await loadFFmpeg()
     const codecInfo = await detectVideoCodec(file)
 
@@ -64,12 +92,18 @@ async function processFileInBackground(
       return
     }
 
-    // Process the video
+    // Process the video (dynamic import to keep streaming-processor out of main bundle)
+    const { processVideoFile } = await getStreamingProcessor()
     await processVideoFile(file, videoId)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     actions.setVideoError(videoId, message)
   }
+}
+
+// Expose test helper for e2e tests (allows bypassing file input which doesn't work with programmatic events)
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __testProcessFile: typeof processFileInBackground }).__testProcessFile = processFileInBackground
 }
 
 export function VideoDropzone() {
@@ -138,6 +172,8 @@ export function VideoDropzone() {
     }))
 
     try {
+      // Dynamic imports to keep FFmpeg and streaming-processor out of main bundle
+      const { transcodeHevcToH264 } = await getFfmpegClient()
       const h264Blob = await transcodeHevcToH264(
         file,
         (percent) => {
@@ -156,6 +192,7 @@ export function VideoDropzone() {
 
       // Close modal and process the transcoded file
       setHevcWarning(initialHevcState)
+      const { processVideoFile } = await getStreamingProcessor()
       await processVideoFile(h264File, videoId)
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
@@ -373,18 +410,24 @@ export function VideoDropzone() {
         />
       </div>
 
-      {/* HEVC Warning Modal */}
-      <HevcTranscodeModal
-        state={hevcWarning}
-        title="Unsupported Video Format"
-        description="This video uses an unsupported codec and needs to be converted."
-        fileInfo={hevcWarning.show ? { codec: hevcWarning.codec, fileSizeMB: hevcWarning.fileSizeMB } : undefined}
-        showTip={true}
-        cancelLabel="Upload Different Video"
-        startLabel="Start Transcoding"
-        onStartTranscode={handleTranscode}
-        onCancel={handleCancelHevc}
-      />
+      {/* HEVC Warning Modal — lazy-loaded since it pulls in @ffmpeg/ffmpeg transitively */}
+      <Suspense fallback={null}>
+        <HevcTranscodeModal
+          state={hevcWarning}
+          title="Unsupported Video Format"
+          description="This video uses an unsupported codec and needs to be converted."
+          fileInfo={
+            hevcWarning.show
+              ? { codec: hevcWarning.codec, fileSizeMB: hevcWarning.fileSizeMB }
+              : undefined
+          }
+          showTip={true}
+          cancelLabel="Upload Different Video"
+          startLabel="Start Transcoding"
+          onStartTranscode={handleTranscode}
+          onCancel={handleCancelHevc}
+        />
+      </Suspense>
     </>
   )
 }
