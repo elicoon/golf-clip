@@ -11,7 +11,7 @@ export default defineConfig({
   workers: isCI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: isCI ? 'http://localhost:4173' : 'http://localhost:5173',
+    baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
     video: 'on-first-retry',
   },
@@ -35,8 +35,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: isCI ? 'npm run preview' : 'npm run dev',
-    url: isCI ? 'http://localhost:4173' : 'http://localhost:5173',
+    command: 'npm run dev',
+    url: 'http://localhost:5173',
     reuseExistingServer: !isCI,
     timeout: 30_000,
   },
