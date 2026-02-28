@@ -1,6 +1,7 @@
 ### Add FFmpeg WASM Initialization Progress Indicator
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-26-golf-clip-ffmpeg-wasm-init-progress
 - **Priority:** medium
 - **Type:** feature
 - **Scope:** small
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** FFmpeg WASM (`@ffmpeg/ffmpeg`) can take 2–5+ seconds to load and initialize on first use, especially on slower connections. Currently there is no visible feedback during this phase — the UI appears unresponsive until initialization completes. This creates a confusing UX where users may think the app has frozen. The `ffmpeg-client.ts` module handles initialization; it should emit progress events (FFmpeg's `log` and `progress` callbacks can provide load progress) that are surfaced to the user via a loading indicator on the upload screen. Should show "Loading audio engine… X%" or a spinner with status text, then disappear once ready.
 - **Added:** 2026-02-26
-- **Updated:** 2026-02-26
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] A loading indicator (spinner + status text) is visible on the upload screen while FFmpeg WASM initializes

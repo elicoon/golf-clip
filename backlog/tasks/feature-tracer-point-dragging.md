@@ -1,6 +1,7 @@
 ### Add Interactive Tracer Point Dragging in TrajectoryEditor
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-27-golf-clip-tracer-point-dragging
 - **Priority:** low
 - **Type:** feature
 - **Scope:** medium
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** There is an in-code TODO in `apps/browser/src/components/TrajectoryEditor.tsx:373`: "Add tracer point dragging to backlog as optional feature". Currently the trajectory path is fully determined by the physics model (ball origin + landing position + height/shape sliders). Allowing users to drag intermediate control points on the rendered trajectory would give fine-grained control over the tracer path for shots with unusual ball flight. The trajectory is already generated as a quadratic Bezier — adding a draggable control point at the apex would be the natural first implementation.
 - **Added:** 2026-02-26
-- **Updated:** 2026-02-26
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] The trajectory apex point is rendered as a draggable handle on the TrajectoryEditor canvas

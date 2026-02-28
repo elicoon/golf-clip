@@ -1,6 +1,7 @@
 ### Extract video player and export panel from ClipReview.tsx into sub-components
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-22-golf-clip-decompose-clip-review
 - **Priority:** medium
 - **Type:** refactor
 - **Scope:** medium
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** ClipReview.tsx is 1406 lines handling video playback, scrubbing, export controls, tracer configuration, trajectory editing, and keyboard shortcuts in a single file. Extracting focused sub-components would reduce merge conflicts, simplify testing, and make upcoming UX features (audio unmute toggle, draggable control points, keyboard shortcuts modal) easier to implement.
 - **Added:** 2026-02-22
-- **Updated:** 2026-02-22
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] VideoPlayer sub-component extracted — handles video element, play/pause, seeking, zoom/pan (roughly lines related to video playback state and refs)

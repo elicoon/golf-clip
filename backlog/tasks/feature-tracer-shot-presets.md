@@ -1,6 +1,7 @@
 ### Add Tracer Shot Presets for Common Club Types
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-26-golf-clip-tracer-shot-presets
 - **Priority:** low
 - **Type:** feature
 - **Scope:** small
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** Currently users configure tracer height, shape (draw/fade/slice), and flight time manually from scratch on every clip. Adding 4 presets (Driver, Iron, Wedge, Chip) that auto-fill typical values for those shot types would reduce the per-clip setup time significantly. Presets would be defined as static config in TracerConfigPanel and simply call the existing onConfigChange props — no new state management needed.
 - **Added:** 2026-02-26
-- **Updated:** 2026-02-26
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] TracerConfigPanel displays 4 preset buttons: "Driver", "Iron", "Wedge", "Chip"

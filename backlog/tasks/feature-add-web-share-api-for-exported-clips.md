@@ -1,6 +1,7 @@
 ### Add Web Share API Button for Exported Clip Sharing
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-24-golf-clip-web-share-api
 - **Priority:** medium
 - **Type:** feature
 - **Scope:** small
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** After exporting a clip, users currently download the MP4 to their Downloads folder and must manually open a messaging app to share it. The Web Share API (`navigator.share()`) enables a native "Share" button that lets users send the exported clip directly to any app (iMessage, WhatsApp, social media) without leaving the browser. This closes the loop from detection → export → share and is the key growth mechanism for a SaaS product. Falls back gracefully on unsupported browsers (desktop Firefox) by hiding the button.
 - **Added:** 2026-02-24
-- **Updated:** 2026-02-24
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] "Share" button appears next to the download button after a clip is exported

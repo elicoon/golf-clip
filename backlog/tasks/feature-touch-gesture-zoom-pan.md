@@ -1,6 +1,7 @@
 ### Add Touch Gesture Support for Video Zoom and Pan
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-26-golf-clip-touch-gesture-zoom-pan
 - **Priority:** medium
 - **Type:** feature
 - **Scope:** medium
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** The video zoom/pan feature in ClipReview uses keyboard controls (+/-/0) and mouse drag exclusively. Mobile users (golfers on the course) cannot pinch-to-zoom or touch-drag to place the ball origin. This is distinct from the mobile viewport E2E dispatch (gc-mobile-viewport-e2e), which tests layout only. Touch gesture support requires adding touchstart/touchmove/touchend handlers and a pinch-gesture recognizer to the video container. Critical for real mobile usability.
 - **Added:** 2026-02-26
-- **Updated:** 2026-02-26
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] Pinch gesture on the video element zooms in/out (min 1x, max 4x) matching the keyboard +/- behavior
