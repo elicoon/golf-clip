@@ -1,6 +1,6 @@
 ### Add unit tests for clip-exporter.ts export orchestration
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** test-coverage
 - **Scope:** small
@@ -11,9 +11,9 @@
 - **Updated:** 2026-02-22
 
 #### Acceptance Criteria
-- [ ] `apps/browser/src/lib/clip-exporter.test.ts` exists with at least 6 test cases
+- [x] `apps/browser/src/lib/clip-exporter.test.ts` exists with at least 6 test cases
 - [ ] Tests cover: successful single-clip export, export cancellation/abort, timeout handling, error propagation from pipeline failures, progress callback invocation, cleanup on failure
-- [ ] All new tests pass with `npm test`
+- [x] All new tests pass with `npm test`
 - [ ] Tests mock WebCodecs and mp4-muxer APIs (no real video encoding in tests)
 
 #### Next steps

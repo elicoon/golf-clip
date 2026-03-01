@@ -1,6 +1,6 @@
 ### Surface FFmpeg and WebCodecs Initialization Failures to User
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** bug-fix
 - **Scope:** medium
@@ -11,11 +11,11 @@
 - **Updated:** 2026-02-22
 
 #### Acceptance Criteria
-- [ ] FFmpeg WASM load failure displays user-visible error message (not just console.error)
-- [ ] WebCodecs unavailability (e.g., Firefox) shows clear message before user attempts export
-- [ ] Error messages include actionable guidance (browser recommendation or retry option)
-- [ ] Existing error flows (export timeout, codec detection) still work as before
-- [ ] Unit test verifies error state is set when FFmpeg initialization throws
+- [x] FFmpeg WASM load failure displays user-visible error message (not just console.error)
+- [x] WebCodecs unavailability (e.g., Firefox) shows clear message before user attempts export
+- [x] Error messages include actionable guidance (browser recommendation or retry option)
+- [x] Existing error flows (export timeout, codec detection) still work as before
+- [x] Unit test verifies error state is set when FFmpeg initialization throws
 
 #### Next steps
 1. Read `apps/browser/src/lib/ffmpeg-client.ts` to find FFmpeg initialization and identify all silent catch blocks

@@ -1,6 +1,6 @@
 ### Add GitHub Actions workflow to run unit tests on pull requests
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** high
 - **Type:** test-coverage
 - **Scope:** small
@@ -11,8 +11,8 @@
 - **Updated:** 2026-02-22
 
 #### Acceptance Criteria
-- [ ] `.github/workflows/test.yml` exists and runs `npm test` on pull_request and push-to-master events
-- [ ] Workflow installs dependencies with `npm ci` and runs `npm run build` before tests
+- [x] `.github/workflows/test.yml` exists and runs `npm test` on pull_request and push-to-master events
+- [x] Workflow installs dependencies with `npm ci` and runs `npm run build` before tests
 - [ ] PR #23 (or a test PR) shows a green/red check from the workflow
 - [ ] Workflow completes in under 3 minutes for the current test suite
 
