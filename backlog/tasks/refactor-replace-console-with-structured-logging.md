@@ -1,6 +1,6 @@
 ### Replace console.log with Structured Logging in Browser App
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** refactor
 - **Scope:** medium
@@ -11,11 +11,11 @@
 - **Updated:** 2026-02-16
 
 #### Acceptance Criteria
-- [ ] src/lib/logger.ts created with log levels (debug, info, warn, error) and context fields
-- [ ] Logger respects import.meta.env.PROD mode (silent in production by default)
-- [ ] All 45 console statements replaced with logger calls
-- [ ] Logger includes timestamp, level, message, and optional context object
-- [ ] Test coverage for logger (dev/prod mode, log levels, context formatting)
+- [x] src/lib/logger.ts created with log levels (debug, info, warn, error) and context fields
+- [x] Logger respects import.meta.env.PROD mode (silent in production by default)
+- [x] All 45 console statements replaced with logger calls
+- [x] Logger includes timestamp, level, message, and optional context object
+- [x] Test coverage for logger (dev/prod mode, log levels, context formatting)
 
 #### Next steps
 1. Create src/lib/logger.ts with createLogger() factory and log level methods

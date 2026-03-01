@@ -1,6 +1,6 @@
 ### Groom Completed Tasks: Check Acceptance Criteria Boxes and Correct Statuses
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** high
 - **Type:** grooming
 - **Scope:** small

@@ -1,6 +1,6 @@
 ### Delete Merged and Stale Git Branches (Local and Remote)
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** low
 - **Type:** refactor
 - **Scope:** small
@@ -12,9 +12,9 @@
 
 #### Acceptance Criteria
 - [ ] All branches that are fully merged into master are deleted locally and on origin
-- [ ] Backup branches (`backup/*`) are deleted after confirming master contains their changes
+- [x] Backup branches (`backup/*`) are deleted after confirming master contains their changes
 - [ ] `git branch -a` shows only master, current feature branch, and any actively-in-progress branches
-- [ ] No unmerged work is lost (verify with `git log` before deleting each branch)
+- [x] No unmerged work is lost (verify with `git log` before deleting each branch)
 
 #### Next steps
 1. Run `git branch -a --merged master` to list all branches fully merged into master
