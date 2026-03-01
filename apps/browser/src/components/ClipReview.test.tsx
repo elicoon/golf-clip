@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, within } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
 import * as matchers from '@testing-library/jest-dom/matchers'
 import {
   createMockVideoElement,
@@ -349,7 +349,7 @@ describe('Video Loading Lifecycle', () => {
     // 4: HAVE_ENOUGH_DATA
 
     const states = [0, 1, 2, 3, 4]
-    const stateNames = [
+    const _stateNames = [
       'HAVE_NOTHING',
       'HAVE_METADATA',
       'HAVE_CURRENT_DATA',

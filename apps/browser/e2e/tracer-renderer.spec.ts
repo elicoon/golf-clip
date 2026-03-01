@@ -147,10 +147,10 @@ test.describe('Tracer Renderer (PR #21)', () => {
     const captureLog = logs.find(l => l.includes('First bitmap captured'))
     expect(captureLog).toBeTruthy()
     // Should mention actual capture start time
-    expect(captureLog).toContain('at video time:')
+    expect(captureLog).toContain('videoTime:')
 
-    // Check that the timing fix is applied (relativeTime + startTime)
-    const timingLog = logs.find(l => l.includes('Actual capture start'))
+    // Check that the timing fix is applied (actualCaptureStart logged in Export complete)
+    const timingLog = logs.find(l => l.includes('actualCaptureStart:'))
     expect(timingLog).toBeTruthy()
   })
 

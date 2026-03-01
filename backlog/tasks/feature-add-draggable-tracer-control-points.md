@@ -1,6 +1,7 @@
 ### Add Draggable Control Points to Trajectory Tracer Overlay
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-22-golf-clip-draggable-tracer-control-points
 - **Priority:** medium
 - **Type:** feature
 - **Scope:** medium
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** TrajectoryEditor.tsx (line 373) has a TODO noting that tracer point dragging is disabled to allow marker placement. Currently users place origin/apex/landing markers via clicks, but once placed, the points cannot be repositioned by dragging. Adding drag support would let users fine-tune tracer overlays without re-placing markers from scratch. The pointer handler stubs already exist (`handlePointerDown`, `handlePointerMove`, `handlePointerUp`) but are no-ops. Implementation needs to distinguish between "place new marker" clicks and "drag existing marker" interactions — likely via a mode toggle or proximity detection (click near existing point = drag, click elsewhere = place).
 - **Added:** 2026-02-22
-- **Updated:** 2026-02-22
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] User can drag an existing tracer control point (origin, apex, or landing) to reposition it

@@ -1,3 +1,7 @@
+/**
+ * @vitest-environment jsdom
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi } from 'vitest'
 import { exportClipWithTracer, exportWithCanvasCompositing } from './clip-exporter'
 import { fetchFile } from '@ffmpeg/util'

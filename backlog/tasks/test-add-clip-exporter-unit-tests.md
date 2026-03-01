@@ -1,6 +1,6 @@
 ### Add unit tests for clip-exporter.ts export orchestration
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** test-coverage
 - **Scope:** small
@@ -8,7 +8,7 @@
 - **Blockers:** none
 - **Notes:** clip-exporter.ts orchestrates the full export pipeline (video-frame-pipeline-v4 → mp4-muxer → download) but has zero test coverage. This is the most critical user-facing code path. Other lib modules like ffmpeg-client.ts and tracer-renderer.ts already have thorough tests — clip-exporter is the gap.
 - **Added:** 2026-02-22
-- **Updated:** 2026-02-22
+- **Updated:** 2026-02-27
 
 #### Acceptance Criteria
 - [ ] `apps/browser/src/lib/clip-exporter.test.ts` exists with at least 6 test cases
