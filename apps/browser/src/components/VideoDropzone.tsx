@@ -77,7 +77,7 @@ export function VideoDropzone() {
   const [error, setError] = useState<string | null>(null)
   const [isCheckingCodec] = useState(false)  // Kept for legacy progress view - set via per-video state now
   const [hevcWarning, setHevcWarning] = useState<HevcWarningState>(initialHevcState)
-  const { status: globalStatus, progress: globalProgress, progressMessage: globalProgressMessage, fileName: globalFileName, setStatus, videos } = useProcessingStore()
+  const { status: globalStatus, progress: globalProgress, progressMessage: globalProgressMessage, fileName: globalFileName, setStatus, videos, initError } = useProcessingStore()
 
   // Bridge per-video state to progress display: find first actively processing video
   const activeProcessingVideo = (() => {
@@ -358,6 +358,13 @@ export function VideoDropzone() {
             <div className="dropzone-error" role="alert">
               <span className="error-icon">⚠</span>
               {error}
+            </div>
+          )}
+
+          {initError && (
+            <div className="init-error-banner" role="alert">
+              <span className="init-error-icon">&#9888;</span>
+              <p>{initError}</p>
             </div>
           )}
         </div>

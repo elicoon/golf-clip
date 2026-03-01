@@ -53,6 +53,8 @@ vi.mock('../stores/processingStore', () => {
     progress: 0,
     progressMessage: '',
     fileName: '',
+    initError: null as string | null,
+    videos: new Map(),
     setProgress: vi.fn(),
     setStatus: vi.fn(),
     addVideo: mockAddVideo,
@@ -176,6 +178,28 @@ describe('VideoDropzone', () => {
       await waitFor(() => {
         expect(mockAddVideo).not.toHaveBeenCalled()
       })
+    })
+  })
+
+  describe('initError banner', () => {
+    it('shows init error banner when initError is set in store', async () => {
+      const { useProcessingStore } = await import('../stores/processingStore')
+      const state = useProcessingStore.getState()
+      state.initError = 'FFmpeg failed to load. Try refreshing, or use Chrome/Edge.'
+
+      render(<VideoDropzone />)
+
+      // getByRole/getByText throw if element is absent — these are the assertions
+      screen.getByRole('alert')
+      screen.getByText('FFmpeg failed to load. Try refreshing, or use Chrome/Edge.')
+
+      // Restore
+      state.initError = null
+    })
+
+    it('does not show init error banner when initError is null', () => {
+      render(<VideoDropzone />)
+      expect(screen.queryByRole('alert')).toBeNull()
     })
   })
 })
