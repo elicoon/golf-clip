@@ -1,6 +1,6 @@
 ### Add Mobile Viewport Playwright E2E Tests
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** test-coverage
 - **Scope:** small
@@ -11,10 +11,10 @@
 - **Updated:** 2026-02-26
 
 #### Acceptance Criteria
-- [ ] New spec file `apps/browser/e2e/mobile.spec.ts` runs at 390×844 viewport
-- [ ] Tests cover: dropzone visible and interactable, walkthrough steps render, no horizontal overflow on main views
-- [ ] Mobile tests run as a separate project in `playwright.config.ts` (device: 'iPhone 12')
-- [ ] All mobile specs pass in CI (added to `.github/workflows/test.yml` E2E job)
+- [x] New spec file `apps/browser/e2e/mobile.spec.ts` runs at 390×844 viewport
+- [x] Tests cover: dropzone visible and interactable, walkthrough steps render, no horizontal overflow on main views
+- [x] Mobile tests run as a separate project in `playwright.config.ts` (device: 'iPhone 12')
+- [x] All mobile specs pass in CI (added to `.github/workflows/test.yml` E2E job)
 
 #### Next steps
 1. Add `{ name: 'mobile-chrome', use: { ...devices['Pixel 5'] } }` project to `playwright.config.ts`

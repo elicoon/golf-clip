@@ -1,6 +1,6 @@
 ### Add Prettier Auto-Formatting with CI Format Check
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** low
 - **Type:** refactor
 - **Scope:** small
@@ -11,12 +11,12 @@
 - **Updated:** 2026-02-24
 
 #### Acceptance Criteria
-- [ ] `prettier` installed as a devDependency in `apps/browser`
-- [ ] `.prettierrc` config file exists with project-specific settings (singleQuote, trailingComma, printWidth)
-- [ ] `npm run format` script runs Prettier write mode on `src/`
-- [ ] `npm run format:check` script runs Prettier check mode (exits non-zero on unformatted files)
-- [ ] CI workflow includes `npm run format:check` step before lint
-- [ ] All existing source files are formatted (one-time bulk format commit)
+- [x] `prettier` installed as a devDependency in `apps/browser`
+- [x] `.prettierrc` config file exists with project-specific settings (singleQuote, trailingComma, printWidth)
+- [x] `npm run format` script runs Prettier write mode on `src/`
+- [x] `npm run format:check` script runs Prettier check mode (exits non-zero on unformatted files)
+- [x] CI workflow includes `npm run format:check` step before lint
+- [x] All existing source files are formatted (one-time bulk format commit)
 
 #### Next steps
 1. Install `prettier` as a devDependency in `apps/browser`

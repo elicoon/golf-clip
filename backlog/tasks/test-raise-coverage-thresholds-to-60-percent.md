@@ -1,6 +1,6 @@
 ### Write Unit Tests for Uncovered lib/ Modules to Raise Thresholds to 60%
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** test-coverage
 - **Scope:** medium
@@ -11,12 +11,12 @@
 - **Updated:** 2026-02-24
 
 #### Acceptance Criteria
-- [ ] Statement coverage threshold raised to at least 60% (from 51%)
-- [ ] Function coverage threshold raised to at least 60% (from 44%)
-- [ ] Line coverage threshold raised to at least 60% (from 51%)
-- [ ] All new tests pass in CI (`npm run test:coverage` exits 0)
-- [ ] No test files use `vi.fn()` stubs where real implementations can be tested
-- [ ] Coverage gains come from testing actual business logic, not trivial getters/setters
+- [x] Statement coverage threshold raised to at least 60% (from 51%)
+- [x] Function coverage threshold raised to at least 60% (from 44%)
+- [x] Line coverage threshold raised to at least 60% (from 51%)
+- [x] All new tests pass in CI (`npm run test:coverage` exits 0)
+- [x] No test files use `vi.fn()` stubs where real implementations can be tested
+- [x] Coverage gains come from testing actual business logic, not trivial getters/setters
 
 #### Next steps
 1. Run `npm run test:coverage` locally and identify the 3-5 `lib/` modules with lowest function coverage

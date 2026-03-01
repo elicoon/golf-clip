@@ -1,6 +1,6 @@
 ### Add Bundle Size CI Check to Prevent JS Bundle Growth Regressions
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** medium
 - **Type:** refactor
 - **Scope:** small
@@ -11,11 +11,11 @@
 - **Updated:** 2026-02-26
 
 #### Acceptance Criteria
-- [ ] `size-limit` installed as devDependency in `apps/browser/package.json`
-- [ ] `.size-limit.json` config committed with at least one entry measuring the main JS bundle
-- [ ] `size-limit` step added to `.github/workflows/test.yml` that fails if bundle exceeds threshold
-- [ ] PR comment showing size delta posted by size-limit action on each PR (or stdout report in CI log)
-- [ ] Current baseline measured and threshold set with 20% headroom documented in config
+- [x] `size-limit` installed as devDependency in `apps/browser/package.json`
+- [x] `.size-limit.json` config committed with at least one entry measuring the main JS bundle
+- [x] `size-limit` step added to `.github/workflows/test.yml` that fails if bundle exceeds threshold
+- [x] PR comment showing size delta posted by size-limit action on each PR (or stdout report in CI log)
+- [x] Current baseline measured and threshold set with 20% headroom documented in config
 
 #### Next steps
 1. Run `npm run build` in `apps/browser`, measure `dist/assets/*.js` total gzipped size
