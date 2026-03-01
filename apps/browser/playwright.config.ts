@@ -1,11 +1,14 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const isCI = !!process.env.CI
+
 export default defineConfig({
   testDir: './e2e',
+  timeout: 120_000,
   fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  forbidOnly: isCI,
+  retries: isCI ? 2 : 0,
+  workers: isCI ? 1 : undefined,
   reporter: 'html',
   use: {
     baseURL: 'http://localhost:5173',
@@ -14,14 +17,27 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: 'chrome',
+      use: {
+        ...devices['Desktop Chrome'],
+        // Use system Chrome instead of bundled Chromium for HEVC codec support
+        // Run headed locally for hardware video decoding; CI has no X server so use headless
+        channel: 'chrome',
+        headless: isCI,
+      },
+    },
+    {
+      name: 'mobile',
+      use: {
+        ...devices['Pixel 5'],
+        // Headless mobile emulation — no HEVC video decoding needed for mobile layout tests
+      },
     },
   ],
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !isCI,
     timeout: 30_000,
   },
 })

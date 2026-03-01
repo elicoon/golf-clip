@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Note: FFmpeg.wasm requires a real browser environment with SharedArrayBuffer

@@ -6,7 +6,7 @@
  * @vitest-environment jsdom
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 describe('ClipReview Impact Time Handler', () => {
   describe('handleSetImpactTime logic', () => {

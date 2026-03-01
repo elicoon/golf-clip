@@ -1,21 +1,21 @@
-### Groom Completed Tasks: Check Acceptance Criteria Boxes and Correct Statuses
+### Update Completed Task Statuses in Backlog
 - **Project:** golf-clip
-- **Status:** not started
-- **Priority:** high
+- **Status:** done
+- **Priority:** medium
 - **Type:** grooming
 - **Scope:** small
 - **Planned completion:** none
+- **Actual completion:** 2026-02-23
 - **Blockers:** none
-- **Notes:** Two backlog tasks have mismatched statuses. `ux-add-error-boundary-component.md` has status "done" but all 5 AC boxes are unchecked (the feature was committed in `efceb59`). `ux-surface-ffmpeg-webcodecs-init-errors.md` has status "not started" but the work was committed in `e5158b0` on the `feat/structured-logging` branch. Both need their AC verified against the actual implementation and statuses corrected. This keeps the backlog accurate for handler dispatch.
+- **Notes:** 4 backlog tasks had stale statuses — work was committed but task files not updated. Error boundary (efceb59), FFmpeg/WebCodecs init errors (e5158b0), structured logging (8dc8803), Playwright E2E fix (15c6203).
 - **Added:** 2026-02-22
-- **Updated:** 2026-02-22
+- **Updated:** 2026-02-23
 
 #### Acceptance Criteria
-- [ ] `ux-add-error-boundary-component.md` AC boxes are checked where implementation matches, status confirmed as "done"
-- [ ] `ux-surface-ffmpeg-webcodecs-init-errors.md` AC boxes are checked where implementation matches, status updated to "done"
-- [ ] No backlog task has a status that contradicts its actual implementation state
+- [x] ux-add-error-boundary-component.md ACs checked, status confirmed done
+- [x] ux-surface-ffmpeg-webcodecs-init-errors.md ACs checked, status updated to done
+- [x] refactor-replace-console-with-structured-logging.md ACs checked, status updated to done
+- [x] test-fix-playwright-e2e-fixture-imports.md ACs checked, status updated to done
 
 #### Next steps
-1. Read `apps/browser/src/components/ErrorBoundary.tsx` and `src/main.tsx` — verify each AC item against the implementation, check the boxes that pass
-2. Read the commit `e5158b0` diff — verify each AC item in `ux-surface-ffmpeg-webcodecs-init-errors.md` against the implementation, check the boxes that pass
-3. Update both task files with checked AC boxes and correct statuses
+_(completed)_

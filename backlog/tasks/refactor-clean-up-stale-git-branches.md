@@ -1,6 +1,6 @@
 ### Delete Merged and Stale Git Branches (Local and Remote)
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** done
 - **Priority:** low
 - **Type:** refactor
 - **Scope:** small
@@ -8,7 +8,7 @@
 - **Blockers:** none
 - **Notes:** The repo has accumulated 5+ branches from completed work: `feat/ui-feedback-fixes`, `feat/ui-feedback-fixes-v2`, `feat/video-zoom-pan-controls`, `backup/feat-ui-pre-merge`, `backup/master-pre-merge`, and potentially `fix/unify-tracer-rendering`. These were created during UI redesign (PR #22) and earlier feature work. They add noise to branch listings and should be cleaned up after confirming each is fully merged or no longer needed.
 - **Added:** 2026-02-22
-- **Updated:** 2026-02-22
+- **Updated:** 2026-02-27
 
 #### Acceptance Criteria
 - [ ] All branches that are fully merged into master are deleted locally and on origin

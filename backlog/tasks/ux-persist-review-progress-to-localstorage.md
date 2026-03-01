@@ -1,6 +1,7 @@
 ### Persist Review Progress to localStorage to Survive Page Refresh
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-21-golf-clip-persist-review-progress
 - **Priority:** medium
 - **Type:** feature
 - **Scope:** medium
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** Users lose all review progress (approved shots, clip boundaries, tracer config) if they refresh the page or close the browser. No localStorage/sessionStorage usage found in codebase. Zustand store is ephemeral. Persist store state to localStorage with auto-save on state changes. Restore on mount. Helps users recover from accidental refreshes during long review sessions.
 - **Added:** 2026-02-16
-- **Updated:** 2026-02-16
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] processingStore persists to localStorage on state changes (debounced 500ms to avoid thrashing)
