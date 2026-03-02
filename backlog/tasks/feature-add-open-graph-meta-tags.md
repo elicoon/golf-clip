@@ -1,6 +1,7 @@
 ### Add Open Graph Meta Tags and SEO-Friendly Page Title
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-25-golf-clip-open-graph-meta-tags
 - **Priority:** medium
 - **Type:** feature
 - **Scope:** small
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** The current `index.html` has minimal meta tags (charset, viewport, favicon) and a generic title "GolfClip - Browser". As a public SaaS at golfclip.elicoon.com, sharing the URL on social media, Slack, or iMessage produces no preview — just a bare link. Adding Open Graph tags (og:title, og:description, og:image, og:url) and a Twitter card will make shared links display a rich preview, directly supporting user acquisition.
 - **Added:** 2026-02-24
-- **Updated:** 2026-02-24
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] `index.html` includes `og:title`, `og:description`, `og:image`, `og:url`, and `og:type` meta tags

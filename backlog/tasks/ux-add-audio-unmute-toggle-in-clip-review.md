@@ -1,6 +1,7 @@
 ### Add Audio Mute/Unmute Toggle Button to Clip Review
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-22-golf-clip-audio-unmute-toggle
 - **Priority:** medium
 - **Type:** feature
 - **Scope:** small
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** Video playback is auto-muted to satisfy browser autoplay policies. There is a TODO at `ClipReview.audio.test.tsx:113` noting "Add unmute button to UI." Users currently have no way to hear the audio of their golf clips during review, which matters for verifying shot detection accuracy (the audio transient is the detection signal). A simple mute/unmute toggle near the playback controls would solve this.
 - **Added:** 2026-02-22
-- **Updated:** 2026-02-22
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] Mute/unmute toggle button visible in clip review playback controls area

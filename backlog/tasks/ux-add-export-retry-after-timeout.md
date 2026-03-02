@@ -1,6 +1,7 @@
 ### Add Export Retry Button After Timeout Error
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-21-golf-clip-export-retry-timeout
 - **Priority:** low
 - **Type:** feature
 - **Scope:** small
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** Timeout handling was added in recent commit (1cb6a81) but error modal only shows "Close" button. Users must dismiss error and re-export manually. Add "Retry" button to timeout error modal to resume export immediately. Improves UX by reducing clicks and friction when timeouts occur.
 - **Added:** 2026-02-16
-- **Updated:** 2026-02-16
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] Export timeout error modal shows two buttons: "Retry" and "Close"

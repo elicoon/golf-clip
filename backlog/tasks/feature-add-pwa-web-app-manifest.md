@@ -1,6 +1,7 @@
 ### Add PWA Web App Manifest for Installability
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-24-golf-clip-pwa-manifest
 - **Priority:** medium
 - **Type:** feature
 - **Scope:** small
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** GolfClip is positioned as a SaaS product and has a compelling on-course use case — golfers reviewing shots between holes. Adding a web app manifest with icons, theme color, and display mode enables Chrome/Safari "Add to Home Screen" so users get a native app experience without an App Store. No external services needed — pure static file addition.
 - **Added:** 2026-02-26
-- **Updated:** 2026-02-26
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] `/public/manifest.json` exists with name, short_name, start_url, display: standalone, theme_color, background_color, and icons array

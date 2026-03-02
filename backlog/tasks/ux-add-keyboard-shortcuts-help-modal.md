@@ -1,6 +1,7 @@
 ### Add Keyboard Shortcuts Help Modal
 - **Project:** golf-clip
-- **Status:** not started
+- **Status:** in progress
+- **Dispatched:** 2026-02-21-golf-clip-keyboard-shortcuts-modal
 - **Priority:** low
 - **Type:** feature
 - **Scope:** small
@@ -8,7 +9,7 @@
 - **Blockers:** none
 - **Notes:** App has 15 powerful keyboard shortcuts (Space, arrows, [/], I, Enter, Esc, +/-/0 for zoom) but no in-app discovery. Users must read PRODUCT-WALKTHROUGH.md. Add "?" key to show modal with shortcut reference table. Improves UX for power users and discoverability for new users.
 - **Added:** 2026-02-16
-- **Updated:** 2026-02-16
+- **Updated:** 2026-02-28
 
 #### Acceptance Criteria
 - [ ] Press "?" or "h" key shows keyboard shortcuts modal
