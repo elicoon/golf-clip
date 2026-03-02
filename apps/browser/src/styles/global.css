@@ -1794,6 +1794,18 @@ kbd {
   border-radius: var(--border-radius-sm);
 }
 
+.export-quality-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-warning);
+  font-size: 0.875rem;
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-warning-dim);
+  border-radius: var(--border-radius-sm);
+}
+
 .feedback-actions {
   display: flex;
   gap: var(--spacing-md);
@@ -1962,6 +1974,38 @@ kbd {
 .app-error p {
   color: var(--color-text-secondary);
   font-size: 0.875rem;
+  margin: 0;
+}
+
+/* ============================================
+   No Shots Detected Empty State
+   ============================================ */
+
+.no-shots-detected {
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-bg-elevated);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-md);
+  text-align: center;
+  margin-bottom: var(--spacing-lg);
+  max-width: 480px;
+  width: 100%;
+}
+
+.no-shots-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.no-shots-description {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
   margin: 0;
 }
 

@@ -40,6 +40,10 @@ export default function App() {
     }
   }, [status, view, segments.length])
 
+  const isNoShotsState =
+    (status === 'ready' && segments.length === 0 && !activeVideoId) ||
+    (activeVideo?.status === 'ready' && activeVideo.segments.length === 0)
+
   return (
     <div className="app">
       <main className="app-main">
@@ -57,6 +61,15 @@ export default function App() {
         {view === 'upload' && !error && (
           <>
             <h1 className="app-title">GolfClip</h1>
+            {isNoShotsState && (
+              <div className="no-shots-detected">
+                <p className="no-shots-title">No shots detected</p>
+                <p className="no-shots-description">No golf shot sounds were detected in your video</p>
+                <button onClick={handleReset} className="btn-primary">
+                  Try Another Video
+                </button>
+              </div>
+            )}
             <div className="upload-layout">
               <WalkthroughSteps />
               <div className="upload-content">
